@@ -325,6 +325,17 @@ export VURIO_INSTANCE_GROUP="${APP_DIR}"
 echo "Starting a new instance from ${APP_DIR}..."
 
 if [ "$DO_REBUILD" = true ]; then
+  # Runtime models first, and only then the build. models/ and extensions/
+  # are gitignored, so a fresh worktree has none of them, and the CMake
+  # build's own fallback for a missing CLIP model was a 99-byte placeholder
+  # text file — a server that starts cleanly and then fails to embed every
+  # image. ensure_models.sh downloads whatever is missing (or copies it from
+  # VURIO_MODELS_FROM=<another checkout>/dedup_server/models) and exits
+  # non-zero rather than let a placeholder through; set -e then stops us
+  # here, before anything is built or the running pair is touched.
+  echo "Ensuring runtime models are present..."
+  run_sanitized "${BACKEND_DIR}/scripts/ensure_models.sh"
+
   echo "Rebuilding backend (-b flag provided)..."
   if [ -x "${BACKEND_DIR}/scripts/rebuild" ]; then
     # Sanitized like the server log, and for the same reason: the suite runs

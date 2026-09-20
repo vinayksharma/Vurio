@@ -31,6 +31,9 @@ struct ViewerView: View {
     /// from an open hand to a grab for the duration.
     @State private var isPanning = false
     @State private var mainAreaSize: CGSize = .zero
+    /// Hover on the control bar's eject/restore disk (brightens like the
+    /// BINNED card disks it is modelled on).
+    @State private var isEjectHovered = false
 
     @State private var currentImage: NSImage? = nil
     // Path of the bitmap currently on screen — the Image view's identity, so
@@ -148,15 +151,14 @@ struct ViewerView: View {
             }
             Spacer()
             Button(action: onClose) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 15))
-                    .foregroundColor(Theme.textSecondary)
+                Image(systemName: "xmark")
             }
-            .buttonStyle(PlainButtonStyle())
+            .buttonStyle(.vurioIcon)
             .help("Close viewer (Esc)")
         }
-        .padding(.horizontal, 30)
-        .padding(.vertical, 6)
+        .padding(.leading, 30)
+        .padding(.trailing, 22)
+        .padding(.vertical, 4)
     }
 
     // MARK: - Main image area
@@ -298,46 +300,104 @@ struct ViewerView: View {
 
     // MARK: - Control bar
 
+    /// Floating pill of transform controls under the image, styled like the
+    /// VU search row and the loading badge (surface fill, hairline border).
+    /// Icon buttons share `VurioIconButtonStyle` with the close button; the
+    /// eject/restore disk is the same red/green disk the BINNED cards use, so
+    /// the action reads identically in both places.
     private var controlBar: some View {
-        HStack(spacing: 12) {
-            Button(action: { setScale(scale / 1.5) }) { Image(systemName: "minus.magnifyingglass") }
-                .help("Zoom out")
-            Button(action: resetTransform) { Image(systemName: "arrow.up.left.and.down.right.magnifyingglass") }
-                .help("Fit to window")
-            Button(action: { setScale(scale * 1.5) }) { Image(systemName: "plus.magnifyingglass") }
-                .help("Zoom in")
-            Button(action: zoomToActualSize) { Image(systemName: "1.magnifyingglass") }
-                .help("Actual size (1:1 pixels)")
+        HStack(spacing: 2) {
+            let hasImage = currentImage != nil
+            controlButton("minus.magnifyingglass", help: "Zoom out") { setScale(scale / 1.5) }
+                .disabled(!hasImage)
+            controlButton("plus.magnifyingglass", help: "Zoom in") { setScale(scale * 1.5) }
+                .disabled(!hasImage)
+            controlButton("arrow.down.right.and.arrow.up.left", help: "Fit to window") {
+                withAnimation(Self.imageFade) { resetTransform() }
+            }
+            .disabled(!hasImage)
+            controlButton("1.magnifyingglass", help: "Actual size (1:1 pixels)") { zoomToActualSize() }
+                .disabled(!hasImage || isPlaceholderImage)
 
-            Divider().frame(height: 20)
+            controlDivider
 
-            Button(action: { rotation -= 90 }) { Image(systemName: "rotate.left") }
-                .help("Rotate left")
-            Button(action: { rotation += 90 }) { Image(systemName: "rotate.right") }
-                .help("Rotate right")
+            controlButton("rotate.left", help: "Rotate left") {
+                withAnimation(.easeInOut(duration: 0.2)) { rotation -= 90 }
+            }
+            .disabled(!hasImage)
+            controlButton("rotate.right", help: "Rotate right") {
+                withAnimation(.easeInOut(duration: 0.2)) { rotation += 90 }
+            }
+            .disabled(!hasImage)
 
             if model.isGroupMode, let selected = model.selectedImage, !selected.isRepresentative {
-                Divider().frame(height: 20)
-
-                if selected.isEjected {
-                    Button(action: { Task { await model.toggleEjectSelected() } }) {
-                        Image(systemName: "arrow.uturn.backward.circle")
-                            .foregroundColor(Theme.success)
-                    }
-                    .disabled(model.isEjectBusy)
-                    .help("Restore Image (Delete/Backspace)")
-                } else {
-                    Button(action: { Task { await model.toggleEjectSelected() } }) {
-                        Image(systemName: "trash")
-                            .foregroundColor(Theme.error)
-                    }
-                    .disabled(model.isEjectBusy)
-                    .help("Eject Image (Delete/Backspace)")
-                }
+                controlDivider
+                ejectRestoreDisk(isEjected: selected.isEjected)
+                    .padding(.horizontal, 4)
             }
         }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(Theme.surface.opacity(0.5)))
+        .overlay(Capsule().stroke(Theme.border, lineWidth: 1))
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity)
+    }
+
+    private func controlButton(_ symbol: String, help: String,
+                               action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+        }
+        .buttonStyle(.vurioIcon)
+        .help(help)
+    }
+
+    /// Hairline group separator inside the pill; the system Divider draws
+    /// too light against the dark surface.
+    private var controlDivider: some View {
+        Rectangle()
+            .fill(Theme.borderActive.opacity(0.6))
+            .frame(width: 1, height: 16)
+            .padding(.horizontal, 4)
+    }
+
+    /// Eject (red) / restore (green) disk: the BINNED card's member-tile
+    /// control at the same 24pt size, so one glyph means one thing app-wide.
+    private func ejectRestoreDisk(isEjected: Bool) -> some View {
+        let busy = model.isEjectBusy
+        let tint = isEjected ? Theme.success : Theme.error
+        return Button(action: { Task { await model.toggleEjectSelected() } }) {
+            Group {
+                if isEjected {
+                    CustomRestoreShape()
+                        .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                } else {
+                    CustomEjectShape()
+                        .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                }
+            }
+            .frame(width: 12, height: 12)
+            .frame(width: 24, height: 24)
+            .foregroundColor(Theme.textPrimary)
+            .background(
+                Circle()
+                    .fill(isEjectHovered && !busy ? tint : tint.opacity(0.8))
+                    .shadow(color: .black.opacity(0.6), radius: 4, x: 0, y: 3)
+            )
+            .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: 0.5))
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
+        .opacity(busy ? 0.5 : 1.0)
+        .scaleEffect(isEjectHovered && !busy ? 1.1 : 1.0)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.1)) {
+                isEjectHovered = hovering
+            }
+        }
+        .help(isEjected ? "Restore image (Delete/Backspace)" : "Eject image (Delete/Backspace)")
     }
 
     // MARK: - Thumbnail strip

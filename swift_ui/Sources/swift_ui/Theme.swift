@@ -133,3 +133,51 @@ extension View {
         self.modifier(VurioButtonStyleModifier(tintColor: tint))
     }
 }
+
+/// Icon-only toolbar button (viewer controls, bar-level close): a bare SF
+/// Symbol that lifts onto a soft tinted pad on hover, squashes slightly while
+/// pressed, and dims when disabled. Shares the hover fill, corner radius and
+/// timing of `vurioButtonStyle` so the two read as one family; the idle
+/// secondary-to-primary lift on hover is the same one the PEOPLE lens and
+/// the day-card collapse button use.
+struct VurioIconButtonStyle: ButtonStyle {
+    var tint: Color = Theme.textPrimary
+    var size: CGFloat = 28
+
+    func makeBody(configuration: Configuration) -> some View {
+        // Hover state lives on a real View: a ButtonStyle is not one, and a
+        // @State declared on it does not reliably drive updates.
+        VurioIconButtonBody(configuration: configuration, tint: tint, size: size)
+    }
+
+    private struct VurioIconButtonBody: View {
+        let configuration: ButtonStyle.Configuration
+        let tint: Color
+        let size: CGFloat
+        @Environment(\.isEnabled) private var isEnabled
+        @State private var isHovered = false
+
+        var body: some View {
+            let lifted = isEnabled && isHovered
+            configuration.label
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(lifted ? tint : Theme.textSecondary)
+                .frame(width: size, height: size)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(lifted ? tint.opacity(0.15) : Color.clear)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 6))
+                .scaleEffect(configuration.isPressed ? 0.92 : 1.0)
+                .opacity(isEnabled ? 1.0 : 0.35)
+                .onHover { isHovered = $0 }
+                .animation(.easeInOut(duration: 0.15), value: isHovered)
+                .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+        }
+    }
+}
+
+extension ButtonStyle where Self == VurioIconButtonStyle {
+    static var vurioIcon: VurioIconButtonStyle { VurioIconButtonStyle() }
+    static func vurioIcon(tint: Color) -> VurioIconButtonStyle { VurioIconButtonStyle(tint: tint) }
+}
