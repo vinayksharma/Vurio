@@ -52,6 +52,13 @@ struct StripResizeGrip: NSViewRepresentable {
         override func updateTrackingAreas() {
             super.updateTrackingAreas()
             if let tracking { removeTrackingArea(tracking) }
+            // A row the scroller has recycled is hidden and parked in its
+            // pool at its old frame. Hidden views are skipped by hit-testing
+            // but their tracking areas still fire, so a pooled grip kept
+            // setting the resize cursor over whatever visible row now sat
+            // there — a "draggable" edge that a press could not grab. No
+            // tracking while hidden; viewDidUnhide re-arms it.
+            guard !isHiddenOrHasHiddenAncestor else { tracking = nil; return }
             // Enter/exit/move rather than cursorUpdate: SwiftUI's hosting view
             // swallows cursorUpdate. activeAlways, not activeInKeyWindow: an
             // app launched from a terminal shows its window before the window
@@ -64,7 +71,41 @@ struct StripResizeGrip: NSViewRepresentable {
             tracking = area
         }
 
+        /// Whether this band may react to the pointer at all. Two cases say
+        /// no: the view (or a row it sits in) is hidden — a row recycled into
+        /// the scroller's pool; or its list is not the active tab — VU and
+        /// BINNED stay mounted on top of each other and swap by opacity, and
+        /// a zero-opacity list is skipped by hit-testing but its tracking
+        /// areas still fire. Either way the resize cursor showed up over
+        /// card edges of a list the user could not see, exactly where a
+        /// press would land on the visible row instead of a grip.
+        private var canTrack: Bool {
+            if isHiddenOrHasHiddenAncestor { return false }
+            return Self.listIsActive(from: self)
+        }
+
+        static func listIsActive(from view: NSView) -> Bool {
+            var v: NSView? = view
+            while let cur = v {
+                if let scroller = cur as? VurioScrollView { return scroller.isActiveTab }
+                v = cur.superview
+            }
+            return true // not inside a tabbed list (the viewer strip)
+        }
+
+        override func viewDidHide() {
+            super.viewDidHide()
+            isHovering = false
+            updateTrackingAreas()
+        }
+
+        override func viewDidUnhide() {
+            super.viewDidUnhide()
+            updateTrackingAreas()
+        }
+
         override func mouseEntered(with event: NSEvent) {
+            guard canTrack else { return }
             isHovering = true
             refreshCursor()
         }
@@ -72,11 +113,13 @@ struct StripResizeGrip: NSViewRepresentable {
         override func mouseMoved(with event: NSEvent) {
             // The hosting view re-asserts the arrow on its own mouse-moved
             // handling; set ours again on every move inside the band.
+            guard canTrack else { return }
             isHovering = true
             refreshCursor()
         }
 
         override func mouseExited(with event: NSEvent) {
+            guard isHovering else { return }
             isHovering = false
             refreshCursor()
         }

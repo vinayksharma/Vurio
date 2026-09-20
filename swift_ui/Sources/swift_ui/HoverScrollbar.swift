@@ -189,6 +189,11 @@ private struct ScrollbarBand: NSViewRepresentable {
             for area in trackingAreas {
                 removeTrackingArea(area)
             }
+            // No tracking while hidden: a band inside a row the scroller has
+            // recycled (hidden, pooled at its old frame) would otherwise keep
+            // reporting hover and setting the hand cursor over whatever
+            // visible row now occupies that spot (see StripResizeGrip).
+            guard !isHiddenOrHasHiddenAncestor else { return }
             // mouseMoved + activeAlways: the cursor below is re-set on every
             // move (the SwiftUI hosting view keeps putting the arrow back)
             // and must work before the window has ever been clicked.
@@ -197,18 +202,41 @@ private struct ScrollbarBand: NSViewRepresentable {
                                            owner: self))
         }
 
+        override func viewDidHide() {
+            super.viewDidHide()
+            if isHovering {
+                isHovering = false
+                onHoverChange?(false)
+            }
+            updateTrackingAreas()
+        }
+
+        override func viewDidUnhide() {
+            super.viewDidUnhide()
+            updateTrackingAreas()
+        }
+
+        // See StripResizeGrip.canTrack: no hover/cursor from a recycled row
+        // or from the tab that is mounted underneath the visible one.
+        private var canTrack: Bool {
+            !isHiddenOrHasHiddenAncestor && StripResizeGrip.GripView.listIsActive(from: self)
+        }
+
         override func mouseEntered(with event: NSEvent) {
+            guard canTrack else { return }
             isHovering = true
             onHoverChange?(true)
             refreshCursor()
         }
 
         override func mouseMoved(with event: NSEvent) {
+            guard canTrack else { return }
             isHovering = true
             refreshCursor()
         }
 
         override func mouseExited(with event: NSEvent) {
+            guard isHovering else { return }
             isHovering = false
             onHoverChange?(false)
             refreshCursor()
