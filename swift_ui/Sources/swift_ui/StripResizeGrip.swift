@@ -2,8 +2,9 @@ import SwiftUI
 import AppKit
 
 /// STRIP-1: the drag handle on a film strip's top or bottom edge. Dragging
-/// it changes the shared `StripLayout` tile height (every strip follows);
-/// double-clicking it snaps back to the default.
+/// it changes the tile height of THAT PANEL only (VU, BINNED and the viewer
+/// each keep their own); double-clicking it snaps that panel back to the
+/// default.
 ///
 /// AppKit rather than a SwiftUI DragGesture: the strips sit inside
 /// NSScrollView-backed rows whose document view takes the mouse-down for row
@@ -11,8 +12,8 @@ import AppKit
 /// hover scrollbar band hit the same wall). A topmost NSView wins, gets its
 /// own mouseDown/mouseDragged/mouseUp, and can own the cursor.
 struct StripResizeGrip: NSViewRepresentable {
-    let edge: StripLayout.ActiveDrag.Edge
-    let list: StripLayout.ActiveDrag.List
+    let edge: StripLayout.Edge
+    let panel: StripLayout.Panel
     let rowIndex: Int
 
     /// Thickness of the grab band, in points.
@@ -21,20 +22,20 @@ struct StripResizeGrip: NSViewRepresentable {
     func makeNSView(context: Context) -> GripView {
         let view = GripView()
         view.edge = edge
-        view.list = list
+        view.panel = panel
         view.rowIndex = rowIndex
         return view
     }
 
     func updateNSView(_ nsView: GripView, context: Context) {
         nsView.edge = edge
-        nsView.list = list
+        nsView.panel = panel
         nsView.rowIndex = rowIndex
     }
 
     final class GripView: NSView {
-        var edge: StripLayout.ActiveDrag.Edge = .bottom
-        var list: StripLayout.ActiveDrag.List = .vu
+        var edge: StripLayout.Edge = .bottom
+        var panel: StripLayout.Panel = .vu
         var rowIndex: Int = 0
 
         // Where within the band the pointer grabbed it, in window points
@@ -136,14 +137,14 @@ struct StripResizeGrip: NSViewRepresentable {
 
         override func mouseDown(with event: NSEvent) {
             if event.clickCount == 2 {
-                StripLayout.shared.resetToDefault()
+                StripLayout.shared.resetToDefault(panel)
                 return
             }
             grabOffsetY = event.locationInWindow.y - bandCenterYInWindow()
             lastPointerY = event.locationInWindow.y
             isDragging = true
             refreshCursor()
-            StripLayout.shared.beginDrag(.init(list: list, rowIndex: rowIndex, edge: edge))
+            StripLayout.shared.beginDrag(.init(panel: panel, rowIndex: rowIndex, edge: edge))
         }
 
         /// The band sits ON the edge it resizes (its frame follows the card
@@ -192,22 +193,34 @@ struct StripResizeGrip: NSViewRepresentable {
 }
 
 extension View {
-    /// Overlay a resize grip along the top and bottom edges of a strip card.
+    /// Overlay a resize grip along the requested edges of a strip card.
     /// `inset` puts the band just inside the edge (cards, whose padding has
     /// room); `outset` puts it just outside (the viewer strip, whose bottom
     /// 12 pt inside the edge belong to the hover scrollbar band).
-    func stripResizeGrips(list: StripLayout.ActiveDrag.List, rowIndex: Int, outset: Bool = false) -> some View {
+    ///
+    /// `edges` is which borders are grabbable. The viewer passes `[.top]`
+    /// alone: its strip is pinned to the bottom of the window above the
+    /// status bar, so a bottom-edge drag has nowhere to travel and only
+    /// fights the pointer — the top border is the one that moves.
+    func stripResizeGrips(panel: StripLayout.Panel,
+                          rowIndex: Int,
+                          outset: Bool = false,
+                          edges: Set<StripLayout.Edge> = [.top, .bottom]) -> some View {
         let t = StripResizeGrip.thickness
         return self
             .overlay(alignment: .top) {
-                StripResizeGrip(edge: .top, list: list, rowIndex: rowIndex)
-                    .frame(height: t)
-                    .offset(y: outset ? -t : 0)
+                if edges.contains(.top) {
+                    StripResizeGrip(edge: .top, panel: panel, rowIndex: rowIndex)
+                        .frame(height: t)
+                        .offset(y: outset ? -t : 0)
+                }
             }
             .overlay(alignment: .bottom) {
-                StripResizeGrip(edge: .bottom, list: list, rowIndex: rowIndex)
-                    .frame(height: t)
-                    .offset(y: outset ? t : 0)
+                if edges.contains(.bottom) {
+                    StripResizeGrip(edge: .bottom, panel: panel, rowIndex: rowIndex)
+                        .frame(height: t)
+                        .offset(y: outset ? t : 0)
+                }
             }
     }
 }

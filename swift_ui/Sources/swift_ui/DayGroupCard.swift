@@ -35,9 +35,9 @@ struct DayGroupCard: View {
     @State private var isCardHovered = false
 
     /// THUMB-1: every VU tile is this tall (square, ThumbnailGeometry).
-    /// STRIP-1: the height is the shared, user-dragged strip height; the row
+    /// STRIP-1: the height is VU's own user-dragged strip height; the row
     /// grows by exactly the same delta (VurioDuplicatesView.dayRowHeight).
-    private var tileHeight: CGFloat { strip.tileHeight }
+    private var tileHeight: CGFloat { strip.tileHeight(for: .vu) }
 
     /// Display items: unique files stay singles; a duplicate group's members
     /// (this day's only) coalesce into one stack at the earliest member's slot.
@@ -138,7 +138,7 @@ struct DayGroupCard: View {
             }
             // STRIP-1: only the tile band grows; the paddings above and
             // below it (which also hold the hover scrollbar) are unchanged.
-            .frame(height: 118 + strip.extraHeight)
+            .frame(height: 118 + strip.extraHeight(for: .vu))
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 20)
@@ -152,8 +152,9 @@ struct DayGroupCard: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(isSelected ? Theme.textAccent : Theme.border, lineWidth: isSelected ? 2 : 1)
         )
-        // STRIP-1: drag either border to resize every strip; double-click resets.
-        .stripResizeGrips(list: .vu, rowIndex: rowIndex)
+        // STRIP-1: drag either border to resize the VU strip alone (BINNED
+        // and the viewer keep their own heights); double-click resets VU.
+        .stripResizeGrips(panel: .vu, rowIndex: rowIndex)
         .onHover { isCardHovered = $0 }
         .padding(.bottom, 4)
     }
@@ -192,7 +193,7 @@ struct DayGroupCard: View {
             if !isEjecting { onThumbnailDoubleTapped(file) }
         }, onLocate: {
             onLocateSet(file.filePath)
-        }, isFocusedCandidate: file.filePath == selectedFilePath, allowEject: false, fixedSize: tileHeight, showMatchScore: false)
+        }, isFocusedCandidate: file.filePath == selectedFilePath, allowEject: false, fixedSize: tileHeight, showMatchScore: false, panel: .vu)
         .overlay(alignment: .bottomLeading) { searchBadgeStrip(for: file) }
     }
 

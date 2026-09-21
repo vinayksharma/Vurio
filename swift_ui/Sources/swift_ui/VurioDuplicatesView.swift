@@ -19,7 +19,7 @@ struct VurioDuplicatesView: View {
     private var viewModel: DuplicatesViewModel { coordinator.binned }
     private var allViewModel: AllDaysViewModel { coordinator.days }
 
-    // STRIP-1: the shared strip tile height drives both lists' row heights.
+    // STRIP-1: each list's own strip tile height drives its row height.
     @ObservedObject private var strip = StripLayout.shared
     // VU's scroller anchor (BINNED's lives on its view model, which also uses
     // it for page-insert anchoring); a resize pins the grabbed edge with it.
@@ -62,10 +62,10 @@ struct VurioDuplicatesView: View {
     // between cards is identical on both tabs (a row of exactly the card's
     // height left BINNED with only the card's 4 pt bottom padding between rows).
     private static let baseRowHeight: CGFloat = 178
-    private var rowHeight: CGFloat { Self.baseRowHeight + strip.extraHeight }
+    private var rowHeight: CGFloat { Self.baseRowHeight + strip.extraHeight(for: .binned) }
     // ALL-view day rows: same image strip plus the date-stamp header line.
     private static let baseDayRowHeight: CGFloat = 170
-    private var dayRowHeight: CGFloat { Self.baseDayRowHeight + strip.extraHeight }
+    private var dayRowHeight: CGFloat { Self.baseDayRowHeight + strip.extraHeight(for: .vu) }
 
     let pageSize: Int32 = 30
     
@@ -88,16 +88,19 @@ struct VurioDuplicatesView: View {
         .onReceive(PeopleNavigator.shared.$pending) { pending in
             applyPendingPersonFilter(pending)
         }
-        // STRIP-1: every row changes height at once, so the list would jump
-        // under the pointer; re-pin the viewport before the scrollers resize.
-        .onChange(of: strip.tileHeight) { old, new in
-            let delta = new - old
-            anchorListForResize(handle: vuAnchorHandle, list: .vu,
+        // STRIP-1: every row of the resized list changes height at once, so
+        // that list would jump under the pointer; re-pin its viewport before
+        // the scroller resizes. The two lists size independently, so each
+        // watches only its own height — resizing VU leaves BINNED untouched.
+        .onChange(of: strip.tileHeight(for: .vu)) { old, new in
+            anchorListForResize(handle: vuAnchorHandle, panel: .vu,
                                 oldRowHeight: Self.baseDayRowHeight + (old - StripLayout.defaultTileHeight),
-                                newRowHeight: Self.baseDayRowHeight + (old - StripLayout.defaultTileHeight) + delta)
-            anchorListForResize(handle: viewModel.anchorHandle, list: .binned,
+                                newRowHeight: Self.baseDayRowHeight + (new - StripLayout.defaultTileHeight))
+        }
+        .onChange(of: strip.tileHeight(for: .binned)) { old, new in
+            anchorListForResize(handle: viewModel.anchorHandle, panel: .binned,
                                 oldRowHeight: Self.baseRowHeight + (old - StripLayout.defaultTileHeight),
-                                newRowHeight: Self.baseRowHeight + (old - StripLayout.defaultTileHeight) + delta)
+                                newRowHeight: Self.baseRowHeight + (new - StripLayout.defaultTileHeight))
         }
         .onChange(of: viewerDismissals) { _, _ in
             closeViewer(inAllMode: true)
@@ -109,10 +112,10 @@ struct VurioDuplicatesView: View {
         showAllMode ? vuViewerRequest != nil : binnedViewerRequest != nil
     }
 
-    /// STRIP-1: the row being edge-dragged in `list`, kept materialized by
+    /// STRIP-1: the row being edge-dragged in `panel`, kept materialized by
     /// the scroller for the whole drag (VurioScroller.pinnedRow).
-    private func pinnedRow(for list: StripLayout.ActiveDrag.List) -> Int? {
-        guard let drag = strip.activeDrag, drag.list == list else { return nil }
+    private func pinnedRow(for panel: StripLayout.Panel) -> Int? {
+        guard let drag = strip.activeDrag, drag.panel == panel else { return nil }
         return drag.rowIndex
     }
 
@@ -120,16 +123,17 @@ struct VurioDuplicatesView: View {
     /// `oldRowHeight` to `newRowHeight`. For the list being dragged, the
     /// grabbed edge of the grabbed row stays put (its top for a bottom-edge
     /// drag, its bottom for a top-edge drag) so the edge follows the pointer
-    /// exactly even though every row above it grew too. Any other list keeps
-    /// its top visible row's top where it was. The restore is applied by the
-    /// scroller once its document has been resized (VurioScroller.updateNSView).
+    /// exactly even though every row above it grew too. A height change that
+    /// is not a drag (the double-click reset) keeps the top visible row's top
+    /// where it was. The restore is applied by the scroller once its document
+    /// has been resized (VurioScroller.updateNSView).
     private func anchorListForResize(handle: ScrollAnchorHandle,
-                                     list: StripLayout.ActiveDrag.List,
+                                     panel: StripLayout.Panel,
                                      oldRowHeight h0: CGFloat,
                                      newRowHeight h1: CGFloat) {
         guard h0 > 0, h1 > 0, let y0 = handle.currentOffset() else { return }
         let y1: CGFloat
-        if let drag = strip.activeDrag, drag.list == list {
+        if let drag = strip.activeDrag, drag.panel == panel {
             let r = CGFloat(drag.rowIndex)
             switch drag.edge {
             case .bottom: y1 = r * h1 - (r * h0 - y0)

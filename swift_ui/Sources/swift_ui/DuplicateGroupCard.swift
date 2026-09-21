@@ -46,7 +46,7 @@ struct DuplicateGroupCard: View {
     /// every tile was 70 pt and would point the bracket (whose action ejects the
     /// files it spans) at the wrong photos.
     private var candidateWidths: [CGFloat] {
-        candidates.map { DuplicateMemberView.tileSize(for: $0, isRep: false, fixedSize: nil, stripTileHeight: strip.tileHeight).width }
+        candidates.map { DuplicateMemberView.tileSize(for: $0, isRep: false, fixedSize: nil, stripTileHeight: strip.tileHeight(for: .binned)).width }
     }
 
     /// prefix[i] = sum(widths[0..<i]) + i * spacing (leading x of tile i).
@@ -63,7 +63,7 @@ struct DuplicateGroupCard: View {
                 
                 if !candidates.isEmpty {
                     Divider()
-                        .frame(height: strip.tileHeight)
+                        .frame(height: strip.tileHeight(for: .binned))
                         .background(Theme.borderActive)
                         .padding(.top, 30)
                         .padding(.bottom, 30)
@@ -149,7 +149,7 @@ struct DuplicateGroupCard: View {
                 }
                 // STRIP-1: the candidate band grows with the tile height;
                 // paddings (and the hover scrollbar inside them) do not.
-                .frame(height: 130 + strip.extraHeight)
+                .frame(height: 130 + strip.extraHeight(for: .binned))
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -176,7 +176,7 @@ struct DuplicateGroupCard: View {
             }
         }
         // STRIP-1: drag either border to resize every strip; double-click resets.
-        .stripResizeGrips(list: .binned, rowIndex: rowIndex)
+        .stripResizeGrips(panel: .binned, rowIndex: rowIndex)
         .onHover { hovering in
             isCardHovered = hovering
             // Clear the displayed path once the pointer leaves the whole group.
@@ -307,6 +307,10 @@ struct DuplicateMemberView: View {
     // When false, the advanced overlay omits the per-tile match (similarity)
     // score. The VU day view hides scores; BINNED keeps them.
     var showMatchScore: Bool = true
+    // Which strip this tile is drawn in, so it follows that panel's own
+    // height. VU pins its tiles with `fixedSize`, so this only matters for
+    // which panel's changes it redraws for.
+    var panel: StripLayout.Panel = .binned
 
     @State private var isHovered = false
     @State private var isButtonHovered = false
@@ -327,7 +331,7 @@ struct DuplicateMemberView: View {
 
     /// THUMB-1: fixed tile height; the width follows the image's display
     /// geometry (clamped 1:3…3:1, never cropped) — see ThumbnailGeometry.
-    /// STRIP-1: `stripTileHeight` is the shared dragged height (default 70);
+    /// STRIP-1: `stripTileHeight` is the owning panel's dragged height (70 by default);
     /// the representative keeps its +10 pt prominence over candidates.
     static func tileHeight(isRep: Bool, fixedSize: CGFloat?, stripTileHeight: CGFloat) -> CGFloat {
         fixedSize ?? (isRep ? stripTileHeight + 10 : stripTileHeight)
@@ -340,7 +344,7 @@ struct DuplicateMemberView: View {
     }
 
     var body: some View {
-        let tile = Self.tileSize(for: file, isRep: isRep, fixedSize: fixedSize, stripTileHeight: strip.tileHeight)
+        let tile = Self.tileSize(for: file, isRep: isRep, fixedSize: fixedSize, stripTileHeight: strip.tileHeight(for: panel))
         let width = tile.width
         let height = tile.height
         let cornerRadius: CGFloat = 8

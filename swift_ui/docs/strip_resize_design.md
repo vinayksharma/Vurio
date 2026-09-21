@@ -30,7 +30,11 @@ Deviation from §4.1 as designed: instead of a per-request size hint, the list R
 
 ## 3. Client design (STRIP-1)
 
-**One shared height.** `stripTileHeight: CGFloat` in `@AppStorage`, default 70, range 70…140. All three strip surfaces read it: VU day rows, the viewer strip, and BINNED rows (rep tile = height + 10, as today's 80/70). One height means one asset size in play at a time, which preserves the THUMB-1 invariant that every surface shares a cache entry per file. Dragging any card resizes every card, because the scroller's rows are uniform.
+**A height per panel (revised 2026-09-20).** `StripLayout` keeps one height per strip surface — `Panel.vu`, `Panel.binned`, `Panel.viewer` — each default 70, range 70…140, each persisted under `stripTileHeight.<panel>`. Dragging a VU card resizes every VU card and nothing else; BINNED and the viewer keep the heights the user left them at. The pre-revision single `stripTileHeight` key is still read as the fallback for a panel that has no stored height of its own, so an existing drag carries over to all three instead of resetting.
+
+The asset bucket stays global and is sized for the TALLEST panel, which preserves the THUMB-1 invariant that every surface shares one cache entry per file — a shorter panel simply draws a sharper bitmap scaled down.
+
+**Viewer strip: top edge only.** The viewer's strip is pinned to the bottom of the window above the status bar, so its bottom border cannot move. A drag there fought the pointer instead of resizing, so the viewer overlays a grip on its top border alone (`stripResizeGrips(panel:rowIndex:outset:edges:)`). VU and BINNED cards keep both borders.
 
 **Row heights become derived.**
 `dayRowHeight = 170 + (h − 70)`, `binnedRowHeight = 158 + (h − 70)`, strip frame `118 + (h − 70)`. The viewer strip container grows the same way. Nothing else in the card changes.

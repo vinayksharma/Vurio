@@ -67,9 +67,10 @@ struct ViewerView: View {
     /// Point height of the strip tiles (THUMB-1: square tiles). The asset
     /// they request is ServerImageLoader.tileAssetSize; the main image area
     /// reuses that cached bitmap as its placeholder, so the two must key the
-    /// same asset. STRIP-1: the shared, user-dragged strip height.
+    /// same asset. STRIP-1: the viewer strip's OWN user-dragged height
+    /// (VU and BINNED keep theirs separately).
     @ObservedObject private var strip = StripLayout.shared
-    private var stripTileHeight: CGFloat { strip.tileHeight }
+    private var stripTileHeight: CGFloat { strip.tileHeight(for: .viewer) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -494,7 +495,7 @@ struct ViewerView: View {
                 applyScrollTarget(model.scrollTarget, proxy: proxy)
             }
         }
-        .frame(height: 118 + strip.extraHeight) // STRIP-1: only the tile band grows
+        .frame(height: 118 + strip.extraHeight(for: .viewer)) // STRIP-1: only the tile band grows
         .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 12)
@@ -504,9 +505,11 @@ struct ViewerView: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Theme.border, lineWidth: 1)
         )
-        // STRIP-1: grips just outside the border — the 12 pt inside the
-        // bottom edge belong to the hover scrollbar band.
-        .stripResizeGrips(list: .viewer, rowIndex: 0, outset: true)
+        // STRIP-1: one grip, just outside the TOP border. The strip is
+        // pinned above the status bar, so its bottom edge cannot move — a
+        // drag there only fought the pointer. The 12 pt inside the bottom
+        // edge belong to the hover scrollbar band anyway.
+        .stripResizeGrips(panel: .viewer, rowIndex: 0, outset: true, edges: [.top])
         .padding(.horizontal, 30)
         // Clears the bottom status bar the viewer underlaps (~30pt): with the
         // old 12pt the strip's bottom edge — where the hover scrollbar lives —

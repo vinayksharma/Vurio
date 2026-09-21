@@ -1,56 +1,80 @@
 import SwiftUI
 import AppKit
 
-/// STRIP-1: the one film-strip tile height shared by every strip surface —
-/// VU day rows, BINNED group rows and the viewer strip — dragged by the grip
-/// on any card's top or bottom border (StripResizeGrip) and persisted across
-/// launches.
+/// STRIP-1: the film-strip tile height, kept INDEPENDENTLY for each of the
+/// three strip surfaces — VU day rows, BINNED group rows and the viewer
+/// strip. Each is dragged by the grip on a card border (StripResizeGrip) and
+/// persisted under its own key, so sizing VU tall leaves BINNED and the
+/// viewer where the user left them.
 ///
-/// Two values are published on purpose:
-/// - `tileHeight` moves with the pointer during a drag and drives LAYOUT
-///   only; tiles scale the bitmap they already hold (a live zoom).
-/// - `committedTileHeight` moves when the drag ends and drives the ASSET
-///   size every surface requests (`ServerImageLoader.tileAssetSize`), so the
-///   server is asked for the sharper bucket once, not on every mouse move.
+/// Two values are published per panel on purpose:
+/// - `tileHeight(for:)` moves with the pointer during a drag and drives
+///   LAYOUT only; tiles scale the bitmap they already hold (a live zoom).
+/// - `committedTileHeight(for:)` moves when the drag ends and drives the
+///   ASSET size (`ServerImageLoader.tileAssetSize`), so the server is asked
+///   for the sharper bucket once, not on every mouse move.
 ///
-/// One shared height keeps the THUMB-1 invariant intact: all surfaces
-/// request the same pixel bucket, so a file has one cache entry per bucket
-/// rather than one per surface.
+/// The asset bucket stays global — it is sized for the TALLEST panel. That
+/// keeps the THUMB-1 invariant intact: every surface requests the same pixel
+/// bucket, so a file has one cache entry per bucket rather than one per
+/// surface, and a shorter panel simply draws a sharper bitmap scaled down.
 @MainActor
 final class StripLayout: ObservableObject {
     static let shared = StripLayout()
+
+    /// A strip surface. Each keeps its own height.
+    enum Panel: String, CaseIterable, Hashable {
+        case vu, binned, viewer
+
+        fileprivate var defaultsKey: String { "stripTileHeight.\(rawValue)" }
+    }
+
+    /// Which border of a card the grip sits on.
+    enum Edge: Hashable { case top, bottom }
 
     nonisolated static let defaultTileHeight: CGFloat = 70
     nonisolated static let minTileHeight: CGFloat = 70
     nonisolated static let maxTileHeight: CGFloat = 140 // double the default, per the design
 
-    private nonisolated static let defaultsKey = "stripTileHeight"
+    /// The pre-STRIP-4 single shared height. Still read once per panel, so a
+    /// user who had dragged the strips before they became independent keeps
+    /// that height on all three instead of being reset to the default.
+    private nonisolated static let legacyDefaultsKey = "stripTileHeight"
 
-    /// Live height (follows the drag).
-    @Published private(set) var tileHeight: CGFloat
-    /// Height the assets are sized for (settles when the drag ends).
-    @Published private(set) var committedTileHeight: CGFloat
+    /// Live heights (follow the drag), one per panel.
+    @Published private(set) var tileHeights: [Panel: CGFloat]
+    /// Heights the assets are sized for (settle when the drag ends).
+    @Published private(set) var committedTileHeights: [Panel: CGFloat]
 
-    /// Extra points every strip surface is taller than at the default height.
-    var extraHeight: CGFloat { tileHeight - Self.defaultTileHeight }
+    func tileHeight(for panel: Panel) -> CGFloat {
+        tileHeights[panel] ?? Self.defaultTileHeight
+    }
+
+    func committedTileHeight(for panel: Panel) -> CGFloat {
+        committedTileHeights[panel] ?? Self.defaultTileHeight
+    }
+
+    /// Extra points this panel's strip is taller than at the default height.
+    func extraHeight(for panel: Panel) -> CGFloat {
+        tileHeight(for: panel) - Self.defaultTileHeight
+    }
 
     /// What the grip is holding, so the list can keep that edge under the
     /// pointer while every row above it grows (VurioDuplicatesView anchors
     /// on this).
     struct ActiveDrag: Equatable {
-        enum Edge { case top, bottom }
-        enum List { case vu, binned, viewer }
-        let list: List
+        let panel: Panel
         let rowIndex: Int
         let edge: Edge
     }
     @Published private(set) var activeDrag: ActiveDrag? = nil
 
     private init() {
-        let stored = Self.storedTileHeight()
-        tileHeight = stored
-        committedTileHeight = stored
-        Self.applyAssetSize(for: stored)
+        var stored: [Panel: CGFloat] = [:]
+        for panel in Panel.allCases { stored[panel] = Self.storedTileHeight(for: panel) }
+        tileHeights = stored
+        committedTileHeights = stored
+        Self.applyAssetSize(tallest: stored.values.max() ?? Self.defaultTileHeight)
     }
 
     // MARK: - Drag lifecycle (called by StripResizeGrip)
@@ -59,35 +83,38 @@ final class StripLayout: ObservableObject {
         activeDrag = drag
     }
 
-    /// Grow (or, negative, shrink) the tile height by `growth` points. The
-    /// grip computes `growth` from where its edge actually is versus the
-    /// pointer on every drag event — not from accumulated pointer travel —
-    /// so the strip only resizes when the pointer is off the edge, and by
-    /// exactly enough to put the edge back under it. Overshoot past a limit
-    /// therefore needs no special case: the edge simply cannot reach the
-    /// pointer, and starts tracking again the moment the pointer returns.
+    /// Grow (or, negative, shrink) the dragged panel's tile height by
+    /// `growth` points. The grip computes `growth` from where its edge
+    /// actually is versus the pointer on every drag event — not from
+    /// accumulated pointer travel — so the strip only resizes when the
+    /// pointer is off the edge, and by exactly enough to put the edge back
+    /// under it. Overshoot past a limit therefore needs no special case: the
+    /// edge simply cannot reach the pointer, and starts tracking again the
+    /// moment the pointer returns.
     func drag(growth: CGFloat) {
-        guard activeDrag != nil else { return }
-        let next = Self.clamp(tileHeight + growth)
-        if next != tileHeight { tileHeight = next }
+        guard let panel = activeDrag?.panel else { return }
+        let next = Self.clamp(tileHeight(for: panel) + growth)
+        if next != tileHeight(for: panel) { tileHeights[panel] = next }
     }
 
     func endDrag() {
+        guard let panel = activeDrag?.panel else { return }
         activeDrag = nil
-        commit(tileHeight)
+        commit(tileHeight(for: panel), for: panel)
     }
 
-    /// Double-click on a grip: back to the default height.
-    func resetToDefault() {
+    /// Double-click on a grip: that panel alone goes back to the default
+    /// height.
+    func resetToDefault(_ panel: Panel) {
         activeDrag = nil
-        tileHeight = Self.defaultTileHeight
-        commit(Self.defaultTileHeight)
+        tileHeights[panel] = Self.defaultTileHeight
+        commit(Self.defaultTileHeight, for: panel)
     }
 
-    private func commit(_ height: CGFloat) {
-        committedTileHeight = height
-        UserDefaults.standard.set(Double(height), forKey: Self.defaultsKey)
-        Self.applyAssetSize(for: height)
+    private func commit(_ height: CGFloat, for panel: Panel) {
+        committedTileHeights[panel] = height
+        UserDefaults.standard.set(Double(height), forKey: panel.defaultsKey)
+        Self.applyAssetSize(tallest: committedTileHeights.values.max() ?? Self.defaultTileHeight)
     }
 
     // MARK: - Asset bucket
@@ -112,18 +139,22 @@ final class StripLayout: ObservableObject {
         min(max(height, minTileHeight), maxTileHeight).rounded()
     }
 
-    nonisolated static func storedTileHeight() -> CGFloat {
-        let stored = UserDefaults.standard.double(forKey: defaultsKey)
-        return stored > 0 ? clamp(CGFloat(stored)) : defaultTileHeight
+    nonisolated static func storedTileHeight(for panel: Panel) -> CGFloat {
+        let stored = UserDefaults.standard.double(forKey: panel.defaultsKey)
+        if stored > 0 { return clamp(CGFloat(stored)) }
+        let legacy = UserDefaults.standard.double(forKey: legacyDefaultsKey)
+        return legacy > 0 ? clamp(CGFloat(legacy)) : defaultTileHeight
     }
 
-    /// The bucket the persisted height needs — what ServerImageLoader seeds
-    /// itself with before this object is first touched.
+    /// The bucket the persisted heights need — what ServerImageLoader seeds
+    /// itself with before this object is first touched. Sized for the
+    /// tallest panel, since one bucket serves them all.
     nonisolated static func initialAssetSize() -> Int {
-        assetSize(forTileHeight: storedTileHeight(), backingScale: currentBackingScale())
+        let tallest = Panel.allCases.map { storedTileHeight(for: $0) }.max() ?? defaultTileHeight
+        return assetSize(forTileHeight: tallest, backingScale: currentBackingScale())
     }
 
-    private static func applyAssetSize(for height: CGFloat) {
+    private static func applyAssetSize(tallest height: CGFloat) {
         let size = assetSize(forTileHeight: height, backingScale: currentBackingScale())
         ServerImageLoader.tileAssetSize = size
         ImageCache.shared.setThumbnailBudget(forAssetSize: size)
