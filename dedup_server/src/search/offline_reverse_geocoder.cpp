@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <map>
 #include <set>
 
 namespace MediaDedup
@@ -352,8 +353,22 @@ namespace MediaDedup
         }
         std::sort(landmarks.begin(), landmarks.end(),
                   [](const Place &a, const Place &b) { return a.distance_m < b.distance_m; });
-        if (static_cast<int>(landmarks.size()) > options_.max_landmarks)
-            landmarks.resize(static_cast<std::size_t>(options_.max_landmarks));
+        // PLACE-4: the cap is PER KIND, not global. Sorted by distance, a
+        // nearer terrain feature would otherwise crowd out the only water
+        // row, and "near the lake" needs that row to exist. Each kind keeps
+        // its own nearest `max_landmarks`; the vector stays distance-ordered,
+        // so front() is still the nearest feature overall — the label and
+        // admin fallbacks below rely on that.
+        if (options_.max_landmarks >= 0)
+        {
+            std::map<std::string, int> kept_of_kind;
+            std::vector<Place> capped;
+            capped.reserve(landmarks.size());
+            for (auto &l : landmarks)
+                if (kept_of_kind[l.kind]++ < options_.max_landmarks)
+                    capped.push_back(std::move(l));
+            landmarks = std::move(capped);
+        }
 
         // A feature right here (≤ label radius) knows which state it is in;
         // the town must agree. Otherwise a big city's centre point across

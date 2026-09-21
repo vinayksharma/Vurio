@@ -221,7 +221,12 @@ namespace MediaDedup
             EXPECT_EQ(phases[0], "Refreshing RAW photo metadata...");
             EXPECT_EQ(phases[1], "Resolving place names...");
             EXPECT_EQ(PlacesOps::countUnresolved(*db_, PlacesOps::kLevelOffline), 0);
-            EXPECT_EQ(PlacesOps::placeIdsByName(*db_, "bozeman").size(), 1u);
+            // The pond is a landmark of this fix, so a name search for
+            // "bozeman" finds the town AND Bozeman Pond — the same
+            // word-boundary containment that makes "yellowstone" find
+            // both the park and West Yellowstone.
+            EXPECT_EQ(PlacesOps::placeIdsByName(*db_, "bozeman").size(), 2u)
+                << "Bozeman + Bozeman Pond";
         }
 
         TEST_F(MediaBackfillPlacesTest, RunWithoutPhaseCallbackStillWorks)

@@ -499,6 +499,37 @@ namespace MediaDedup
             // words must not be re-read as settings ("mountain"). A span
             // that is itself a setting ("in the mountains") stays visible.
             std::vector<std::string> place_attempts;
+            // PLACE-4: is this whole span a setting phrase? Leading articles
+            // go, and so do trailing words that are scaffolding rather than
+            // part of a name — a dangling location preposition or a filler,
+            // as in "at the beach in <date>".
+            auto spanIsSetting = [this](const std::string &span) {
+                std::istringstream w(span);
+                std::vector<std::string> t;
+                for (std::string x; w >> x;)
+                    t.push_back(x);
+                auto scaffold = [this](const std::string &word) {
+                    for (const auto &prep : keywords_.location_prepositions)
+                        if (word == prep)
+                            return true;
+                    for (const auto &filler : keywords_.filler_words)
+                        if (word == filler)
+                            return true;
+                    return false;
+                };
+                while (!t.empty() && scaffold(t.back()))
+                    t.pop_back();
+                if (t.empty())
+                    return false;
+                std::string joined;
+                for (std::size_t i = 0; i < t.size(); ++i)
+                    joined += (i ? " " : "") + t[i];
+                const std::string core = stripLeadingArticles(joined + " ");
+                const auto end = core.find_last_not_of(' ');
+                if (end == std::string::npos)
+                    return false;
+                return keywords_.findSetting(core.substr(0, end + 1)) != nullptr;
+            };
             for (const auto &h : hits)
             {
                 // One location per query (pre-existing); a place_ids-only
@@ -506,7 +537,18 @@ namespace MediaDedup
                 // overwritten by a later bbox hit).
                 if (bound.location || !bound.place_ids.empty())
                     break;
-                bool resolved = false, setting_candidate = false;
+                bool resolved = false;
+                // PLACE-4: the span is a SETTING phrase — its words stay
+                // visible to the detector — only when the span ITSELF is
+                // one: "in the mountains", or "at the beach in" once a
+                // trailing preposition or filler is dropped. A setting word
+                // that is merely the FIRST word of a longer phrase the user
+                // tried as a place ("in mountain view") is not one: that
+                // span is a place ATTEMPT, and "mountain" must not be
+                // re-read as a setting. Deciding this per span rather than
+                // per word-prefix is the whole point — the prefix loop
+                // below sees "mountain" either way.
+                const bool setting_candidate = spanIsSetting(h.span);
                 // Longest word-prefix of the span that the gazetteer knows.
                 std::istringstream words(h.span);
                 std::vector<std::string> tokens;
@@ -526,10 +568,7 @@ namespace MediaDedup
                     if (core.find_first_not_of(' ') == std::string::npos)
                         continue;
                     if (keywords_.findSetting(core.substr(0, core.find_last_not_of(' ') + 1)))
-                    {
-                        setting_candidate = true;
                         continue;
-                    }
                     std::optional<LocationGeocoder::Bounds> bounds;
                     if (geocoder_ && geocoder_->size() > 0)
                         bounds = geocoder_->lookup(candidate);

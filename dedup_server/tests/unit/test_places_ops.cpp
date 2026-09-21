@@ -370,7 +370,10 @@ TEST_F(PlaceResolverTest, ResolvePathLooksUpTheRowByPath)
 {
     insertFile("/lib/bozeman.jpg", 45.6840, -111.0380);
     ASSERT_TRUE(PlaceResolver::instance().resolvePath(*db_, "/lib/bozeman.jpg", 45.6840, -111.0380));
-    EXPECT_EQ(PlacesOps::placeIdsByName(*db_, "bozeman").size(), 1u);
+    // Town + Bozeman Pond, the landmark 670 m from this fix: word-boundary
+    // containment, as with "yellowstone" above.
+    EXPECT_EQ(PlacesOps::placeIdsByName(*db_, "bozeman").size(), 2u)
+        << "Bozeman + Bozeman Pond";
     EXPECT_FALSE(PlaceResolver::instance().resolvePath(*db_, "/lib/missing.jpg", 45.0, -111.0));
 }
 
