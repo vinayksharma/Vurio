@@ -108,6 +108,13 @@ final class ViewerViewModel: ObservableObject {
     @Published var selectedID: String?
     @Published private(set) var isGroupMode = false
     @Published private(set) var isLoading = false
+    /// The last timeline load ended without producing anything because the
+    /// FETCH failed, not because the library is empty. The two look identical
+    /// on screen otherwise, and "nothing to display" is a lie when the server
+    /// was merely busy — so the empty state reads as a failure and offers a
+    /// retry instead. Cancellation (the viewer was closed mid-load) does not
+    /// set it: nobody is left looking at that state.
+    @Published private(set) var loadFailed = false
     @Published private(set) var isEjectBusy = false
     /// Consumed by the strip's ScrollViewReader, then cleared.
     @Published var scrollTarget: ScrollTarget?
@@ -127,6 +134,11 @@ final class ViewerViewModel: ObservableObject {
     private var loadingNewer = false
     private var loadingOlder = false
     private var handledRequestID: UUID?
+    /// The request currently on screen, so `retry()` can re-run it.
+    private var lastRequest: ViewerRequest?
+    /// Set by `fetchDays` when the failure was a cancellation rather than a
+    /// real error, so `load` can tell the retry state from a teardown.
+    private var lastFetchCancelled = false
 
     /// Days fetched per window-growth request. Whole days are fetched
     /// (filesPerDay = 0) so the strip is a gapless timeline.
@@ -164,6 +176,8 @@ final class ViewerViewModel: ObservableObject {
     func load(_ request: ViewerRequest) async {
         guard request.id != handledRequestID else { return }
         handledRequestID = request.id
+        lastRequest = request
+        loadFailed = false
 
         switch request.content {
         case .group(let group, let selectedIndex):
@@ -198,7 +212,10 @@ final class ViewerViewModel: ObservableObject {
             // One day of runway on each side of the anchor; the sentinels grow
             // the window from there.
             let start = max(0, anchorDayIndex - 1)
-            guard let fetched = await fetchDays(offset: Int32(start), limit: dayPage) else { return }
+            guard let fetched = await fetchDays(offset: Int32(start), limit: dayPage) else {
+                loadFailed = !lastFetchCancelled
+                return
+            }
             windowStart = start
             days = fetched
             rebuildItems()
@@ -250,6 +267,14 @@ final class ViewerViewModel: ObservableObject {
         guard let fetched = await fetchDays(offset: Int32(offset), limit: dayPage) else { return }
         days.append(contentsOf: fetched)
         rebuildItems()
+    }
+
+    /// Re-run the load that failed. `handledRequestID` is cleared first
+    /// because `load` refuses a request it has already handled.
+    func retry() async {
+        guard let request = lastRequest, !isLoading else { return }
+        handledRequestID = nil
+        await load(request)
     }
 
     func select(_ id: String) {
@@ -325,6 +350,7 @@ final class ViewerViewModel: ObservableObject {
     /// day view uses for DB pool contention.
     private func fetchDays(offset: Int32, limit: Int32) async -> [Vurio_Dedup_DayGroup]? {
         guard limit > 0 else { return [] }
+        lastFetchCancelled = false
         do {
             guard let client = VurioGrpcClient.shared.duplicates else { return nil }
             let request = Vurio_Dedup_GetDayGroupsRequest.with {
@@ -345,7 +371,9 @@ final class ViewerViewModel: ObservableObject {
         } catch {
             // User-initiated (viewer open / strip growth) with no auto-retry,
             // so even transient failures surface — but never cancellations.
-            if !isGrpcCancellation(error) {
+            if isGrpcCancellation(error) {
+                lastFetchCancelled = true
+            } else {
                 MessageCenter.shared.post("Failed to load timeline days: \(error.localizedDescription)")
             }
             return nil

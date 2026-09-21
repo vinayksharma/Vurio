@@ -34,6 +34,9 @@ struct ViewerView: View {
     /// Hover on the control bar's eject/restore disk (brightens like the
     /// BINNED card disks it is modelled on).
     @State private var isEjectHovered = false
+    /// Drives the strip skeleton's breathing while the first day fetch is in
+    /// flight. One flag for the whole row; each tile offsets its own phase.
+    @State private var skeletonPulse = false
 
     @State private var currentImage: NSImage? = nil
     // Path of the bitmap currently on screen — the Image view's identity, so
@@ -114,11 +117,31 @@ struct ViewerView: View {
     private var emptyState: some View {
         VStack(spacing: 12) {
             Spacer()
-            Image(systemName: "viewfinder")
-                .font(.system(size: 48))
-                .foregroundColor(Theme.textSecondary)
-            Text("Nothing to display")
-                .foregroundColor(Theme.textSecondary)
+            if model.loadFailed {
+                // The fetch failed — usually the server busy with a scan,
+                // which the retry ladder in `callWithBusyRetry` could not
+                // outlast. Saying "nothing to display" here would be wrong
+                // about the library, so say what actually happened.
+                Image(systemName: "exclamationmark.arrow.circlepath")
+                    .font(.system(size: 48))
+                    .foregroundColor(Theme.warning)
+                Text("Could not load this day")
+                    .foregroundColor(Theme.textPrimary)
+                Text("The server was busy. Its scan may still be running.")
+                    .font(.caption)
+                    .foregroundColor(Theme.textSecondary)
+                Button("Try again") {
+                    Task { await model.retry() }
+                }
+                .vurioButtonStyle()
+                .padding(.top, 4)
+            } else {
+                Image(systemName: "viewfinder")
+                    .font(.system(size: 48))
+                    .foregroundColor(Theme.textSecondary)
+                Text("Nothing to display")
+                    .foregroundColor(Theme.textSecondary)
+            }
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -210,7 +233,14 @@ struct ViewerView: View {
                 // Loading spinner: kept mounted and opacity-driven. The
                 // AppKit-backed ProgressView ignores insertion transitions,
                 // which made it pop in hard instead of fading with the image.
-                let spinnerVisible = currentImage == nil && isLoadingImage && unreadableMessage == nil
+                // `isLoadingImage` only covers fetching ONE image's bitmap,
+                // which cannot start until a day fetch has produced a
+                // selection. While that fetch runs there is no selection, no
+                // image and no error — every branch above is false — so
+                // without `model.isLoading` here the viewer opened to a
+                // completely blank frame and gave no sign it was working.
+                let spinnerVisible = currentImage == nil && unreadableMessage == nil
+                    && (isLoadingImage || model.isLoading)
                 ProgressView()
                     .controlSize(.large)
                     .opacity(spinnerVisible ? 1 : 0)
@@ -445,6 +475,15 @@ struct ViewerView: View {
             // which the native one cannot do.
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .center, spacing: 12) {
+                    // The strip's frame is already on screen by now, so an
+                    // empty one reads as "this day has no images" rather than
+                    // "the images are still coming". Skeletons say which.
+                    if model.isLoading && model.items.isEmpty {
+                        ForEach(0..<10, id: \.self) { index in
+                            stripSkeletonTile(index: index)
+                        }
+                    }
+
                     if model.canLoadNewer {
                         ProgressView()
                             .frame(width: stripTileHeight, height: stripTileHeight)
@@ -515,6 +554,24 @@ struct ViewerView: View {
         // old 12pt the strip's bottom edge — where the hover scrollbar lives —
         // rendered hidden beneath it.
         .padding(.bottom, 42)
+    }
+
+    /// Placeholder tile standing in for a thumbnail that has not arrived.
+    /// Same size and corner radius as a real strip tile, so the strip does
+    /// not reflow when the images land.
+    private func stripSkeletonTile(index: Int) -> some View {
+        RoundedRectangle(cornerRadius: 8)
+            .fill(Theme.surfaceElevated)
+            .frame(width: stripTileHeight, height: stripTileHeight)
+            .opacity(skeletonPulse ? 0.35 : 0.85)
+            .animation(
+                .easeInOut(duration: 0.9)
+                    .repeatForever(autoreverses: true)
+                    .delay(Double(index) * 0.07),
+                value: skeletonPulse
+            )
+            .onAppear { skeletonPulse = true }
+            .allowsHitTesting(false)
     }
 
     /// Vertical DSEG7 day separator between the timeline's day sections.
