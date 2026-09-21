@@ -44,6 +44,10 @@ struct ViewerView: View {
     @State private var displayedImagePath: String? = nil
     // Fade used whenever the displayed image appears/disappears/changes.
     private static let imageFade = Animation.easeInOut(duration: 0.18)
+    /// One discrete zoom step (the actual-size button, keyboard-free jumps):
+    /// the same duration a tap on the zoom buttons ramps over, so every way of
+    /// changing the scale moves at one familiar speed.
+    private static let zoomStep = Animation.easeInOut(duration: ZoomRamp.tapDuration)
     @State private var isLoadingImage = false
     // Server negative-cached the file (unsupported/corrupted): distinct state,
     // no further requests for it.
@@ -66,6 +70,17 @@ struct ViewerView: View {
 
     private let minScale: CGFloat = 0.1
     private let maxScale: CGFloat = 10.0
+
+    /// Live state of a held zoom button. A class, not @State scalars: the ramp
+    /// loop reads the release flag every frame from inside an escaping task,
+    /// and a shared box is the honest way to do that — it also keeps the 60Hz
+    /// bookkeeping out of SwiftUI's invalidation, so only `scale` redraws.
+    private final class ZoomHold {
+        var task: Task<Void, Never>?
+        var isHeld = false
+        var isReleased = true
+    }
+    @State private var zoomHold = ZoomHold()
 
     /// Point height of the strip tiles (THUMB-1: square tiles). The asset
     /// they request is ServerImageLoader.tileAssetSize; the main image area
@@ -96,6 +111,9 @@ struct ViewerView: View {
             }
         }
         .onChange(of: model.selectedID) { _, _ in
+            // A ramp still running would fight the reset below, and it is
+            // zooming an image that is on its way out.
+            cancelZoom()
             // Glide a zoomed/panned image back to fit while the fade runs,
             // instead of snapping the frame before the old image disappears.
             withAnimation(Self.imageFade) {
@@ -110,6 +128,7 @@ struct ViewerView: View {
         .task(id: model.selectedID) {
             await loadPreview()
         }
+        .onDisappear { cancelZoom() }
     }
 
     // MARK: - Empty state
@@ -339,15 +358,19 @@ struct ViewerView: View {
     private var controlBar: some View {
         HStack(spacing: 2) {
             let hasImage = currentImage != nil
-            controlButton("minus.magnifyingglass", help: "Zoom out") { setScale(scale / 1.5) }
+            zoomButton("minus.magnifyingglass", help: "Zoom out (hold to keep zooming)",
+                       direction: .outward)
                 .disabled(!hasImage)
-            controlButton("plus.magnifyingglass", help: "Zoom in") { setScale(scale * 1.5) }
+            zoomButton("plus.magnifyingglass", help: "Zoom in (hold to keep zooming)",
+                       direction: .inward)
                 .disabled(!hasImage)
             controlButton("arrow.down.right.and.arrow.up.left", help: "Fit to window") {
                 withAnimation(Self.imageFade) { resetTransform() }
             }
             .disabled(!hasImage)
-            controlButton("1.magnifyingglass", help: "Actual size (1:1 pixels)") { zoomToActualSize() }
+            controlButton("1.magnifyingglass", help: "Actual size (1:1 pixels)") {
+                withAnimation(Self.zoomStep) { zoomToActualSize() }
+            }
                 .disabled(!hasImage || isPlaceholderImage)
 
             controlDivider
@@ -373,6 +396,23 @@ struct ViewerView: View {
         .overlay(Capsule().stroke(Theme.border, lineWidth: 1))
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity)
+    }
+
+    /// A zoom button that keeps zooming while held. The press drives a ramp
+    /// rather than a step, so a click and a long hold are one continuous
+    /// motion. Mouse-down is what starts it, so the button's own action only
+    /// has to cover an activation that never touched the mouse — Full Keyboard
+    /// Access, VoiceOver — which sends no drag for the gesture to see.
+    private func zoomButton(_ symbol: String, help: String,
+                            direction: ZoomRamp.Direction) -> some View {
+        controlButton(symbol, help: help) { tapZoom(direction) }
+            .simultaneousGesture(
+                // Zero minimum distance: the zoom must start on mouse-down,
+                // and a press that never moves is still a press.
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in beginZoom(direction) }
+                    .onEnded { _ in releaseZoom() }
+            )
     }
 
     private func controlButton(_ symbol: String, help: String,
@@ -652,6 +692,61 @@ struct ViewerView: View {
         gestureScaleBase = scale
     }
 
+    /// Starts (or restarts) the held-button zoom. Idempotent: a press sends a
+    /// stream of drag changes, and only the first one means anything.
+    private func beginZoom(_ direction: ZoomRamp.Direction) {
+        guard !zoomHold.isHeld, currentImage != nil else { return }
+        let hold = zoomHold
+        hold.isHeld = true
+        hold.isReleased = false
+        hold.task?.cancel()
+
+        let start = scale
+        let began = Date()
+        hold.task = Task { @MainActor in
+            while !Task.isCancelled {
+                let elapsed = Date().timeIntervalSince(began)
+                let next = ZoomRamp.scale(from: start, direction: direction, elapsed: elapsed,
+                                          minScale: minScale, maxScale: maxScale)
+                // Set straight, with no implicit animation: the ramp already
+                // IS the animation, a new value every frame. Wrapping it would
+                // put an interpolation behind an interpolation and lag the
+                // image a fixed distance behind the button.
+                setScale(next)
+                if ZoomRamp.isFinished(elapsed: elapsed, isReleased: hold.isReleased, scale: next,
+                                       direction: direction,
+                                       minScale: minScale, maxScale: maxScale) { break }
+                try? await Task.sleep(nanoseconds: UInt64(ZoomRamp.frameInterval * 1_000_000_000))
+            }
+            hold.task = nil
+        }
+    }
+
+    /// Mouse-up. The ramp is not cut here: it runs on until the press is worth
+    /// a full tap step, so a quick click still glides its 1.5x instead of
+    /// snapping a few pixels and stopping.
+    private func releaseZoom() {
+        zoomHold.isReleased = true
+        zoomHold.isHeld = false
+    }
+
+    /// One step, for an activation with no press behind it. A mouse click
+    /// arrives here too — on mouse-up, with its own ramp still settling — and
+    /// that ramp being alive is exactly what marks the click as already
+    /// handled, so it must not zoom a second time.
+    private func tapZoom(_ direction: ZoomRamp.Direction) {
+        guard zoomHold.task == nil else { return }
+        beginZoom(direction)
+        releaseZoom()
+    }
+
+    private func cancelZoom() {
+        zoomHold.task?.cancel()
+        zoomHold.task = nil
+        zoomHold.isHeld = false
+        zoomHold.isReleased = true
+    }
+
     /// Scroll-wheel zoom about the pointer: the pixel under the cursor stays
     /// under the cursor, which is what makes a wheel usable for framing a
     /// detail — zooming about the centre walks the subject off screen and
@@ -670,10 +765,17 @@ struct ViewerView: View {
                                          minScale: minScale,
                                          maxScale: maxScale)
         else { return }
-        panOffset = step.panOffset
-        panBase = step.panOffset
-        scale = step.scale
-        gestureScaleBase = step.scale
+        // A trackpad sends a stream of tiny deltas that is already smooth;
+        // a mouse wheel sends a few large notches, and each one lands as a
+        // visible jump unless it is glided. Anchoring survives either way —
+        // scale and pan animate together, so the point under the cursor is
+        // held for every frame in between, not just at the ends.
+        withAnimation(isPrecise ? nil : .easeOut(duration: 0.12)) {
+            panOffset = step.panOffset
+            panBase = step.panOffset
+            scale = step.scale
+            gestureScaleBase = step.scale
+        }
     }
 
     private func resetTransform() {
