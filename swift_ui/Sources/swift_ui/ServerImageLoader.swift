@@ -565,8 +565,8 @@ actor ServerImageLoader {
                 // A result under the cap means the source itself was smaller,
                 // so this bitmap IS full resolution — record that and the
                 // viewer skips its zoom-time upgrade entirely.
-                if let rep = image.representations.first,
-                   max(rep.pixelsWide, rep.pixelsHigh) < Self.previewMaxPixelSize {
+                if let pixels = image.pixelDimensions,
+                   max(pixels.width, pixels.height) < CGFloat(Self.previewMaxPixelSize) {
                     knownFullRes.insert(filePath)
                 }
                 ImageCache.shared.setImage(image, forKey: "\(filePath)_preview")
@@ -671,42 +671,19 @@ actor ServerImageLoader {
         await decodeImageInBackground(filePath: path)
     }
 
-    /// Scaled decode through ImageIO. libjpeg decodes directly at a reduced
-    /// scale rather than decoding full size and shrinking afterwards, so a
-    /// 50 MP camera JPEG costs a fraction of the time and the memory of a
-    /// full decode. EXIF orientation is applied by the transform option.
+    /// Scaled decode, off the actor. See `ImageDecoding.decodeDownsampled`.
     private func decodeDownsampledImageInBackground(filePath: String,
                                                     maxPixelSize: Int,
                                                     priority: TaskPriority? = nil) async -> NSImage? {
         return await Task.detached(priority: priority ?? .userInitiated) {
-            let url = URL(fileURLWithPath: filePath)
-            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-            let options: [CFString: Any] = [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceShouldCacheImmediately: true,
-                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
-            ]
-            guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
-                return nil
-            }
-            let size = NSSize(width: cgImage.width, height: cgImage.height)
-            return NSImage(cgImage: cgImage, size: size)
+            ImageDecoding.decodeDownsampled(path: filePath, maxPixelSize: maxPixelSize)
         }.value
     }
 
+    /// Full-resolution decode, off the actor. See `ImageDecoding.decodeFullSize`.
     private func decodeImageInBackground(filePath: String, priority: TaskPriority? = nil) async -> NSImage? {
         return await Task.detached(priority: priority ?? .userInitiated) {
-            let url = URL(fileURLWithPath: filePath)
-            let options: [CFString: Any] = [
-                kCGImageSourceShouldCacheImmediately: true
-            ]
-            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-                  let cgImage = CGImageSourceCreateImageAtIndex(source, 0, options as CFDictionary) else {
-                return nil
-            }
-            let size = NSSize(width: cgImage.width, height: cgImage.height)
-            return NSImage(cgImage: cgImage, size: size)
+            ImageDecoding.decodeFullSize(path: filePath)
         }.value
     }
     

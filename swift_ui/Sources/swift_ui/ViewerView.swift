@@ -793,8 +793,9 @@ struct ViewerView: View {
         // are the tile's, not the photo's, so "1:1" would land nowhere near it.
         guard !isPlaceholderImage,
               let image = currentImage, mainAreaSize.width > 0, mainAreaSize.height > 0 else { return }
-        let pixelWidth = image.representations.first.map { CGFloat($0.pixelsWide) } ?? image.size.width
-        let pixelHeight = image.representations.first.map { CGFloat($0.pixelsHigh) } ?? image.size.height
+        let pixels = image.pixelDimensions ?? image.size
+        let pixelWidth = pixels.width
+        let pixelHeight = pixels.height
         guard pixelWidth > 0, pixelHeight > 0 else { return }
         let fitRatio = min(mainAreaSize.width / pixelWidth, mainAreaSize.height / pixelHeight)
         guard fitRatio > 0 else { return }
