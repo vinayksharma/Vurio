@@ -11,17 +11,30 @@ struct HorizontalScrollObservation: Equatable {
     var viewportWidth: CGFloat = 0
 }
 
+extension NSScrollView {
+    /// Move a horizontal scroll view to `x`, clamped to its content. Shared
+    /// by the two things that drive a strip from outside: the scrollbar thumb
+    /// below and the mouse wheel (StripWheelScroll), so the clamp is written
+    /// once. Returns whether the offset actually changed — a caller at an end
+    /// of the strip gets told it went nowhere.
+    @discardableResult
+    func scrollHorizontally(to x: CGFloat) -> Bool {
+        let clip = contentView
+        let maxX = max(0, (documentView?.frame.width ?? 0) - clip.bounds.width)
+        let clamped = min(max(x, 0), maxX)
+        guard abs(clamped - clip.bounds.origin.x) > 0.01 else { return false }
+        clip.scroll(to: NSPoint(x: clamped, y: clip.bounds.origin.y))
+        reflectScrolledClipView(clip)
+        return true
+    }
+}
+
 /// Handle for driving the observed scroll view from the scrollbar thumb.
 final class HorizontalScrollbarControl {
     weak var scrollView: NSScrollView?
 
     func setOffsetX(_ x: CGFloat) {
-        guard let scrollView = scrollView else { return }
-        let clip = scrollView.contentView
-        let maxX = max(0, (scrollView.documentView?.frame.width ?? 0) - clip.bounds.width)
-        let clamped = min(max(x, 0), maxX)
-        clip.scroll(to: NSPoint(x: clamped, y: clip.bounds.origin.y))
-        scrollView.reflectScrolledClipView(clip)
+        scrollView?.scrollHorizontally(to: x)
     }
 }
 

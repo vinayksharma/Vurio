@@ -20,6 +20,10 @@ struct VurioApp: App {
                 CTFontManagerRegisterFontsForURL(fontURL as CFURL, .process, nil)
             }
         }
+        // STRIP-4: let a mouse wheel move the film strips sideways. A wheel
+        // only reports vertical travel, which AppKit hands straight past a
+        // horizontal ScrollView, so the strips ignored it entirely.
+        StripWheelScroll.shared.install()
         // Connect to the C++ backend via UDS
         VurioGrpcClient.shared.connect()
     }
