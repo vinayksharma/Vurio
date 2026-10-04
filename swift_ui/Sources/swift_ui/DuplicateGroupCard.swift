@@ -353,7 +353,7 @@ struct DuplicateMemberView: View {
             // One shared asset (tileAssetSize) for every surface — the
             // representative displays at 80 pt tall, candidates and VU tiles at
             // 70, all off the same cache entry.
-            ThumbnailView(filePath: file.filePath, size: tile, cachedThumbnailPath: file.cachedThumbnailPath, cachedThumbnails: file.cachedThumbnails, requestSize: ServerImageLoader.tileAssetSize)
+            ThumbnailView(filePath: file.filePath, size: tile, cachedThumbnailPath: file.cachedThumbnailPath, cachedThumbnails: file.cachedThumbnails, requestSize: ServerImageLoader.tileAssetSize, renderRevision: Int(file.renderRevision))
                 .frame(width: width, height: height)
                 .cornerRadius(cornerRadius)
                 .opacity(file.isEjected ? 0.3 : 1.0)

@@ -27,6 +27,7 @@ final class VurioGrpcClient {
     var duplicates: Vurio_Dedup_DuplicatesServiceAsyncClient?
     var advanced: Vurio_Dedup_AdvancedSettingsServiceAsyncClient?
     var mediaStreaming: Vurio_Dedup_MediaServiceAsyncClient?
+    var adjustments: Vurio_Dedup_AdjustmentsServiceAsyncClient? // ADJ-2
 
     /// Identity of the instance we are paired with, for the log and the
     /// sidebar. Nil until paired.
@@ -305,6 +306,7 @@ final class VurioGrpcClient {
         self.duplicates = Vurio_Dedup_DuplicatesServiceAsyncClient(channel: ch, defaultCallOptions: options)
         self.advanced = Vurio_Dedup_AdvancedSettingsServiceAsyncClient(channel: ch, defaultCallOptions: options)
         self.mediaStreaming = Vurio_Dedup_MediaServiceAsyncClient(channel: ch, defaultCallOptions: options)
+        self.adjustments = Vurio_Dedup_AdjustmentsServiceAsyncClient(channel: ch, defaultCallOptions: options)
         print("gRPC paired with \(Self.describe(inst)) at \(inst.endpoint)\(takeLock ? "" : " (no lock)")")
         signalPaired()
 

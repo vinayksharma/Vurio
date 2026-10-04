@@ -107,13 +107,13 @@ class DuplicatesViewModel: ObservableObject {
             let assetSize = ServerImageLoader.tileAssetSize
             if let rep = rep {
                 if ImageCache.shared.getImage(forKey: ThumbnailAssetKey.make(filePath: rep.filePath, size: assetSize)) == nil {
-                    _ = try? await ServerImageLoader.shared.loadThumbnail(filePath: rep.filePath, size: assetSize, cachedThumbnailPath: rep.cachedThumbnailPath(forAssetSize: assetSize), layerPriority: ServerImageLoader.prefetchPriority)
+                    _ = try? await ServerImageLoader.shared.loadThumbnail(filePath: rep.filePath, size: assetSize, cachedThumbnailPath: rep.cachedThumbnailPath(forAssetSize: assetSize), layerPriority: ServerImageLoader.prefetchPriority, revision: Int(rep.renderRevision))
                 }
             }
             for file in candidates {
                 try? Task.checkCancellation()
                 if ImageCache.shared.getImage(forKey: ThumbnailAssetKey.make(filePath: file.filePath, size: assetSize)) == nil {
-                    _ = try? await ServerImageLoader.shared.loadThumbnail(filePath: file.filePath, size: assetSize, cachedThumbnailPath: file.cachedThumbnailPath(forAssetSize: assetSize), layerPriority: ServerImageLoader.prefetchPriority)
+                    _ = try? await ServerImageLoader.shared.loadThumbnail(filePath: file.filePath, size: assetSize, cachedThumbnailPath: file.cachedThumbnailPath(forAssetSize: assetSize), layerPriority: ServerImageLoader.prefetchPriority, revision: Int(file.renderRevision))
                 }
             }
         }

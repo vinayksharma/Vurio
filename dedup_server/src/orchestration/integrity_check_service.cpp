@@ -257,6 +257,23 @@ namespace MediaDedup
                     int resolved_errors_removed = del_resolved_errors.execute();
                     errors_removed += resolved_errors_removed;
 
+                    // ADJ-4: edit rows whose file row is gone. The sidecar on
+                    // disk is left alone (it is the user's portable copy and
+                    // is re-imported if the file comes back); only the
+                    // registration-scoped row goes, like the thumbnails above.
+                    try
+                    {
+                        Poco::Data::Statement del_adjustments(sess);
+                        del_adjustments << "DELETE FROM image_adjustments WHERE file_path NOT IN (SELECT file_path FROM scanned_files)";
+                        int adjustments_removed = del_adjustments.execute();
+                        if (adjustments_removed > 0)
+                            logger.information("Removed %d orphaned adjustment rows.", adjustments_removed);
+                    }
+                    catch (const std::exception &e)
+                    {
+                        logger.warning("Orphaned adjustment cleanup failed: %s", std::string(e.what()));
+                    }
+
                     {
                         std::lock_guard<std::mutex> lock(state_mutex_);
                         state_.thumbnails_removed += thumbs_removed;

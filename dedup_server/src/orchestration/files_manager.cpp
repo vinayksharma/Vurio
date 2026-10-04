@@ -3,6 +3,8 @@
 #include "database/processing_errors_ops.hpp"
 #include "database/duplicate_groups_ops.hpp"
 #include "database/user_settings_ops.hpp"
+#include "adjustments/adjustment_store.hpp"
+#include "adjustments/sidecar_layout.hpp"
 #include <Poco/Logger.h>
 #include <filesystem>
 #include <nlohmann/json.hpp>
@@ -51,6 +53,16 @@ namespace MediaDedup::Orchestration
                                      const FileRecord &rec)
     {
         Poco::Logger &logger = Poco::Logger::get("FilesManager");
+
+        // ADJ-1: a sidecar is not media; hand it to the adjustment store
+        // (import if new or changed) and stop. Zero extra I/O: the walk
+        // already enumerated it.
+        if (!rec.hasError() && MediaDedup::Adjustments::SidecarLayout::isSidecarName(rec.fileName) &&
+            MediaDedup::Adjustments::AdjustmentStore::instance().isInitialized())
+        {
+            MediaDedup::Adjustments::AdjustmentStore::instance().onSidecarSeen(root, rec.fullPath);
+            return;
+        }
 
         // Check if this file has a supported media extension
         if (!mediaProcessor_)
@@ -345,6 +357,12 @@ namespace MediaDedup::Orchestration
                     if (MediaDedup::UserSettingsOps::get(*db_, "ejectionPathIgnored:" + loc_key, ignored_path)) {
                         opt.ignoredPaths.push_back(ignored_path);
                     }
+                    // ADJ-1: an edits folder nested inside the location is not
+                    // media; its sidecars are walked separately below.
+                    if (MediaDedup::Adjustments::AdjustmentStore::instance().isInitialized()) {
+                        for (const auto &p : MediaDedup::Adjustments::AdjustmentStore::instance().ignoredPathsFor(root))
+                            opt.ignoredPaths.push_back(p);
+                    }
 
                     logger.information(std::string("Scanning root: ") + root +
                                        ", recursive=" + (opt.recursive ? "true" : "false") +
@@ -354,6 +372,10 @@ namespace MediaDedup::Orchestration
                     scan(root, opt, [this, root](const FileRecord &rec)
                          { onFileEmitted(root, rec); });
                     logger.information(std::string("Completed scanning root: ") + root);
+                    // ADJ-1: walk an external edits folder for this location
+                    // and deliver any spooled sidecars whose folder is back.
+                    if (!abortScan_.load() && MediaDedup::Adjustments::AdjustmentStore::instance().isInitialized())
+                        MediaDedup::Adjustments::AdjustmentStore::instance().finishLocationScan(root);
                 }
                 catch (const std::exception &e)
                 {

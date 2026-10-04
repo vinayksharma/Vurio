@@ -1,4 +1,6 @@
 #include "core/server_initializer.hpp"
+#include "adjustments/adjustment_store.hpp"
+#include "adjustments/sidecar_store.hpp"
 #include "config/unified_observable_config.hpp"
 #include "utils/tool_paths.hpp"
 #include "core/media_backfill.hpp"
@@ -199,6 +201,17 @@ namespace MediaDedup
                 return false;
             }
             logger.information("Preview cache table ensured");
+
+            // ADJ-1: per-file adjustments. Loaded before any render path
+            // runs (thumbnail pre-warm, gRPC media, list queries) so every
+            // revision lookup sees the full map from the first request.
+            {
+                std::string db_path = config_manager_->getPropertyValue<std::string>("database.path", "data/dedup_server.db");
+                Adjustments::AdjustmentStore::instance().initialize(
+                    database_manager_, config_manager_,
+                    Adjustments::SidecarStore::defaultSpoolRoot(db_path), thumbnail_disk_cache_);
+                logger.information("Adjustment store initialized");
+            }
 
             // Clear cache tables if configured to clear physical caches on startup
             if (config_manager_->getPropertyValue<bool>("cache.thumbnail.clearOnStartup", false))

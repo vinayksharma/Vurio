@@ -64,7 +64,8 @@ namespace MediaDedup
          */
         static bool thumbnailExists(const std::string &file_path,
                                     int size,
-                                    DatabaseManager &db);
+                                    DatabaseManager &db,
+                                    int render_revision = 0);
 
         /**
          * @brief Get the modified time of a file

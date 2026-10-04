@@ -223,10 +223,11 @@ namespace MediaDedup
                        int quality,
                        int timeout_ms,
                        const std::string &source_for_log,
-                       Poco::Logger &logger)
+                       Poco::Logger &logger,
+                       const Adjustments::RenderChain &chain)
         {
             std::vector<std::string> args =
-                ThumbnailGenerator::buildMagickArgs(read_path, output_path, size, quality);
+                ThumbnailGenerator::buildMagickArgs(read_path, output_path, size, quality, chain);
 
             SubprocessResult result = runProcessWithTimeout(ToolPaths::magickPath(), args, timeout_ms,
                                                             ToolPaths::magickResourceEnv());
@@ -252,7 +253,8 @@ namespace MediaDedup
     std::vector<std::string> ThumbnailGenerator::buildMagickArgs(const std::string &read_path,
                                                                  const std::string &output_path,
                                                                  int size,
-                                                                 int quality)
+                                                                 int quality,
+                                                                 const Adjustments::RenderChain &chain)
     {
         std::vector<std::string> args;
         args.push_back(read_path);
@@ -264,6 +266,9 @@ namespace MediaDedup
         args.push_back("-depth");
         args.push_back("8");
         args.push_back("-auto-orient");
+        // ADJ-1: the user's edits compose on the auto-oriented base and run
+        // before the resize (THUMB-1 §4.4). Empty for an un-edited file.
+        chain.appendMagickOps(args);
         args.push_back("-colorspace");
         args.push_back("sRGB");
         if (size > 0)
@@ -284,7 +289,8 @@ namespace MediaDedup
                                              int size,
                                              Magick::Blob &blob,
                                              int quality,
-                                             int timeout_ms)
+                                             int timeout_ms,
+                                             const Adjustments::RenderChain &chain)
     {
         try
         {
@@ -306,16 +312,38 @@ namespace MediaDedup
             // Native resolution out of RAW sensor data: develop it in-process.
             // This IS the requested output — full resolution, encoded once at
             // the requested quality — so nothing below needs to run.
+            TempFileCleanup demosaic_cleanup;
             if (!input.demosaic_source.empty())
             {
                 if (RawDemosaicRenderer::renderToBlob(input.demosaic_source, quality, timeout_ms, blob))
-                    return true;
+                {
+                    if (chain.isIdentity())
+                        return true;
+                    // ADJ-1: the demosaic bypasses the magick operator chain,
+                    // so an edited RAW at native resolution takes one more
+                    // pass: developed JPEG in, edited JPEG out (docs §5.3).
+                    demosaic_cleanup.path = makeTempFilePath("adj_raw", ".jpg");
+                    std::ofstream developed(demosaic_cleanup.path, std::ios::binary);
+                    developed.write(static_cast<const char *>(blob.data()), static_cast<std::streamsize>(blob.length()));
+                    developed.close();
+                    if (developed.fail())
+                    {
+                        logger.error("Failed to stage the developed RAW for the edit chain: %s", source_path);
+                        return false;
+                    }
+                    input.read_path = "jpeg:" + demosaic_cleanup.path;
+                    input.demosaic_source.clear();
+                    blob = Magick::Blob();
+                }
+                else
+                {
                 if (input.fallback_read_path.empty())
                     return false;
                 // A small real image beats none, and beats letting a readable
                 // file drift into the negative cache.
                 logger.warning("RAW demosaic failed, falling back to the embedded preview for: %s", source_path);
                 input.read_path = input.fallback_read_path;
+                }
             }
 
             const std::string &read_path = input.read_path;
@@ -324,6 +352,9 @@ namespace MediaDedup
             // MP-1: JPEG/PNG inputs (previews, RAW-embedded JPEGs, ordinary
             // photos — the overwhelming majority) encode in-process; magick
             // remains the fallback and the path for TIFF/HEIC/exotics.
+            // ADJ-1: the shortcut knows no edit operators, so an edited file
+            // always takes the magick path below (docs §5.4).
+            if (chain.isIdentity())
             {
                 std::string plain_path = read_path;
                 bool opencv_ok_format = false;
@@ -345,7 +376,7 @@ namespace MediaDedup
             TempFileCleanup out_cleanup;
             out_cleanup.path = makeTempFilePath("thumb_out", ".jpg");
 
-            if (!runMagick(read_path, out_cleanup.path, size, quality, timeout_ms, source_path, logger))
+            if (!runMagick(read_path, out_cleanup.path, size, quality, timeout_ms, source_path, logger, chain))
                 return false;
 
             std::ifstream file(out_cleanup.path, std::ios::binary | std::ios::ate);

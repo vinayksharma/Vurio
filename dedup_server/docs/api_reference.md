@@ -1536,3 +1536,29 @@ When adding new API endpoints or modifying existing ones:
 
 This web server component is part of the Media Deduplication Server project and follows the same licensing terms.
 
+
+---
+
+# Adjustments (gRPC, ADJ-1)
+
+Non-destructive per-image edits (crop + rotate) — `AdjustmentsService` in
+`src/api/dedup.proto`, implemented by `include/core/grpc_server/adjustments_service.hpp`
+over `Adjustments::AdjustmentStore`. Full design: `docs/todo_image_adjustments.md`.
+
+| RPC | Purpose |
+|---|---|
+| `DescribeTools` | Tool descriptors (ids, labels, parameter limits/defaults) in application order; the client builds its controls from these |
+| `GetAdjustments` | The file's document (sidecar JSON), revision, post-edit geometry, sidecar location/spool state |
+| `SetAdjustments` | Validate + store a complete document; writes the sidecar (or spools it), invalidates cached renders, pushes `MediaReadyEvent{media_type="adjustments"}`. `INVALID_ARGUMENT` carries the tool's error; identity removes the edit |
+| `GetEditsRoot` / `SetEditsRoot` | Per-location edit-file folder (default: the location); changing it moves existing sidecars; `ALREADY_EXISTS` when shared/nested with another location |
+
+Related fields: `GetMediaRequest.render_revision` (informational) and
+`MediaPathResponse.render_revision` (the revision actually served);
+`DayFile`/`DuplicateFile.render_revision`; `RegisterLocationRequest.edits_root`;
+`DeregisterLocationRequest.delete_adjustment_files`; `GetStatusResponse.edits_roots`.
+
+Storage: `image_adjustments(file_path PK, location_key, render_revision, document,
+sidecar_path, sidecar_mtime, updated_at)`; sidecars `<asset>.vurio.json`; spool
+`<database dir>/pending_edits/<location sha>/<relative path>.vurio.json`.
+Thumbnails are keyed by `render_revision`; the QHD preview is base pixels (the
+viewer applies the chain itself); native renders carry the chain.

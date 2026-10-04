@@ -21,10 +21,13 @@ struct ViewerView: View {
     let onClose: () -> Void
 
     @StateObject private var model = ViewerViewModel()
+    /// ADJ-2: the selected file's edits (rotate/crop), the panel's state,
+    /// and the commits. The bitmap on screen is the BASE image; the chain
+    /// is applied as layout (docs §6.2).
+    @StateObject private var adjustments = AdjustmentsViewModel()
 
     @State private var scale: CGFloat = 1.0
     @State private var gestureScaleBase: CGFloat = 1.0
-    @State private var rotation: Double = 0
     @State private var panOffset: CGSize = .zero
     @State private var panBase: CGSize = .zero
     /// True while the drag-to-pan gesture is live, so the pointer can close
@@ -91,16 +94,24 @@ struct ViewerView: View {
     private var stripTileHeight: CGFloat { strip.tileHeight(for: .viewer) }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // The path bar (and its close button) stays up even when the strip
-            // is empty so the viewer can always be dismissed.
-            pathBar
-            if model.items.isEmpty && !model.isLoading {
-                emptyState
-            } else {
-                mainImageArea
-                controlBar
-                thumbnailStrip
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                // The path bar (and its close button) stays up even when the strip
+                // is empty so the viewer can always be dismissed.
+                pathBar
+                if model.items.isEmpty && !model.isLoading {
+                    emptyState
+                } else {
+                    mainImageArea
+                    controlBar
+                    thumbnailStrip
+                }
+            }
+            // ADJ-2: the tool panel on the right edge, collapsible to a rail.
+            if !model.items.isEmpty || model.isLoading {
+                AdjustmentsPanel(model: adjustments,
+                                 currentImage: isPlaceholderImage ? nil : currentImage,
+                                 hasImage: currentImage != nil && !isPlaceholderImage)
             }
         }
         .background(Theme.background)
@@ -109,6 +120,17 @@ struct ViewerView: View {
             if let request {
                 await model.load(request)
             }
+        }
+        // ADJ-2: the selected file's edits load alongside its preview.
+        .task(id: model.selectedID) {
+            await adjustments.load(filePath: model.selectedImage?.filePath)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .adjustmentsChanged)) { note in
+            guard let filePath = note.userInfo?["filePath"] as? String,
+                  let revision = note.userInfo?["renderRevision"] as? Int else { return }
+            model.applyAdjustments(filePath: filePath, renderRevision: Int32(revision),
+                                   displayWidth: Int32(note.userInfo?["displayWidth"] as? Int ?? 0),
+                                   displayHeight: Int32(note.userInfo?["displayHeight"] as? Int ?? 0))
         }
         .onChange(of: model.selectedID) { _, _ in
             // A ramp still running would fight the reset below, and it is
@@ -212,13 +234,7 @@ struct ViewerView: View {
                 Theme.background
 
                 if let image = currentImage {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: geometry.size.width, height: geometry.size.height)
-                        .scaleEffect(scale)
-                        .rotationEffect(.degrees(rotation))
-                        .offset(panOffset)
+                    adjustedImage(image, in: geometry.size)
                         // Identity follows the displayed file, so navigating
                         // cross-fades between images (both layers animate their
                         // opacity inside the ZStack) — while the full-res swap,
@@ -279,8 +295,9 @@ struct ViewerView: View {
                 }
             )
             // Open hand over the image, grab while panning. Hit-test-transparent
-            // like the scroll catcher; the arrow stays when there is no image.
-            .overlay(PanCursorOverlay(isEnabled: currentImage != nil, isDragging: isPanning))
+            // like the scroll catcher; the arrow stays when there is no image
+            // (and in crop mode, where the handles own the pointer).
+            .overlay(PanCursorOverlay(isEnabled: currentImage != nil && !adjustments.isCropEditing, isDragging: isPanning))
             // Unobtrusive badge while a better bitmap than the one on screen is
             // being pulled — the thumbnail placeholder waiting on its preview,
             // or the preview waiting on its full-resolution render. What is
@@ -300,6 +317,54 @@ struct ViewerView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// ADJ-2 (docs §6.2): the base bitmap laid out under the file's edit
+    /// chain. The strip-tile placeholder is already edited pixels, so it is
+    /// shown as is. In crop mode the whole rotated canvas is fitted, nothing
+    /// is clipped, and the crop editor sits on top; zoom and pan are parked.
+    @ViewBuilder
+    private func adjustedImage(_ image: NSImage, in area: CGSize) -> some View {
+        let base = image.pixelDimensions ?? image.size
+        let editing = adjustments.isCropEditing && !isPlaceholderImage
+        let quarterTurns = isPlaceholderImage ? 0 : (adjustments.rotate?.quarterTurns ?? 0)
+        let angle = isPlaceholderImage ? 0 : (adjustments.rotate?.angle ?? 0)
+        let crop = isPlaceholderImage ? AdjustmentGeometry.NormRect.full : (adjustments.crop?.rect ?? .full)
+        if let layout = AdjustmentLayout.compute(base: base, area: area, quarterTurns: quarterTurns,
+                                                 angle: angle, crop: crop, editing: editing) {
+            ZStack(alignment: .topLeading) {
+                ZStack {
+                    Image(nsImage: image)
+                        .resizable()
+                        .frame(width: layout.imageSize.width, height: layout.imageSize.height)
+                        .rotationEffect(.degrees(layout.totalDegrees))
+                        .offset(layout.imageOffset)
+                }
+                .frame(width: layout.frameSize.width, height: layout.frameSize.height)
+                .clipped()
+                .frame(width: area.width, height: area.height)
+                .scaleEffect(editing ? 1 : scale)
+                .offset(editing ? .zero : panOffset)
+
+                if editing, let cropTool = adjustments.crop {
+                    CropOverlay(layout: layout, rect: cropTool.rect,
+                                lockedAspect: cropTool.lockedAspect(turnedBase: adjustments.turnedBase),
+                                rulerMode: adjustments.isRulerMode,
+                                onChange: { rect in adjustments.setCropRect(rect) },
+                                onEnded: { adjustments.commitCrop() },
+                                onRuler: { a, b in adjustments.applyRuler(from: a, to: b) })
+                        .frame(width: area.width, height: area.height)
+                }
+            }
+            .frame(width: area.width, height: area.height)
+        } else {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: area.width, height: area.height)
+                .scaleEffect(scale)
+                .offset(panOffset)
+        }
     }
 
     private func loadingBadge(_ text: String) -> some View {
@@ -326,6 +391,7 @@ struct ViewerView: View {
         // starts and ends a pan of zero translation, which moves nothing.
         DragGesture(minimumDistance: 0)
             .onChanged { value in
+                guard !adjustments.isCropEditing else { return }
                 isPanning = true
                 panOffset = CGSize(
                     width: panBase.width + value.translation.width,
@@ -341,6 +407,7 @@ struct ViewerView: View {
     private var magnifyGesture: some Gesture {
         MagnificationGesture()
             .onChanged { value in
+                guard !adjustments.isCropEditing else { return }
                 scale = clampScale(gestureScaleBase * value.magnitude)
             }
             .onEnded { _ in
@@ -375,14 +442,16 @@ struct ViewerView: View {
 
             controlDivider
 
-            controlButton("rotate.left", help: "Rotate left") {
-                withAnimation(.easeInOut(duration: 0.2)) { rotation -= 90 }
+            // ADJ-2 (decision 5): same buttons, but a press is now a saved
+            // quarter turn through the Rotate tool.
+            controlButton("rotate.left", help: "Rotate left (saved with the image)") {
+                withAnimation(.easeInOut(duration: 0.2)) { adjustments.turn(by: -1) }
             }
-            .disabled(!hasImage)
-            controlButton("rotate.right", help: "Rotate right") {
-                withAnimation(.easeInOut(duration: 0.2)) { rotation += 90 }
+            .disabled(!hasImage || isPlaceholderImage || !adjustments.isAvailable)
+            controlButton("rotate.right", help: "Rotate right (saved with the image)") {
+                withAnimation(.easeInOut(duration: 0.2)) { adjustments.turn(by: 1) }
             }
-            .disabled(!hasImage)
+            .disabled(!hasImage || isPlaceholderImage || !adjustments.isAvailable)
 
             if model.isGroupMode, let selected = model.selectedImage, !selected.isRepresentative {
                 controlDivider
@@ -632,7 +701,8 @@ struct ViewerView: View {
             size: tile,
             cachedThumbnailPath: image.cachedThumbnailPath,
             cachedThumbnails: image.cachedThumbnails,
-            requestSize: ServerImageLoader.tileAssetSize
+            requestSize: ServerImageLoader.tileAssetSize,
+            renderRevision: Int(image.renderRevision)
         )
         .frame(width: tile.width, height: tile.height)
         .cornerRadius(8)
@@ -658,9 +728,20 @@ struct ViewerView: View {
     private var keyboardShortcuts: some View {
         if isActive {
             Group {
-                Button("") { onClose() }
+                // ADJ-2: Esc leaves crop mode first; only then closes.
+                Button("") {
+                    if adjustments.isCropEditing { adjustments.exitCropEditing() } else { onClose() }
+                }
                     .keyboardShortcut(.escape, modifiers: [])
                     .hidden()
+                Button("") { adjustments.isCollapsed.toggle() }
+                    .keyboardShortcut("a", modifiers: [.command, .option])
+                    .hidden()
+                if adjustments.isCropEditing {
+                    Button("") { adjustments.exitCropEditing() }
+                        .keyboardShortcut(.return, modifiers: [])
+                        .hidden()
+                }
                 if !model.items.isEmpty {
                     Button("") { model.selectPrevious() }
                         .keyboardShortcut(.leftArrow, modifiers: [])
@@ -755,7 +836,7 @@ struct ViewerView: View {
     /// gesture bases, so a drag or pinch started next carries on from here.
     private func zoom(by deltaY: CGFloat, at location: CGPoint, in size: CGSize,
                       isPrecise: Bool) {
-        guard currentImage != nil,
+        guard currentImage != nil, !adjustments.isCropEditing,
               let step = ScrollZoom.step(scale: scale,
                                          panOffset: panOffset,
                                          deltaY: deltaY,
@@ -781,7 +862,6 @@ struct ViewerView: View {
     private func resetTransform() {
         scale = 1.0
         gestureScaleBase = 1.0
-        rotation = 0
         panOffset = .zero
         panBase = .zero
     }
@@ -794,12 +874,15 @@ struct ViewerView: View {
         guard !isPlaceholderImage,
               let image = currentImage, mainAreaSize.width > 0, mainAreaSize.height > 0 else { return }
         let pixels = image.pixelDimensions ?? image.size
-        let pixelWidth = pixels.width
-        let pixelHeight = pixels.height
-        guard pixelWidth > 0, pixelHeight > 0 else { return }
-        let fitRatio = min(mainAreaSize.width / pixelWidth, mainAreaSize.height / pixelHeight)
-        guard fitRatio > 0 else { return }
-        setScale(1.0 / fitRatio)
+        guard pixels.width > 0, pixels.height > 0 else { return }
+        // ADJ-2: the fit is of the EDITED geometry; the layout knows the
+        // points-per-base-pixel ratio that 1:1 undoes.
+        guard let layout = AdjustmentLayout.compute(base: pixels, area: mainAreaSize,
+                                                    quarterTurns: adjustments.rotate?.quarterTurns ?? 0,
+                                                    angle: adjustments.rotate?.angle ?? 0,
+                                                    crop: adjustments.crop?.rect ?? .full,
+                                                    editing: false) else { return }
+        setScale(1.0 / layout.fitRatio)
     }
 
     // MARK: - Full-resolution upgrade
@@ -829,6 +912,7 @@ struct ViewerView: View {
                 let image = try await ServerImageLoader.shared.loadFullResolution(filePath: filePath)
                 if model.selectedImage?.filePath == filePath {
                     currentImage = image
+                    adjustments.baseSize = image.pixelDimensions ?? image.size
                 }
                 fullResLoadedFor = filePath
                 if fullResRequestFor == filePath { fullResRequestFor = nil }
@@ -866,6 +950,7 @@ struct ViewerView: View {
                 isPlaceholderImage = false
                 isLoadingImage = false
             }
+            adjustments.baseSize = cached.pixelDimensions ?? cached.size
             if await ServerImageLoader.shared.isFullResolutionKnown(filePath: filePath) {
                 fullResLoadedFor = filePath
             }
@@ -878,7 +963,7 @@ struct ViewerView: View {
         // transcode on the server and can take seconds to arrive. Same
         // `displayedImagePath` as the preview that replaces it, so the sharpen
         // is an instant in-place swap rather than a second cross-fade.
-        let placeholder = ImageCache.shared.getImage(forKey: ThumbnailAssetKey.make(filePath: filePath, size: ServerImageLoader.tileAssetSize))
+        let placeholder = ImageCache.shared.getImage(forKey: ThumbnailAssetKey.make(filePath: filePath, size: ServerImageLoader.tileAssetSize, revision: Int(selected.renderRevision)))
         withAnimation(Self.imageFade) {
             isLoadingImage = true
             currentImage = placeholder
@@ -902,6 +987,7 @@ struct ViewerView: View {
                     isPlaceholderImage = false
                     isLoadingImage = false
                 }
+                adjustments.baseSize = image.pixelDimensions ?? image.size
                 // Served best-available: when the preview is already full
                 // resolution (original file or materialized render), there is
                 // nothing to upgrade on zoom.

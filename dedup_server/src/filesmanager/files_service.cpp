@@ -1,4 +1,5 @@
 #include "filesmanager/files_service.hpp"
+#include "adjustments/adjustment_store.hpp"
 #include "database/user_settings_ops.hpp"
 #include "database/scanned_files_ops.hpp"
 #include "database/sql_constants.hpp"
@@ -138,6 +139,9 @@ namespace MediaDedup
                                     ScannedFilesOps::updateFilePathInDuplicateMembers(db_manager_, file.file_path, new_file_path);
                                     ScannedFilesOps::updateFilePathInThumbnailCache(db_manager_, file.file_path, new_file_path);
                                     ScannedFilesOps::updateFilePathInPreviewCache(db_manager_, file.file_path, new_file_path);
+                                    // ADJ-1: the edit row follows its file.
+                                    if (Adjustments::AdjustmentStore::instance().isInitialized())
+                                        Adjustments::AdjustmentStore::instance().onFilePathChanged(file.file_path, new_file_path, key);
                                 }
                                 else
                                 {

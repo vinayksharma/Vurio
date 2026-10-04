@@ -3,6 +3,7 @@
 #include "database/thumbnail_cache_ops.hpp"
 #include "filesmanager/disk_cache.hpp"
 #include "utils/thumbnail_generator.hpp"
+#include "adjustments/adjustment_store.hpp"
 #include <Poco/Logger.h>
 #include <Magick++.h>
 #include <chrono>
@@ -78,10 +79,15 @@ namespace MediaDedup
         std::string lock_key = source_path + "_" + std::to_string(size);
         std::lock_guard<std::mutex> lock(generationStripe(lock_key));
 
+        // ADJ-1: the file's edits, resolved once; the revision keys the row,
+        // the filename and the lookup, the chain shapes the pixels.
+        const Adjustments::RenderChain chain = Adjustments::AdjustmentStore::instance().chainFor(source_path);
+        const int revision = chain.revision();
+
         try
         {
             // Double-check cache after acquiring lock (another thread might have generated it)
-            auto cached = ThumbnailCacheOps::getBestFitThumbnail(*database_manager_, source_path, size);
+            auto cached = ThumbnailCacheOps::getBestFitThumbnail(*database_manager_, source_path, size, nullptr, revision);
             int64_t source_mtime = fileModifiedTime(source_path);
 
             if (cached.has_value() && cached->source_modified_at == source_mtime &&
@@ -93,7 +99,7 @@ namespace MediaDedup
             }
 
             // Unique filename for the thumbnail (THUMB-1: revision-qualified)
-            std::string cache_filename = ThumbnailCacheOps::cacheFileName(source_path, size, kNoRenderRevision);
+            std::string cache_filename = ThumbnailCacheOps::cacheFileName(source_path, size, revision);
 
             // A missing source is NOT evidence the file is corrupt — its
             // volume may simply be disconnected. Classified as infrastructure
@@ -107,7 +113,8 @@ namespace MediaDedup
             int quality = config_manager_->getPropertyValue<int>("thumbnail.jpeg.quality", 85);
 
             Magick::Blob blob;
-            if (!ThumbnailGenerator::generateToBlob(source_path, size, blob, quality))
+            if (!ThumbnailGenerator::generateToBlob(source_path, size, blob, quality,
+                                                    ThumbnailGenerator::DEFAULT_TIMEOUT_MS, chain))
             {
                 logger.error("ThumbnailGenerator::generateToBlob failed for: %s (check ThumbnailGenerator logs for details)", source_path);
                 return fail(GenerationFailure::Decode);
@@ -140,6 +147,7 @@ namespace MediaDedup
             int64_t now_ts = currentTimestamp();
             ThumbnailCacheRecord record;
             record.source_path = source_path;
+            record.render_revision = revision; // ADJ-1
             record.cached_path = final_cached_path;
             record.thumbnail_size = size;
             record.file_size_bytes = static_cast<int64_t>(blob.length());

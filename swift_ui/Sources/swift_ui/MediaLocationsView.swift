@@ -16,6 +16,14 @@ struct MediaLocationsView: View {
     @State private var isDeregistering: Bool = false
     @State private var showDeregisterAlert: Bool = false
     @State private var isCollapsed = true
+    // ADJ-2: optional edits folder for the location being registered.
+    @State private var editsFolder: String = ""
+    // ADJ-2: sidecar counts for the selected location, fetched before the
+    // deregistration alert so it can offer keep/delete with numbers.
+    @State private var deregisterSummary: (sidecars: Int, spooled: Int) = (0, 0)
+    // ADJ-2: a chosen edits folder waiting for the "move N files" confirm.
+    @State private var pendingEditsRoot: (location: String, root: String, count: Int)? = nil
+    @State private var showMoveConfirm = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -77,6 +85,27 @@ struct MediaLocationsView: View {
                 .help("Register the selected folder for deduplication scanning")
             }
             
+            // ADJ-2: where the location's edit files go (default: beside the assets).
+            HStack(spacing: 12) {
+                TextField("Edits folder (optional — default: same folder as the photos)", text: $editsFolder)
+                    .textFieldStyle(.plain)
+                    .padding(8)
+                    .background(Theme.surface.opacity(0.5))
+                    .cornerRadius(6)
+                    .disabled(true)
+                Button(action: { browseEditsFolder() }) {
+                    Text("Edits Folder").frame(width: 140)
+                }
+                .vurioButtonStyle(tint: Theme.textPrimary)
+                .help("Choose a separate folder for this location's edit files; its folder structure is mirrored there")
+                Button(action: { editsFolder = "" }) {
+                    Text("Same Folder").frame(width: 140)
+                }
+                .vurioButtonStyle(tint: Theme.textPrimary)
+                .disabled(editsFolder.isEmpty)
+                .help("Keep edit files next to the photos")
+            }
+
             // (Status messages now slide in on the bottom status bar via MessageCenter.)
 
             Spacer().frame(height: 10)
@@ -131,6 +160,9 @@ struct MediaLocationsView: View {
                                 .vurioButtonStyle(tint: Theme.textPrimary)
                                 .disabled(!appState.ejectedRootsWithFiles.contains(location))
                                 .help("Open Ejected Folder in OS")
+
+                                // ADJ-2: the location's edit-file folder.
+                                editsMenu(for: location)
                             }
                         }
                         .padding()
@@ -154,8 +186,11 @@ struct MediaLocationsView: View {
             )
             
             Button(action: {
-                if selectedRegisteredLocation != nil {
-                    showDeregisterAlert = true
+                if let location = selectedRegisteredLocation {
+                    Task {
+                        deregisterSummary = await fetchEditsSummary(for: location)
+                        showDeregisterAlert = true
+                    }
                 }
             }) {
                 HStack {
@@ -208,17 +243,166 @@ struct MediaLocationsView: View {
         )
         .alert("Confirm Deregistration", isPresented: $showDeregisterAlert) {
             Button("Cancel", role: .cancel) { }
-            Button("Deregister", role: .destructive) {
-                if let location = selectedRegisteredLocation {
-                    Task {
-                        await deregisterLocation(path: location)
+            // ADJ-2 (decision 9): ask about the edit files; Keep is the default.
+            if deregisterSummary.sidecars + deregisterSummary.spooled > 0 {
+                Button("Deregister, keep \(editFilesLabel) edit files") {
+                    if let location = selectedRegisteredLocation {
+                        Task { await deregisterLocation(path: location, deleteAdjustmentFiles: false) }
+                    }
+                }
+                Button("Deregister and delete \(editFilesLabel) edit files", role: .destructive) {
+                    if let location = selectedRegisteredLocation {
+                        Task { await deregisterLocation(path: location, deleteAdjustmentFiles: true) }
+                    }
+                }
+            } else {
+                Button("Deregister", role: .destructive) {
+                    if let location = selectedRegisteredLocation {
+                        Task { await deregisterLocation(path: location, deleteAdjustmentFiles: false) }
                     }
                 }
             }
         } message: {
-            Text("Deregistering this location will stop scanning it and automatically restore all ejected files back to their original locations. Any ejected files you have already purged will NOT be restored and will remain in the ejected folder.")
+            Text(deregisterMessage)
+        }
+        .confirmationDialog("Move edit files?", isPresented: $showMoveConfirm, titleVisibility: .visible) {
+            if let pending = pendingEditsRoot {
+                Button("Move \(pending.count) edit file\(pending.count == 1 ? "" : "s")") {
+                    Task { await applyEditsRoot(location: pending.location, root: pending.root) }
+                    pendingEditsRoot = nil
+                }
+                Button("Cancel", role: .cancel) { pendingEditsRoot = nil }
+            }
+        } message: {
+            if let pending = pendingEditsRoot {
+                Text("The location's edit files move to \(pending.root.isEmpty ? "the photos' own folders" : pending.root), mirroring the photo folders.")
+            }
         }
         .disabled(isDeregistering || isRemapping)
+    }
+
+    // MARK: - ADJ-2: edits folder
+
+    private var editFilesLabel: String {
+        let total = deregisterSummary.sidecars + deregisterSummary.spooled
+        return "\(total)"
+    }
+
+    private var deregisterMessage: String {
+        var text = "Deregistering this location will stop scanning it and automatically restore all ejected files back to their original locations. Any ejected files you have already purged will NOT be restored and will remain in the ejected folder."
+        let total = deregisterSummary.sidecars + deregisterSummary.spooled
+        if total > 0 {
+            text += "\n\nThis location has \(total) edit file\(total == 1 ? "" : "s") (crop/rotate sidecars). Kept files are imported again if the location is re-registered."
+            if deregisterSummary.spooled > 0 {
+                text += " \(deregisterSummary.spooled) of them still wait for their folder to be reachable and will be delivered first if it is."
+            }
+        }
+        return text
+    }
+
+    /// The explicit edits folder for a registered location ("" = its own).
+    private func editsRoot(for location: String) -> String {
+        guard let index = appState.registeredDirs.firstIndex(of: location),
+              index < appState.editsRoots.count else { return "" }
+        return appState.editsRoots[index]
+    }
+
+    private func editsMenu(for location: String) -> some View {
+        let root = editsRoot(for: location)
+        return Menu {
+            Text(root.isEmpty ? "Edit files: same folder as the photos" : "Edit files: \(root)")
+            Divider()
+            Button("Choose Folder…") { chooseEditsRoot(for: location) }
+            if !root.isEmpty {
+                Button("Use Same Folder as Photos") { requestEditsRoot(location: location, root: "") }
+                Button("Reveal in Finder") {
+                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: root)
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: root.isEmpty ? "doc.badge.gearshape" : "folder.badge.gearshape")
+                Text("Edits")
+            }
+            .frame(width: 120)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .vurioButtonStyle(tint: root.isEmpty ? Theme.textPrimary : Theme.textAccent)
+        .help(root.isEmpty ? "Edit files live next to the photos" : "Edit files live in \(root)")
+    }
+
+    private func browseEditsFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose the folder for this location's edit files"
+        if panel.runModal() == .OK, let path = panel.url?.path {
+            editsFolder = path
+        }
+    }
+
+    private func chooseEditsRoot(for location: String) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose the folder for the edit files of \(location)"
+        if panel.runModal() == .OK, let path = panel.url?.path {
+            requestEditsRoot(location: location, root: path)
+        }
+    }
+
+    /// Confirms with a count when sidecars would move (decision §11.2).
+    private func requestEditsRoot(location: String, root: String) {
+        Task {
+            let summary = await fetchEditsSummary(for: location)
+            let count = summary.sidecars + summary.spooled
+            if count > 0 {
+                pendingEditsRoot = (location, root, count)
+                showMoveConfirm = true
+            } else {
+                await applyEditsRoot(location: location, root: root)
+            }
+        }
+    }
+
+    private func fetchEditsSummary(for location: String) async -> (sidecars: Int, spooled: Int) {
+        guard let client = VurioGrpcClient.shared.adjustments else { return (0, 0) }
+        do {
+            let response = try await client.getEditsRoot(Vurio_Dedup_EditsRootRequest.with { $0.locationPath = location })
+            return (Int(response.sidecarCount), Int(response.spooledCount))
+        } catch {
+            return (0, 0)
+        }
+    }
+
+    private func applyEditsRoot(location: String, root: String) async {
+        guard let client = VurioGrpcClient.shared.adjustments else { return }
+        do {
+            let request = Vurio_Dedup_SetEditsRootRequest.with {
+                $0.locationPath = location
+                $0.editsRoot = root
+            }
+            let response = try await client.setEditsRoot(request)
+            if response.success {
+                statusMessage = response.moved > 0
+                    ? "Edits folder set; \(response.moved) edit file\(response.moved == 1 ? "" : "s") moved."
+                    : "Edits folder set."
+                await appState.fetchStatus()
+            } else {
+                statusMessage = "Failed: \(response.errorMessage)"
+            }
+        } catch {
+            if grpcStatusCode(of: error) == .alreadyExists {
+                statusMessage = "That folder is already used by another location."
+            } else {
+                statusMessage = "Error: \(error.localizedDescription)"
+            }
+        }
     }
     
     private func browseDirectory() {
@@ -241,13 +425,15 @@ struct MediaLocationsView: View {
         do {
             let request = Vurio_Dedup_RegisterLocationRequest.with {
                 $0.path = selectedDirectory
+                $0.editsRoot = editsFolder // ADJ-2
             }
             
             if let client = VurioGrpcClient.shared.media {
                 let response = try await client.registerLocation(request)
                 if response.success {
-                    statusMessage = "Location registered successfully."
+                    statusMessage = response.errorMessage.isEmpty ? "Location registered successfully." : response.errorMessage
                     selectedDirectory = ""
+                    editsFolder = ""
                     await appState.fetchStatus()
                 } else {
                     statusMessage = "Failed: \(response.errorMessage)"
@@ -258,17 +444,20 @@ struct MediaLocationsView: View {
         }
     }
     
-    private func deregisterLocation(path: String) async {
+    private func deregisterLocation(path: String, deleteAdjustmentFiles: Bool) async {
         isDeregistering = true
         do {
             let request = Vurio_Dedup_DeregisterLocationRequest.with {
                 $0.path = path
+                $0.deleteAdjustmentFiles = deleteAdjustmentFiles // ADJ-2
             }
             
             if let client = VurioGrpcClient.shared.media {
                 let response = try await client.deregisterLocation(request)
                 if response.success {
-                    statusMessage = "Location deregistered successfully."
+                    statusMessage = response.adjustmentFilesDeleted > 0
+                        ? "Location deregistered; \(response.adjustmentFilesDeleted) edit file\(response.adjustmentFilesDeleted == 1 ? "" : "s") deleted."
+                        : "Location deregistered successfully."
                     if selectedRegisteredLocation == path {
                         selectedRegisteredLocation = nil
                     }

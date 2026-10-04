@@ -86,16 +86,26 @@ namespace MediaDedup
          */
         static std::optional<ThumbnailCacheRecord> getThumbnail(DatabaseManager &db,
                                                                 const std::string &source_path,
-                                                                int size);
+                                                                int size,
+                                                                int render_revision = kNoRenderRevision);
 
         // lookup_failed (optional) is set true when the query itself failed
         // (e.g. DB session pool starved) — callers must treat that as "try
         // again", NOT as a cache miss, or they'd re-submit generation for an
         // asset that is already cached.
+        // ADJ-1: render_revision selects the file's current revision (0 for an
+        // un-edited file); a row of another revision is never a hit.
         static std::optional<ThumbnailCacheRecord> getBestFitThumbnail(DatabaseManager &db,
                                                                        const std::string &source_path,
                                                                        int min_size,
-                                                                       bool *lookup_failed = nullptr);
+                                                                       bool *lookup_failed = nullptr,
+                                                                       int render_revision = kNoRenderRevision);
+
+        /**
+         * @brief ADJ-1: every cached row of a source path, all sizes and
+         * revisions, so an edit can unlink the files before deleting the rows.
+         */
+        static std::vector<ThumbnailCacheRecord> listForPath(DatabaseManager &db, const std::string &source_path);
 
         /**
          * @brief Insert or update a thumbnail cache record
@@ -116,7 +126,8 @@ namespace MediaDedup
         static bool updateAccessTime(DatabaseManager &db,
                                      const std::string &source_path,
                                      int size,
-                                     int64_t timestamp);
+                                     int64_t timestamp,
+                                     int render_revision = kNoRenderRevision);
 
         /**
          * @brief Delete thumbnail cache entry
@@ -127,7 +138,8 @@ namespace MediaDedup
          */
         static bool deleteThumbnail(DatabaseManager &db,
                                     const std::string &source_path,
-                                    int size = 0);
+                                    int size = 0,
+                                    int render_revision = kNoRenderRevision);
 
         /**
          * @brief Delete stale thumbnails (source file modified after cache entry)

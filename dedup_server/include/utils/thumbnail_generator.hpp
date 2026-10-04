@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <vector>
 #include <Magick++.h>
+#include "adjustments/render_chain.hpp"
 
 namespace MediaDedup
 {
@@ -26,13 +27,19 @@ namespace MediaDedup
          * @param quality JPEG quality (0-100, default 85)
          * @param blob Output blob containing the JPEG thumbnail data
          * @param timeout_ms Hard limit on the magick subprocess; expired decodes are killed
+         * @param chain ADJ-1: the file's non-destructive edits (rotate/crop),
+         *        applied after -auto-orient and before the resize. The
+         *        in-process shortcuts (OpenCV, LibRaw demosaic) serve the
+         *        identity chain only; an edited render always goes through
+         *        the magick operator chain (docs/todo_image_adjustments.md §5.4).
          * @return true if thumbnail generated successfully, false otherwise
          */
         static bool generateToBlob(const std::string &source_path,
                                     int size,
                                     Magick::Blob &blob,
                                     int quality = 85,
-                                    int timeout_ms = DEFAULT_TIMEOUT_MS);
+                                    int timeout_ms = DEFAULT_TIMEOUT_MS,
+                                    const Adjustments::RenderChain &chain = Adjustments::RenderChain::identity());
 
 
         /**
@@ -47,11 +54,14 @@ namespace MediaDedup
          * @param output_path Output JPEG path (written with a jpeg: prefix)
          * @param size Longest-edge target; <= 0 skips the resize (native)
          * @param quality JPEG quality
+         * @param chain ADJ-1: edit operators inserted between -auto-orient
+         *        and -colorspace, so -resize downsamples the edited result
          */
         static std::vector<std::string> buildMagickArgs(const std::string &read_path,
                                                         const std::string &output_path,
                                                         int size,
-                                                        int quality);
+                                                        int quality,
+                                                        const Adjustments::RenderChain &chain = Adjustments::RenderChain::identity());
 
         /**
          * @brief MP-3: explicit native-resolution sentinel.

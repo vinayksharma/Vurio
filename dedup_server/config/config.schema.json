@@ -627,6 +627,18 @@
     "type": "int",
     "default": 256
   },
+  "media.adjustments.enabled": {
+    "type": "bool",
+    "default": true
+  },
+  "media.adjustments.sidecar.write": {
+    "type": "bool",
+    "default": true
+  },
+  "media.adjustments.sidecar.suffix": {
+    "type": "string",
+    "default": ".vurio.json"
+  },
   "thumbnail.qhd_preview.threshold_mb": {
     "type": "double",
     "default": 5.0

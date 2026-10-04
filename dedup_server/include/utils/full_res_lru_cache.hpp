@@ -12,7 +12,9 @@
 
 namespace MediaDedup
 {
-    struct FullResEntry { std::string temp_path; int64_t source_mtime; std::size_t bytes = 0; };
+    // ADJ-1: render_revision is part of the identity — an edited file must
+    // never be served its pre-edit native render.
+    struct FullResEntry { std::string temp_path; int64_t source_mtime; std::size_t bytes = 0; int render_revision = 0; };
 
     /**
      * @brief MP-4: bounded LRU for the viewer's full-resolution temp renders.
@@ -35,13 +37,13 @@ namespace MediaDedup
         // Fresh hit: file still on disk and mtime matches (or unknown). Touches
         // LRU recency. A stale entry is dropped AND its temp file unlinked (the
         // old code leaked the file on staleness).
-        std::optional<FullResEntry> getFresh(const std::string& key, int64_t current_mtime) {
+        std::optional<FullResEntry> getFresh(const std::string& key, int64_t current_mtime, int render_revision = 0) {
             std::lock_guard<std::mutex> lock(mutex_);
             auto it = map_.find(key);
             if (it == map_.end())
                 return std::nullopt;
             const FullResEntry& e = it->second.first;
-            if (std::filesystem::exists(e.temp_path) &&
+            if (e.render_revision == render_revision && std::filesystem::exists(e.temp_path) &&
                 (current_mtime == 0 || e.source_mtime == 0 || e.source_mtime == current_mtime)) {
                 lru_.splice(lru_.begin(), lru_, it->second.second); // touch
                 return e;
@@ -68,6 +70,14 @@ namespace MediaDedup
                 if (victim == map_.end()) { lru_.pop_back(); continue; }
                 eraseLocked(victim, /*unlink=*/true);
             }
+        }
+
+        // ADJ-1: drop one file's render (its edits changed).
+        void erase(const std::string& key) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            auto it = map_.find(key);
+            if (it != map_.end())
+                eraseLocked(it, /*unlink=*/true);
         }
 
         // Deletes all temp renders and empties the index (QW-9 clear-caches).

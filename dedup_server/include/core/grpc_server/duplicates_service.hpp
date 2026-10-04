@@ -8,6 +8,7 @@
 #include "database/faces_ops.hpp"
 #include "config/unified_observable_config.hpp"
 #include "core/grpc_server/grpc_service_common.hpp"
+#include "adjustments/adjustment_store.hpp"
 #include "search/text_search_engine.hpp"
 
 #include <unordered_map>
@@ -103,8 +104,15 @@ public:
                 ct->set_size(ref.size);
             }
             // THUMB-1: display geometry; 0 is the meaningful "unknown".
-            proto_file->set_display_width(member.display_width);
-            proto_file->set_display_height(member.display_height);
+            // ADJ-1: the base dims from the row, with the file's edit chain
+            // folded in, plus the revision that keys its cached assets.
+            {
+                MediaDedup::DisplayDims dims = MediaDedup::Adjustments::AdjustmentStore::instance().displayDimsFor(
+                    member.file_path, member.display_width, member.display_height);
+                proto_file->set_display_width(dims.width);
+                proto_file->set_display_height(dims.height);
+                proto_file->set_render_revision(MediaDedup::Adjustments::AdjustmentStore::instance().revisionFor(member.file_path));
+            }
             
             bool is_ejected = false;
             std::string normalized_path = member.file_path;
@@ -196,8 +204,14 @@ public:
                     ct->set_size(ref.size);
                 }
                 // THUMB-1: display geometry; 0 is the meaningful "unknown".
-                proto_file->set_display_width(member.display_width);
-                proto_file->set_display_height(member.display_height);
+                // ADJ-1: see populateFile — chain folded in, revision carried.
+                {
+                    MediaDedup::DisplayDims dims = MediaDedup::Adjustments::AdjustmentStore::instance().displayDimsFor(
+                        member.file_path, member.display_width, member.display_height);
+                    proto_file->set_display_width(dims.width);
+                    proto_file->set_display_height(dims.height);
+                    proto_file->set_render_revision(MediaDedup::Adjustments::AdjustmentStore::instance().revisionFor(member.file_path));
+                }
                 
                 bool is_ejected = false;
                 std::string normalized_path = member.file_path;
@@ -296,8 +310,16 @@ public:
             proto_file->set_similarity_score(file.similarity_score);
         }
         // THUMB-1: display geometry; 0 is the meaningful "unknown".
-        proto_file->set_display_width(file.display_width);
-        proto_file->set_display_height(file.display_height);
+        // ADJ-1: the row carries the auto-oriented base; the file's edit
+        // chain shapes what the client lays out, and the revision keys its
+        // thumbnail cache entries.
+        {
+            MediaDedup::DisplayDims dims = MediaDedup::Adjustments::AdjustmentStore::instance().displayDimsFor(
+                file.file_path, file.display_width, file.display_height);
+            proto_file->set_display_width(dims.width);
+            proto_file->set_display_height(dims.height);
+            proto_file->set_render_revision(MediaDedup::Adjustments::AdjustmentStore::instance().revisionFor(file.file_path));
+        }
 
         bool is_ejected = false;
         std::string normalized_path = file.file_path;

@@ -119,6 +119,9 @@ tpm.killTimeoutMs: 10000
 media.images.tif: true
 media.video.flv: false
 thumbnail.pipeline.size: 256
+media.adjustments.enabled: true
+media.adjustments.sidecar.write: true
+media.adjustments.sidecar.suffix: .vurio.json
 scheduler.backoff.maxMs: 30000
 scheduler.maxConsecutiveFailures: 5
 media.video.mkv: false

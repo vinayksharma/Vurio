@@ -14,6 +14,7 @@
 #include "core/grpc_server/duplicates_service.hpp"
 #include "core/grpc_server/advanced_settings_service.hpp"
 #include "core/grpc_server/media_service.hpp"
+#include "core/grpc_server/adjustments_service.hpp"
 #include "search/text_search_engine.hpp"
 
 #include <grpcpp/grpcpp.h>
@@ -107,6 +108,7 @@ void GrpcServerCore::start(const std::string& instance_dir,
     auto duplicates_service = std::make_unique<DuplicatesServiceImpl>(database_manager.get(), text_search_engine_.get(), config_manager);
     std::unique_ptr<vurio::dedup::AdvancedSettingsService::Service> advanced_settings_service = std::make_unique<AdvancedSettingsServiceImpl>(database_manager, config_manager, thumbnail_cache, transcoding_cache, scheduler_service, thread_pool_manager);
     auto media_streaming_service = std::make_unique<MediaServiceImpl>(config_manager, database_manager, thumbnail_cache, transcoding_cache, thread_pool_manager);
+    auto adjustments_service = std::make_unique<AdjustmentsServiceImpl>(); // ADJ-1
 
     duplicate_finder_ = duplicate_finder; // CC-6: for callback teardown in stop()
     if (duplicate_finder) {
@@ -142,6 +144,7 @@ void GrpcServerCore::start(const std::string& instance_dir,
     builder.RegisterService(duplicates_service.get());
     builder.RegisterService(advanced_settings_service.get());
     builder.RegisterService(media_streaming_service.get());
+    builder.RegisterService(adjustments_service.get()); // ADJ-1
     
     services_.push_back(std::move(security_service));
     services_.push_back(std::move(config_service));
@@ -149,6 +152,7 @@ void GrpcServerCore::start(const std::string& instance_dir,
     services_.push_back(std::move(duplicates_service));
     services_.push_back(std::move(advanced_settings_service));
     services_.push_back(std::move(media_streaming_service));
+    services_.push_back(std::move(adjustments_service));
 
     server_ = builder.BuildAndStart();
 

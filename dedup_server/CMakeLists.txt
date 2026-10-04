@@ -314,6 +314,15 @@ add_executable(media_dedup_server
     src/database/scanned_files/scanned_files_ops.cpp
     src/database/processing_errors_ops.cpp
     src/utils/thumbnail_generator.cpp
+    src/adjustments/tools/rotate_tool.cpp
+    src/adjustments/tools/crop_tool.cpp
+    src/adjustments/tool_registry.cpp
+    src/adjustments/render_chain.cpp
+    src/adjustments/adjustment_document.cpp
+    src/adjustments/sidecar_layout.cpp
+    src/adjustments/sidecar_store.cpp
+    src/adjustments/adjustment_store.cpp
+    src/database/adjustments_ops.cpp
     src/utils/orphan_sweeper.cpp
     src/utils/subprocess_runner.cpp
     src/utils/temp_paths.cpp

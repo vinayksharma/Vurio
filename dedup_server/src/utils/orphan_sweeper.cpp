@@ -66,7 +66,7 @@ namespace MediaDedup
         // sweep in the repo-root killall.
         static const char *kPatterns[] = {
             "magick_out_", "heic_out_", "thumb_out_",
-            "raw_embedded_", "fullres_", "exif_probe_"};
+            "raw_embedded_", "fullres_", "exif_probe_", "adj_raw_"};
 
         for (const char *pattern : kPatterns)
         {

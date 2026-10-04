@@ -3672,6 +3672,456 @@ internal enum Vurio_Dedup_MediaServiceClientMetadata {
 }
 
 /// ---------------------------------------------------------
+/// Adjustments Service (ADJ-1, docs/todo_image_adjustments.md §5.8)
+///
+/// Non-destructive per-image edits. The document crosses the wire as JSON
+/// (the sidecar body), so adding a tool never changes this file. Limits and
+/// defaults come from DescribeTools: the client builds its controls from
+/// them and never hard-codes a range.
+/// ---------------------------------------------------------
+///
+/// Usage: instantiate `Vurio_Dedup_AdjustmentsServiceClient`, then call methods of this protocol to make API calls.
+internal protocol Vurio_Dedup_AdjustmentsServiceClientProtocol: GRPCClient {
+  var serviceName: String { get }
+  var interceptors: Vurio_Dedup_AdjustmentsServiceClientInterceptorFactoryProtocol? { get }
+
+  func describeTools(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_ToolDescriptors>
+
+  func getAdjustments(
+    _ request: Vurio_Dedup_AdjustmentsFileRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_AdjustmentsFileRequest, Vurio_Dedup_AdjustmentDocumentResponse>
+
+  func setAdjustments(
+    _ request: Vurio_Dedup_SetAdjustmentsRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_SetAdjustmentsRequest, Vurio_Dedup_SetAdjustmentsResponse>
+
+  func getEditsRoot(
+    _ request: Vurio_Dedup_EditsRootRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_EditsRootRequest, Vurio_Dedup_EditsRootResponse>
+
+  func setEditsRoot(
+    _ request: Vurio_Dedup_SetEditsRootRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_SetEditsRootRequest, Vurio_Dedup_SetEditsRootResponse>
+}
+
+extension Vurio_Dedup_AdjustmentsServiceClientProtocol {
+  internal var serviceName: String {
+    return "vurio.dedup.AdjustmentsService"
+  }
+
+  /// Unary call to DescribeTools
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to DescribeTools.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func describeTools(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_ToolDescriptors> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.describeTools.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeDescribeToolsInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to GetAdjustments
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetAdjustments.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getAdjustments(
+    _ request: Vurio_Dedup_AdjustmentsFileRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_AdjustmentsFileRequest, Vurio_Dedup_AdjustmentDocumentResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.getAdjustments.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetAdjustmentsInterceptors() ?? []
+    )
+  }
+
+  /// Validates, stores, writes the sidecar (or spools it), invalidates the
+  /// file's cached renders and pushes a MediaReadyEvent "adjustments".
+  /// INVALID_ARGUMENT carries the tool's error text; NOT_FOUND = unregistered.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to SetAdjustments.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func setAdjustments(
+    _ request: Vurio_Dedup_SetAdjustmentsRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_SetAdjustmentsRequest, Vurio_Dedup_SetAdjustmentsResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.setAdjustments.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetAdjustmentsInterceptors() ?? []
+    )
+  }
+
+  /// Per-location edits folder (default: the location itself).
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetEditsRoot.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getEditsRoot(
+    _ request: Vurio_Dedup_EditsRootRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_EditsRootRequest, Vurio_Dedup_EditsRootResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.getEditsRoot.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetEditsRootInterceptors() ?? []
+    )
+  }
+
+  /// "" = back to the default. Existing sidecars are moved into the new
+  /// layout. Refused when another location uses or nests with the folder.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to SetEditsRoot.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func setEditsRoot(
+    _ request: Vurio_Dedup_SetEditsRootRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_SetEditsRootRequest, Vurio_Dedup_SetEditsRootResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.setEditsRoot.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetEditsRootInterceptors() ?? []
+    )
+  }
+}
+
+@available(*, deprecated)
+extension Vurio_Dedup_AdjustmentsServiceClient: @unchecked Sendable {}
+
+@available(*, deprecated, renamed: "Vurio_Dedup_AdjustmentsServiceNIOClient")
+internal final class Vurio_Dedup_AdjustmentsServiceClient: Vurio_Dedup_AdjustmentsServiceClientProtocol {
+  private let lock = Lock()
+  private var _defaultCallOptions: CallOptions
+  private var _interceptors: Vurio_Dedup_AdjustmentsServiceClientInterceptorFactoryProtocol?
+  internal let channel: GRPCChannel
+  internal var defaultCallOptions: CallOptions {
+    get { self.lock.withLock { return self._defaultCallOptions } }
+    set { self.lock.withLockVoid { self._defaultCallOptions = newValue } }
+  }
+  internal var interceptors: Vurio_Dedup_AdjustmentsServiceClientInterceptorFactoryProtocol? {
+    get { self.lock.withLock { return self._interceptors } }
+    set { self.lock.withLockVoid { self._interceptors = newValue } }
+  }
+
+  /// Creates a client for the vurio.dedup.AdjustmentsService service.
+  ///
+  /// - Parameters:
+  ///   - channel: `GRPCChannel` to the service host.
+  ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
+  ///   - interceptors: A factory providing interceptors for each RPC.
+  internal init(
+    channel: GRPCChannel,
+    defaultCallOptions: CallOptions = CallOptions(),
+    interceptors: Vurio_Dedup_AdjustmentsServiceClientInterceptorFactoryProtocol? = nil
+  ) {
+    self.channel = channel
+    self._defaultCallOptions = defaultCallOptions
+    self._interceptors = interceptors
+  }
+}
+
+internal struct Vurio_Dedup_AdjustmentsServiceNIOClient: Vurio_Dedup_AdjustmentsServiceClientProtocol {
+  internal var channel: GRPCChannel
+  internal var defaultCallOptions: CallOptions
+  internal var interceptors: Vurio_Dedup_AdjustmentsServiceClientInterceptorFactoryProtocol?
+
+  /// Creates a client for the vurio.dedup.AdjustmentsService service.
+  ///
+  /// - Parameters:
+  ///   - channel: `GRPCChannel` to the service host.
+  ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
+  ///   - interceptors: A factory providing interceptors for each RPC.
+  internal init(
+    channel: GRPCChannel,
+    defaultCallOptions: CallOptions = CallOptions(),
+    interceptors: Vurio_Dedup_AdjustmentsServiceClientInterceptorFactoryProtocol? = nil
+  ) {
+    self.channel = channel
+    self.defaultCallOptions = defaultCallOptions
+    self.interceptors = interceptors
+  }
+}
+
+/// ---------------------------------------------------------
+/// Adjustments Service (ADJ-1, docs/todo_image_adjustments.md §5.8)
+///
+/// Non-destructive per-image edits. The document crosses the wire as JSON
+/// (the sidecar body), so adding a tool never changes this file. Limits and
+/// defaults come from DescribeTools: the client builds its controls from
+/// them and never hard-codes a range.
+/// ---------------------------------------------------------
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+internal protocol Vurio_Dedup_AdjustmentsServiceAsyncClientProtocol: GRPCClient {
+  static var serviceDescriptor: GRPCServiceDescriptor { get }
+  var interceptors: Vurio_Dedup_AdjustmentsServiceClientInterceptorFactoryProtocol? { get }
+
+  func makeDescribeToolsCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_ToolDescriptors>
+
+  func makeGetAdjustmentsCall(
+    _ request: Vurio_Dedup_AdjustmentsFileRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_AdjustmentsFileRequest, Vurio_Dedup_AdjustmentDocumentResponse>
+
+  func makeSetAdjustmentsCall(
+    _ request: Vurio_Dedup_SetAdjustmentsRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_SetAdjustmentsRequest, Vurio_Dedup_SetAdjustmentsResponse>
+
+  func makeGetEditsRootCall(
+    _ request: Vurio_Dedup_EditsRootRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_EditsRootRequest, Vurio_Dedup_EditsRootResponse>
+
+  func makeSetEditsRootCall(
+    _ request: Vurio_Dedup_SetEditsRootRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_SetEditsRootRequest, Vurio_Dedup_SetEditsRootResponse>
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+extension Vurio_Dedup_AdjustmentsServiceAsyncClientProtocol {
+  internal static var serviceDescriptor: GRPCServiceDescriptor {
+    return Vurio_Dedup_AdjustmentsServiceClientMetadata.serviceDescriptor
+  }
+
+  internal var interceptors: Vurio_Dedup_AdjustmentsServiceClientInterceptorFactoryProtocol? {
+    return nil
+  }
+
+  internal func makeDescribeToolsCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_ToolDescriptors> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.describeTools.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeDescribeToolsInterceptors() ?? []
+    )
+  }
+
+  internal func makeGetAdjustmentsCall(
+    _ request: Vurio_Dedup_AdjustmentsFileRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_AdjustmentsFileRequest, Vurio_Dedup_AdjustmentDocumentResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.getAdjustments.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetAdjustmentsInterceptors() ?? []
+    )
+  }
+
+  internal func makeSetAdjustmentsCall(
+    _ request: Vurio_Dedup_SetAdjustmentsRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_SetAdjustmentsRequest, Vurio_Dedup_SetAdjustmentsResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.setAdjustments.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetAdjustmentsInterceptors() ?? []
+    )
+  }
+
+  internal func makeGetEditsRootCall(
+    _ request: Vurio_Dedup_EditsRootRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_EditsRootRequest, Vurio_Dedup_EditsRootResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.getEditsRoot.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetEditsRootInterceptors() ?? []
+    )
+  }
+
+  internal func makeSetEditsRootCall(
+    _ request: Vurio_Dedup_SetEditsRootRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_SetEditsRootRequest, Vurio_Dedup_SetEditsRootResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.setEditsRoot.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetEditsRootInterceptors() ?? []
+    )
+  }
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+extension Vurio_Dedup_AdjustmentsServiceAsyncClientProtocol {
+  internal func describeTools(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_ToolDescriptors {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.describeTools.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeDescribeToolsInterceptors() ?? []
+    )
+  }
+
+  internal func getAdjustments(
+    _ request: Vurio_Dedup_AdjustmentsFileRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_AdjustmentDocumentResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.getAdjustments.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetAdjustmentsInterceptors() ?? []
+    )
+  }
+
+  internal func setAdjustments(
+    _ request: Vurio_Dedup_SetAdjustmentsRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_SetAdjustmentsResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.setAdjustments.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetAdjustmentsInterceptors() ?? []
+    )
+  }
+
+  internal func getEditsRoot(
+    _ request: Vurio_Dedup_EditsRootRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_EditsRootResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.getEditsRoot.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetEditsRootInterceptors() ?? []
+    )
+  }
+
+  internal func setEditsRoot(
+    _ request: Vurio_Dedup_SetEditsRootRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_SetEditsRootResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.setEditsRoot.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSetEditsRootInterceptors() ?? []
+    )
+  }
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+internal struct Vurio_Dedup_AdjustmentsServiceAsyncClient: Vurio_Dedup_AdjustmentsServiceAsyncClientProtocol {
+  internal var channel: GRPCChannel
+  internal var defaultCallOptions: CallOptions
+  internal var interceptors: Vurio_Dedup_AdjustmentsServiceClientInterceptorFactoryProtocol?
+
+  internal init(
+    channel: GRPCChannel,
+    defaultCallOptions: CallOptions = CallOptions(),
+    interceptors: Vurio_Dedup_AdjustmentsServiceClientInterceptorFactoryProtocol? = nil
+  ) {
+    self.channel = channel
+    self.defaultCallOptions = defaultCallOptions
+    self.interceptors = interceptors
+  }
+}
+
+internal protocol Vurio_Dedup_AdjustmentsServiceClientInterceptorFactoryProtocol: Sendable {
+
+  /// - Returns: Interceptors to use when invoking 'describeTools'.
+  func makeDescribeToolsInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_ToolDescriptors>]
+
+  /// - Returns: Interceptors to use when invoking 'getAdjustments'.
+  func makeGetAdjustmentsInterceptors() -> [ClientInterceptor<Vurio_Dedup_AdjustmentsFileRequest, Vurio_Dedup_AdjustmentDocumentResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'setAdjustments'.
+  func makeSetAdjustmentsInterceptors() -> [ClientInterceptor<Vurio_Dedup_SetAdjustmentsRequest, Vurio_Dedup_SetAdjustmentsResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'getEditsRoot'.
+  func makeGetEditsRootInterceptors() -> [ClientInterceptor<Vurio_Dedup_EditsRootRequest, Vurio_Dedup_EditsRootResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'setEditsRoot'.
+  func makeSetEditsRootInterceptors() -> [ClientInterceptor<Vurio_Dedup_SetEditsRootRequest, Vurio_Dedup_SetEditsRootResponse>]
+}
+
+internal enum Vurio_Dedup_AdjustmentsServiceClientMetadata {
+  internal static let serviceDescriptor = GRPCServiceDescriptor(
+    name: "AdjustmentsService",
+    fullName: "vurio.dedup.AdjustmentsService",
+    methods: [
+      Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.describeTools,
+      Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.getAdjustments,
+      Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.setAdjustments,
+      Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.getEditsRoot,
+      Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.setEditsRoot,
+    ]
+  )
+
+  internal enum Methods {
+    internal static let describeTools = GRPCMethodDescriptor(
+      name: "DescribeTools",
+      path: "/vurio.dedup.AdjustmentsService/DescribeTools",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getAdjustments = GRPCMethodDescriptor(
+      name: "GetAdjustments",
+      path: "/vurio.dedup.AdjustmentsService/GetAdjustments",
+      type: GRPCCallType.unary
+    )
+
+    internal static let setAdjustments = GRPCMethodDescriptor(
+      name: "SetAdjustments",
+      path: "/vurio.dedup.AdjustmentsService/SetAdjustments",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getEditsRoot = GRPCMethodDescriptor(
+      name: "GetEditsRoot",
+      path: "/vurio.dedup.AdjustmentsService/GetEditsRoot",
+      type: GRPCCallType.unary
+    )
+
+    internal static let setEditsRoot = GRPCMethodDescriptor(
+      name: "SetEditsRoot",
+      path: "/vurio.dedup.AdjustmentsService/SetEditsRoot",
+      type: GRPCCallType.unary
+    )
+  }
+}
+
+/// ---------------------------------------------------------
 /// Security / pairing handshake
 ///
 /// Every gRPC call (except Handshake itself) must carry the per-instance session
@@ -5849,6 +6299,284 @@ internal enum Vurio_Dedup_MediaServiceServerMetadata {
       name: "SubscribeToMediaReady",
       path: "/vurio.dedup.MediaService/SubscribeToMediaReady",
       type: GRPCCallType.serverStreaming
+    )
+  }
+}
+/// ---------------------------------------------------------
+/// Adjustments Service (ADJ-1, docs/todo_image_adjustments.md §5.8)
+///
+/// Non-destructive per-image edits. The document crosses the wire as JSON
+/// (the sidecar body), so adding a tool never changes this file. Limits and
+/// defaults come from DescribeTools: the client builds its controls from
+/// them and never hard-codes a range.
+/// ---------------------------------------------------------
+///
+/// To build a server, implement a class that conforms to this protocol.
+internal protocol Vurio_Dedup_AdjustmentsServiceProvider: CallHandlerProvider {
+  var interceptors: Vurio_Dedup_AdjustmentsServiceServerInterceptorFactoryProtocol? { get }
+
+  func describeTools(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_ToolDescriptors>
+
+  func getAdjustments(request: Vurio_Dedup_AdjustmentsFileRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdjustmentDocumentResponse>
+
+  /// Validates, stores, writes the sidecar (or spools it), invalidates the
+  /// file's cached renders and pushes a MediaReadyEvent "adjustments".
+  /// INVALID_ARGUMENT carries the tool's error text; NOT_FOUND = unregistered.
+  func setAdjustments(request: Vurio_Dedup_SetAdjustmentsRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_SetAdjustmentsResponse>
+
+  /// Per-location edits folder (default: the location itself).
+  func getEditsRoot(request: Vurio_Dedup_EditsRootRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_EditsRootResponse>
+
+  /// "" = back to the default. Existing sidecars are moved into the new
+  /// layout. Refused when another location uses or nests with the folder.
+  func setEditsRoot(request: Vurio_Dedup_SetEditsRootRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_SetEditsRootResponse>
+}
+
+extension Vurio_Dedup_AdjustmentsServiceProvider {
+  internal var serviceName: Substring {
+    return Vurio_Dedup_AdjustmentsServiceServerMetadata.serviceDescriptor.fullName[...]
+  }
+
+  /// Determines, calls and returns the appropriate request handler, depending on the request's method.
+  /// Returns nil for methods not handled by this service.
+  internal func handle(
+    method name: Substring,
+    context: CallHandlerContext
+  ) -> GRPCServerHandlerProtocol? {
+    switch name {
+    case "DescribeTools":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_ToolDescriptors>(),
+        interceptors: self.interceptors?.makeDescribeToolsInterceptors() ?? [],
+        userFunction: self.describeTools(request:context:)
+      )
+
+    case "GetAdjustments":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_AdjustmentsFileRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdjustmentDocumentResponse>(),
+        interceptors: self.interceptors?.makeGetAdjustmentsInterceptors() ?? [],
+        userFunction: self.getAdjustments(request:context:)
+      )
+
+    case "SetAdjustments":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_SetAdjustmentsRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_SetAdjustmentsResponse>(),
+        interceptors: self.interceptors?.makeSetAdjustmentsInterceptors() ?? [],
+        userFunction: self.setAdjustments(request:context:)
+      )
+
+    case "GetEditsRoot":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_EditsRootRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_EditsRootResponse>(),
+        interceptors: self.interceptors?.makeGetEditsRootInterceptors() ?? [],
+        userFunction: self.getEditsRoot(request:context:)
+      )
+
+    case "SetEditsRoot":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_SetEditsRootRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_SetEditsRootResponse>(),
+        interceptors: self.interceptors?.makeSetEditsRootInterceptors() ?? [],
+        userFunction: self.setEditsRoot(request:context:)
+      )
+
+    default:
+      return nil
+    }
+  }
+}
+
+/// ---------------------------------------------------------
+/// Adjustments Service (ADJ-1, docs/todo_image_adjustments.md §5.8)
+///
+/// Non-destructive per-image edits. The document crosses the wire as JSON
+/// (the sidecar body), so adding a tool never changes this file. Limits and
+/// defaults come from DescribeTools: the client builds its controls from
+/// them and never hard-codes a range.
+/// ---------------------------------------------------------
+///
+/// To implement a server, implement an object which conforms to this protocol.
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+internal protocol Vurio_Dedup_AdjustmentsServiceAsyncProvider: CallHandlerProvider, Sendable {
+  static var serviceDescriptor: GRPCServiceDescriptor { get }
+  var interceptors: Vurio_Dedup_AdjustmentsServiceServerInterceptorFactoryProtocol? { get }
+
+  func describeTools(
+    request: Vurio_Dedup_Empty,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_ToolDescriptors
+
+  func getAdjustments(
+    request: Vurio_Dedup_AdjustmentsFileRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_AdjustmentDocumentResponse
+
+  /// Validates, stores, writes the sidecar (or spools it), invalidates the
+  /// file's cached renders and pushes a MediaReadyEvent "adjustments".
+  /// INVALID_ARGUMENT carries the tool's error text; NOT_FOUND = unregistered.
+  func setAdjustments(
+    request: Vurio_Dedup_SetAdjustmentsRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_SetAdjustmentsResponse
+
+  /// Per-location edits folder (default: the location itself).
+  func getEditsRoot(
+    request: Vurio_Dedup_EditsRootRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_EditsRootResponse
+
+  /// "" = back to the default. Existing sidecars are moved into the new
+  /// layout. Refused when another location uses or nests with the folder.
+  func setEditsRoot(
+    request: Vurio_Dedup_SetEditsRootRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_SetEditsRootResponse
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+extension Vurio_Dedup_AdjustmentsServiceAsyncProvider {
+  internal static var serviceDescriptor: GRPCServiceDescriptor {
+    return Vurio_Dedup_AdjustmentsServiceServerMetadata.serviceDescriptor
+  }
+
+  internal var serviceName: Substring {
+    return Vurio_Dedup_AdjustmentsServiceServerMetadata.serviceDescriptor.fullName[...]
+  }
+
+  internal var interceptors: Vurio_Dedup_AdjustmentsServiceServerInterceptorFactoryProtocol? {
+    return nil
+  }
+
+  internal func handle(
+    method name: Substring,
+    context: CallHandlerContext
+  ) -> GRPCServerHandlerProtocol? {
+    switch name {
+    case "DescribeTools":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_ToolDescriptors>(),
+        interceptors: self.interceptors?.makeDescribeToolsInterceptors() ?? [],
+        wrapping: { try await self.describeTools(request: $0, context: $1) }
+      )
+
+    case "GetAdjustments":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_AdjustmentsFileRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdjustmentDocumentResponse>(),
+        interceptors: self.interceptors?.makeGetAdjustmentsInterceptors() ?? [],
+        wrapping: { try await self.getAdjustments(request: $0, context: $1) }
+      )
+
+    case "SetAdjustments":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_SetAdjustmentsRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_SetAdjustmentsResponse>(),
+        interceptors: self.interceptors?.makeSetAdjustmentsInterceptors() ?? [],
+        wrapping: { try await self.setAdjustments(request: $0, context: $1) }
+      )
+
+    case "GetEditsRoot":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_EditsRootRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_EditsRootResponse>(),
+        interceptors: self.interceptors?.makeGetEditsRootInterceptors() ?? [],
+        wrapping: { try await self.getEditsRoot(request: $0, context: $1) }
+      )
+
+    case "SetEditsRoot":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_SetEditsRootRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_SetEditsRootResponse>(),
+        interceptors: self.interceptors?.makeSetEditsRootInterceptors() ?? [],
+        wrapping: { try await self.setEditsRoot(request: $0, context: $1) }
+      )
+
+    default:
+      return nil
+    }
+  }
+}
+
+internal protocol Vurio_Dedup_AdjustmentsServiceServerInterceptorFactoryProtocol: Sendable {
+
+  /// - Returns: Interceptors to use when handling 'describeTools'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeDescribeToolsInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_ToolDescriptors>]
+
+  /// - Returns: Interceptors to use when handling 'getAdjustments'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetAdjustmentsInterceptors() -> [ServerInterceptor<Vurio_Dedup_AdjustmentsFileRequest, Vurio_Dedup_AdjustmentDocumentResponse>]
+
+  /// - Returns: Interceptors to use when handling 'setAdjustments'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeSetAdjustmentsInterceptors() -> [ServerInterceptor<Vurio_Dedup_SetAdjustmentsRequest, Vurio_Dedup_SetAdjustmentsResponse>]
+
+  /// - Returns: Interceptors to use when handling 'getEditsRoot'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetEditsRootInterceptors() -> [ServerInterceptor<Vurio_Dedup_EditsRootRequest, Vurio_Dedup_EditsRootResponse>]
+
+  /// - Returns: Interceptors to use when handling 'setEditsRoot'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeSetEditsRootInterceptors() -> [ServerInterceptor<Vurio_Dedup_SetEditsRootRequest, Vurio_Dedup_SetEditsRootResponse>]
+}
+
+internal enum Vurio_Dedup_AdjustmentsServiceServerMetadata {
+  internal static let serviceDescriptor = GRPCServiceDescriptor(
+    name: "AdjustmentsService",
+    fullName: "vurio.dedup.AdjustmentsService",
+    methods: [
+      Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.describeTools,
+      Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.getAdjustments,
+      Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.setAdjustments,
+      Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.getEditsRoot,
+      Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.setEditsRoot,
+    ]
+  )
+
+  internal enum Methods {
+    internal static let describeTools = GRPCMethodDescriptor(
+      name: "DescribeTools",
+      path: "/vurio.dedup.AdjustmentsService/DescribeTools",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getAdjustments = GRPCMethodDescriptor(
+      name: "GetAdjustments",
+      path: "/vurio.dedup.AdjustmentsService/GetAdjustments",
+      type: GRPCCallType.unary
+    )
+
+    internal static let setAdjustments = GRPCMethodDescriptor(
+      name: "SetAdjustments",
+      path: "/vurio.dedup.AdjustmentsService/SetAdjustments",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getEditsRoot = GRPCMethodDescriptor(
+      name: "GetEditsRoot",
+      path: "/vurio.dedup.AdjustmentsService/GetEditsRoot",
+      type: GRPCCallType.unary
+    )
+
+    internal static let setEditsRoot = GRPCMethodDescriptor(
+      name: "SetEditsRoot",
+      path: "/vurio.dedup.AdjustmentsService/SetEditsRoot",
+      type: GRPCCallType.unary
     )
   }
 }

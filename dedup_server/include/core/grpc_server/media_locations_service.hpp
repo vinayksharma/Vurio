@@ -6,6 +6,7 @@
 // instantiate the TU-private impls).
 
 #include "database/faces_ops.hpp"
+#include "adjustments/adjustment_store.hpp"
 #include "core/grpc_server/grpc_service_common.hpp"
 // repairProgress() is called inline below, so the full type is needed.
 #include "orchestration/duplicate_finder.hpp"
@@ -35,6 +36,8 @@ public:
         auto locations = files_->listMediaLocations();
         for (const auto& pair : locations) {
             reply->add_registered_dirs(pair.second);
+            // ADJ-1: the explicit edits folder, "" when the location's own.
+            reply->add_edits_roots(MediaDedup::Adjustments::AdjustmentStore::instance().explicitEditsRoot(pair.second));
         }
         
         if (db_) {
@@ -92,10 +95,29 @@ public:
 
     grpc::Status RegisterLocation(grpc::ServerContext* context, const vurio::dedup::RegisterLocationRequest* request,
                                   vurio::dedup::RegisterLocationResponse* reply) override {
+        auto& store = MediaDedup::Adjustments::AdjustmentStore::instance();
+        // ADJ-1: refuse up front rather than register and then fail the
+        // edits folder — the user asked for both or neither.
+        if (!request->edits_root().empty() && store.isInitialized()) {
+            std::string conflict = store.editsRootConflict(request->path(), request->edits_root());
+            if (!conflict.empty()) {
+                reply->set_success(false);
+                reply->set_error_message("The edits folder is already used by the location " + conflict + ".");
+                return grpc::Status::OK;
+            }
+        }
         bool success = files_->registerMediaLocation(request->path());
         reply->set_success(success);
         if (!success) {
             reply->set_error_message("Failed to register location.");
+            return grpc::Status::OK;
+        }
+        if (!request->edits_root().empty() && store.isInitialized()) {
+            auto result = store.setEditsRoot(request->path(), request->edits_root());
+            if (!result.ok) {
+                // Registered, but the folder could not be applied: say so.
+                reply->set_error_message("Registered; edits folder not applied: " + result.error);
+            }
         }
         return grpc::Status::OK;
     }
@@ -105,6 +127,13 @@ public:
         if (tpm_) {
             Poco::Logger::get("DedupServiceImpl").information("Clearing thread pool queues prior to deregistering a path.");
             tpm_->clearQueues();
+        }
+        // ADJ-1: the user's keep/delete choice for the sidecar files, applied
+        // while the location's rows (and so its sidecar paths) still exist.
+        auto& store = MediaDedup::Adjustments::AdjustmentStore::instance();
+        if (store.isInitialized()) {
+            int deleted = store.forgetLocation(request->path(), request->delete_adjustment_files());
+            reply->set_adjustment_files_deleted(deleted);
         }
         bool success = files_->deregisterMediaLocation(request->path());
         reply->set_success(success);

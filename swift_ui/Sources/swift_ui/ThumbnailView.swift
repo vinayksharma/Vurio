@@ -23,6 +23,9 @@ struct ThumbnailView: View {
     // across VU / BINNED / the viewer strip. Callers pass
     // ServerImageLoader.tileAssetSize.
     let requestSize: Int
+    // ADJ-2: the file's render revision from its list row; keys the cache
+    // and the request so an edited file never shows its pre-edit bitmap.
+    var renderRevision: Int = 0
 
     @State private var thumbnail: NSImage?
     @State private var isLoading = true
@@ -31,7 +34,7 @@ struct ThumbnailView: View {
     @State private var unreadableReason: String? = nil
 
     private var assetSize: Int { requestSize }
-    private var cacheKey: String { ThumbnailAssetKey.make(filePath: filePath, size: assetSize) }
+    private var cacheKey: String { ThumbnailAssetKey.make(filePath: filePath, size: assetSize, revision: renderRevision) }
 
     /// STRIP-1: the bitmap of the strips' OTHER bucket, if resident. After a
     /// resize the sharper (or smaller) asset is still loading; showing the
@@ -40,7 +43,7 @@ struct ThumbnailView: View {
     /// pictures a moment ago.
     private var otherBucketImage: NSImage? {
         for other in ServerImageLoader.stripAssetSizes where other != assetSize {
-            if let image = ImageCache.shared.getImage(forKey: ThumbnailAssetKey.make(filePath: filePath, size: other)) {
+            if let image = ImageCache.shared.getImage(forKey: ThumbnailAssetKey.make(filePath: filePath, size: other, revision: renderRevision)) {
                 return image
             }
         }
@@ -97,7 +100,7 @@ struct ThumbnailView: View {
         }
         // Re-armed by a bucket change too (a strip resize crossing 128 pt):
         // the old bitmap stays up via `displayed` while the new one loads.
-        .task(id: "\(filePath)|\(assetSize)") {
+        .task(id: "\(filePath)|\(assetSize)|r\(renderRevision)") {
             if let cached = ImageCache.shared.getImage(forKey: cacheKey) {
                 // Promote the cache hit into local state so later body
                 // passes skip the lookup.
@@ -132,7 +135,7 @@ struct ThumbnailView: View {
             try await Task.sleep(nanoseconds: 75_000_000)
 
             logDebug("ThumbnailView calling loadThumbnail for \(filePath)")
-            let image = try await ServerImageLoader.shared.loadThumbnail(filePath: filePath, size: assetSize, cachedThumbnailPath: directPath, layerPriority: layerPriority)
+            let image = try await ServerImageLoader.shared.loadThumbnail(filePath: filePath, size: assetSize, cachedThumbnailPath: directPath, layerPriority: layerPriority, revision: renderRevision)
             await MainActor.run {
                 self.thumbnail = image
                 self.isLoading = false

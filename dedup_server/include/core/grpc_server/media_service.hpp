@@ -7,6 +7,7 @@
 
 #include "core/grpc_server/grpc_service_common.hpp"
 #include "core/grpc_server/full_res_cache_registry.hpp"
+#include "adjustments/adjustment_store.hpp"
 
 namespace MediaDedup {
 namespace Core {
@@ -90,7 +91,7 @@ public:
     }
 
     void dropCachedThumbnail(const MediaDedup::ThumbnailCacheRecord& rec) {
-        MediaDedup::ThumbnailCacheOps::deleteThumbnail(*db_, rec.source_path, rec.thumbnail_size);
+        MediaDedup::ThumbnailCacheOps::deleteThumbnail(*db_, rec.source_path, rec.thumbnail_size, rec.render_revision);
         // Through the cache so its byte accounting and index stay right; it
         // declines files it does not track (or when not initialised), and a
         // damaged file must go either way.
@@ -115,8 +116,14 @@ public:
             return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, *reason);
         }
 
+        // ADJ-1: the revision is resolved HERE (single source of truth) and
+        // echoed back, so a client holding a stale list can never key a
+        // cache entry under the wrong revision (THUMB-1 §4.3).
+        const int revision = MediaDedup::Adjustments::AdjustmentStore::instance().revisionFor(file_path);
+        response->set_render_revision(revision);
+
         bool lookup_failed = false;
-        auto cached = MediaDedup::ThumbnailCacheOps::getBestFitThumbnail(*db_, file_path, normalized_size, &lookup_failed);
+        auto cached = MediaDedup::ThumbnailCacheOps::getBestFitThumbnail(*db_, file_path, normalized_size, &lookup_failed, revision);
         if (lookup_failed) {
             // DB session pool starved — the asset may well be cached. Let the
             // client retry the lookup; do NOT submit a fresh generation.
@@ -192,8 +199,15 @@ public:
                 return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, *reason);
             }
 
+            // ADJ-1: the native render carries the edit chain; its revision
+            // is part of the LRU identity so a pre-edit render is never served.
+            const MediaDedup::Adjustments::RenderChain chain =
+                MediaDedup::Adjustments::AdjustmentStore::instance().chainFor(file_path);
+            const int revision = chain.revision();
+            response->set_render_revision(revision);
+
             int64_t full_mtime = sourceModifiedTime(file_path);
-            if (auto hit = fullResCache().getFresh(file_path, full_mtime)) {
+            if (auto hit = fullResCache().getFresh(file_path, full_mtime, revision)) {
                 response->set_file_path(hit->temp_path);
                 response->set_is_full_resolution(true);
                 return grpc::Status::OK;
@@ -203,19 +217,21 @@ public:
                 auto db_copy = db_owner_; // CC-5: owning share
                 auto config_copy = config_;
                 std::string path_copy = file_path;
-                tpm_->submit("fullres_generator", [db_copy, config_copy, path_copy]() {
+                tpm_->submit("fullres_generator", [db_copy, config_copy, path_copy, chain, revision]() {
                     int timeout_ms = config_copy
                         ? config_copy->getPropertyValue<int>("media.image.transcoding.timeoutMs", ThumbnailGenerator::DEFAULT_TIMEOUT_MS)
                         : ThumbnailGenerator::DEFAULT_TIMEOUT_MS;
                     Magick::Blob blob;
                     // size 0 = native resolution, quality 95 — matches the web endpoint
-                    if (ThumbnailGenerator::generateToBlob(path_copy, ThumbnailGenerator::kNativeResolution, blob, 95, timeout_ms)) {
+                    if (ThumbnailGenerator::generateToBlob(path_copy, ThumbnailGenerator::kNativeResolution, blob, 95, timeout_ms, chain)) {
                         std::string out_path = MediaDedup::makeTempFilePath("fullres", ".jpg");
                         std::ofstream out(out_path, std::ios::binary);
                         out.write(static_cast<const char*>(blob.data()), static_cast<std::streamsize>(blob.length()));
                         out.close();
                         if (!out.fail()) {
-                            fullResCache().put(path_copy, {out_path, sourceModifiedTime(path_copy)});
+                            MediaDedup::FullResEntry entry{out_path, sourceModifiedTime(path_copy)};
+                            entry.render_revision = revision;
+                            fullResCache().put(path_copy, entry);
                             MediaDedup::MediaGenerationFailures::instance().recordSuccess(path_copy, "preview_full");
                             MediaDedup::MediaReadyBus::instance().publish({path_copy, "preview_full", true, ""});
                             return;
@@ -228,14 +244,11 @@ public:
             return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Full resolution generating");
         }
 
-        // Best-available: when a full-resolution render is already materialized
-        // for this file, serve it for the ordinary preview request too — no
-        // point handing out QHD only for the viewer to upgrade on zoom.
-        if (auto hit = fullResCache().getFresh(file_path, sourceModifiedTime(file_path))) {
-            response->set_file_path(hit->temp_path);
-            response->set_is_full_resolution(true);
-            return grpc::Status::OK;
-        }
+        // ADJ-1: the QHD preview is BASE pixels — the viewer applies the
+        // chain itself (docs §6.2) — so it is served at revision 0, and a
+        // materialized native render (edited pixels) is not substituted for
+        // it any more. The revision is still echoed for the client's keys.
+        response->set_render_revision(MediaDedup::Adjustments::AdjustmentStore::instance().revisionFor(file_path));
 
         if (!TranscodingPipeline::NeedsQhdPreviewCache(file_path, config_)) {
             // File does not need transcoding (e.g., standard JPEG/PNG) — the
@@ -350,6 +363,9 @@ public:
             proto_event.set_success(event.success);
             proto_event.set_error_message(event.error_message);
             proto_event.set_size(event.size);
+            proto_event.set_render_revision(event.render_revision);   // ADJ-1
+            proto_event.set_display_width(event.display_width);
+            proto_event.set_display_height(event.display_height);
 
             if (!writer->Write(proto_event)) {
                 break; // Connection closed

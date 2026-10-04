@@ -5,6 +5,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Data/Session.h>
 #include <Poco/Data/Statement.h>
+#include <Poco/Data/RecordSet.h>
 #include <functional>
 #include <algorithm>
 
@@ -58,6 +59,13 @@ namespace MediaDedup
             sess << std::string(SQL::kCreateThumbnailCacheIndexSourceModified), now;
             sess << std::string(SQL::kCreateThumbnailCacheIndexLastAccessed), now;
 
+            // ADJ-1: VURIO_BEST_THUMB_SUBQUERY correlates on image_adjustments
+            // for the file's current revision, so the table must exist
+            // wherever thumbnail_cache is queried (ScannedFilesOps::ensureTable
+            // creates it too; both are idempotent).
+            sess << std::string(SQL::kCreateImageAdjustmentsTable), now;
+            sess << std::string(SQL::kCreateImageAdjustmentsIndexLocation), now;
+
             Poco::Logger::get("ThumbnailCacheOps").debug("Thumbnail cache table and indices ensured");
             return true;
         }
@@ -78,7 +86,8 @@ namespace MediaDedup
 
     std::optional<ThumbnailCacheRecord> ThumbnailCacheOps::getThumbnail(DatabaseManager &db,
                                                                         const std::string &source_path,
-                                                                        int size)
+                                                                        int size,
+                                                                        int render_revision)
     {
         try
         {
@@ -89,7 +98,7 @@ namespace MediaDedup
             ThumbnailCacheRecord record;
             std::string src = source_path;
             int sz = size;
-            int rev = kNoRenderRevision;
+            int rev = render_revision;
 
             stmt << std::string(SQL::kSelectThumbnailByPath),
                 into(record.id),
@@ -120,10 +129,47 @@ namespace MediaDedup
         }
     }
 
+    std::vector<ThumbnailCacheRecord> ThumbnailCacheOps::listForPath(DatabaseManager &db, const std::string &source_path)
+    {
+        std::vector<ThumbnailCacheRecord> out;
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            Session &sess = lease.get();
+            Statement stmt(sess);
+            std::string src = source_path;
+            stmt << std::string(SQL::kSelectThumbnailsForPath), use(src);
+            stmt.execute();
+            Poco::Data::RecordSet rs(stmt);
+            bool more = rs.moveFirst();
+            while (more)
+            {
+                ThumbnailCacheRecord r;
+                r.id = rs[0].convert<int>();
+                r.source_path = rs[1].convert<std::string>();
+                r.cached_path = rs[2].convert<std::string>();
+                r.thumbnail_size = rs[3].convert<int>();
+                r.render_revision = rs[4].convert<int>();
+                r.file_size_bytes = rs[5].convert<int64_t>();
+                r.source_modified_at = rs[6].convert<int64_t>();
+                r.created_at = rs[7].convert<int64_t>();
+                r.last_accessed_at = rs[8].convert<int64_t>();
+                out.push_back(std::move(r));
+                more = rs.moveNext();
+            }
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ThumbnailCacheOps").error("Exception in listForPath: %s", std::string(e.what()));
+        }
+        return out;
+    }
+
     std::optional<ThumbnailCacheRecord> ThumbnailCacheOps::getBestFitThumbnail(DatabaseManager &db,
                                                                         const std::string &source_path,
                                                                         int min_size,
-                                                                        bool *lookup_failed)
+                                                                        bool *lookup_failed,
+                                                                        int render_revision)
     {
         if (lookup_failed)
             *lookup_failed = false;
@@ -136,7 +182,7 @@ namespace MediaDedup
             ThumbnailCacheRecord record;
             std::string src = source_path;
             int sz = min_size;
-            int rev = kNoRenderRevision;
+            int rev = render_revision;
 
             stmt << std::string(SQL::kSelectBestFitThumbnail),
                 into(record.id),
@@ -206,7 +252,8 @@ namespace MediaDedup
     bool ThumbnailCacheOps::updateAccessTime(DatabaseManager &db,
                                              const std::string &source_path,
                                              int size,
-                                             int64_t timestamp)
+                                             int64_t timestamp,
+                                             int render_revision)
     {
         try
         {
@@ -217,7 +264,7 @@ namespace MediaDedup
             int64_t ts = timestamp;
             std::string src = source_path;
             int sz = size;
-            int rev = kNoRenderRevision;
+            int rev = render_revision;
 
             stmt << std::string(SQL::kUpdateThumbnailAccessTime),
                 use(ts),
@@ -237,7 +284,8 @@ namespace MediaDedup
 
     bool ThumbnailCacheOps::deleteThumbnail(DatabaseManager &db,
                                             const std::string &source_path,
-                                            int size)
+                                            int size,
+                                            int render_revision)
     {
         try
         {
@@ -257,7 +305,7 @@ namespace MediaDedup
             {
                 // Delete specific size
                 int sz = size;
-                int rev = kNoRenderRevision;
+                int rev = render_revision;
                 stmt << std::string(SQL::kDeleteThumbnailByPathAndSize), use(src), use(sz), use(rev), now;
                 Poco::Logger::get("ThumbnailCacheOps").debug("Deleted thumbnail entry for: %s (size: %d)", source_path, size);
             }

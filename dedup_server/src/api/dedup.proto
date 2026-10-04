@@ -99,6 +99,10 @@ service MediaLocationsService {
 
 message RegisterLocationRequest {
   string path = 1;
+  // ADJ-1: optional folder for the location's edit files (sidecars). Empty =
+  // the location itself. Refused (success=false) when another location
+  // already uses it or nests with it.
+  string edits_root = 2;
 }
 
 message RegisterLocationResponse {
@@ -108,11 +112,15 @@ message RegisterLocationResponse {
 
 message DeregisterLocationRequest {
   string path = 1;
+  // ADJ-1: also unlink the location's sidecar files (the user's choice in
+  // the confirmation; the edit rows always go with the registration).
+  bool delete_adjustment_files = 2;
 }
 
 message DeregisterLocationResponse {
   bool success = 1;
   string error_message = 2;
+  int32 adjustment_files_deleted = 3; // ADJ-1
 }
 
 message ChangePathRequest {
@@ -166,6 +174,9 @@ message GetStatusResponse {
   // when media.face.enabled is off.
   int32 face_scan_total = 15;
   int32 face_scan_completed = 16;
+  // ADJ-1: parallel to registered_dirs — the effective edits folder of each
+  // location ("" when it is the location itself).
+  repeated string edits_roots = 17;
 }
 
 // ---------------------------------------------------------
@@ -362,6 +373,10 @@ message DuplicateFile {
   // decode it straight from disk. cached_thumbnail_path stays as the
   // best fit for the 256 bucket (older clients).
   repeated CachedThumbnail cached_thumbnails = 12;
+  // ADJ-1: the file's render revision (0 = no edits). Part of every
+  // thumbnail cache key on the client; display_width/height above are the
+  // post-edit geometry.
+  int32 render_revision = 13;
 }
 
 // STRIP-2: one on-disk thumbnail asset of a file: its pixel bucket (128,
@@ -431,6 +446,7 @@ message DayFile {
   // ("Fairy Falls · Yellowstone National Park · Wyoming"); empty when the
   // file has no GPS fix or it has not been resolved yet.
   string place_label = 17;
+  int32 render_revision = 18; // ADJ-1, see DuplicateFile
 }
 
 message DayGroup {
@@ -624,6 +640,9 @@ message GetMediaRequest {
   // STRIP-2: drop the cached asset that would have been served (the client
   // could not decode it) and generate it again.
   bool regenerate = 3;
+  // ADJ-1: informational; the server resolves the file's current revision
+  // itself and echoes it in MediaPathResponse.render_revision.
+  int32 render_revision = 4;
 }
 
 message CancelMediaRequest {
@@ -640,6 +659,10 @@ message MediaPathResponse {
   // file, or a cached full-res render) — the viewer can skip its zoom-time
   // full-resolution upgrade.
   bool is_full_resolution = 2;
+  // ADJ-1: the revision the served asset was rendered at (thumbnails and
+  // native renders carry the edits; the QHD preview is base pixels and the
+  // viewer applies the chain itself).
+  int32 render_revision = 3;
 }
 
 message MediaReadyEvent {
@@ -650,4 +673,109 @@ message MediaReadyEvent {
   // STRIP-2: pixel bucket of a finished thumbnail; 0 for previews and for
   // events from paths that do not know the size.
   int32 size = 5;
+  // ADJ-1: media_type "adjustments" — the file's edits changed. The new
+  // revision and display geometry let the client re-key its caches and
+  // reshape the tile without reloading the list.
+  int32 render_revision = 6;
+  int32 display_width = 7;
+  int32 display_height = 8;
+}
+
+// ---------------------------------------------------------
+// Adjustments Service (ADJ-1, docs/todo_image_adjustments.md §5.8)
+//
+// Non-destructive per-image edits. The document crosses the wire as JSON
+// (the sidecar body), so adding a tool never changes this file. Limits and
+// defaults come from DescribeTools: the client builds its controls from
+// them and never hard-codes a range.
+// ---------------------------------------------------------
+service AdjustmentsService {
+  rpc DescribeTools(Empty) returns (ToolDescriptors);
+  rpc GetAdjustments(AdjustmentsFileRequest) returns (AdjustmentDocumentResponse);
+  // Validates, stores, writes the sidecar (or spools it), invalidates the
+  // file's cached renders and pushes a MediaReadyEvent "adjustments".
+  // INVALID_ARGUMENT carries the tool's error text; NOT_FOUND = unregistered.
+  rpc SetAdjustments(SetAdjustmentsRequest) returns (SetAdjustmentsResponse);
+  // Per-location edits folder (default: the location itself).
+  rpc GetEditsRoot(EditsRootRequest) returns (EditsRootResponse);
+  // "" = back to the default. Existing sidecars are moved into the new
+  // layout. Refused when another location uses or nests with the folder.
+  rpc SetEditsRoot(SetEditsRootRequest) returns (SetEditsRootResponse);
+}
+
+message ParamSpec {
+  string id = 1;
+  string label = 2;
+  string kind = 3; // "number" | "integer" | "enum"
+  double min = 4;
+  double max = 5;
+  double step = 6;          // 0 = continuous
+  double default_value = 7; // number/integer
+  string default_option = 8; // enum
+  repeated string options = 9;
+}
+
+message ToolDescriptor {
+  string id = 1;    // "rotate", "crop" — also the key of the document section
+  string label = 2;
+  int32 version = 3; // the section version this build writes
+  repeated ParamSpec params = 4;
+}
+
+message ToolDescriptors {
+  repeated ToolDescriptor tools = 1; // in application order
+  int32 document_version = 2;        // the document format version this build writes
+}
+
+message AdjustmentsFileRequest {
+  string file_path = 1;
+}
+
+message AdjustmentDocumentResponse {
+  bool has_adjustments = 1;
+  string document_json = 2;   // full sidecar body; empty when none
+  int32 render_revision = 3;  // 0 = none
+  int32 display_width = 4;    // post-edit geometry (0 = unknown)
+  int32 display_height = 5;
+  bool sidecar_spooled = 6;   // the sidecar waits for its folder to be reachable
+  string sidecar_path = 7;    // where it is (destination or spool)
+}
+
+message SetAdjustmentsRequest {
+  string file_path = 1;
+  string document_json = 2;   // a complete document; identity deletes the edit
+}
+
+message SetAdjustmentsResponse {
+  bool success = 1;
+  string error_message = 2;
+  int32 render_revision = 3;
+  int32 display_width = 4;
+  int32 display_height = 5;
+  bool sidecar_spooled = 6;
+  string sidecar_path = 7;
+}
+
+message EditsRootRequest {
+  string location_path = 1;
+}
+
+message EditsRootResponse {
+  string edits_root = 1;   // effective folder
+  bool is_default = 2;     // true when it is the location itself
+  int32 sidecar_count = 3; // delivered sidecars for this location
+  int32 spooled_count = 4; // sidecars waiting in the spool
+}
+
+message SetEditsRootRequest {
+  string location_path = 1;
+  string edits_root = 2;   // "" = default
+}
+
+message SetEditsRootResponse {
+  bool success = 1;
+  string error_message = 2;
+  int32 moved = 3;
+  int32 failed = 4;
+  string conflicting_location = 5; // set when refused as shared/nested
 }

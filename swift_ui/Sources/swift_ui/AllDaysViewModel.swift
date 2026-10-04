@@ -247,7 +247,7 @@ class AllDaysViewModel: ObservableObject {
                 if ImageCache.shared.getImage(forKey: ThumbnailAssetKey.make(filePath: file.filePath, size: assetSize)) == nil {
                     // Off-screen prefetch runs below every visible layer so it
                     // never delays thumbnails on screen.
-                    _ = try? await ServerImageLoader.shared.loadThumbnail(filePath: file.filePath, size: assetSize, cachedThumbnailPath: file.cachedThumbnailPath(forAssetSize: assetSize), layerPriority: ServerImageLoader.prefetchPriority)
+                    _ = try? await ServerImageLoader.shared.loadThumbnail(filePath: file.filePath, size: assetSize, cachedThumbnailPath: file.cachedThumbnailPath(forAssetSize: assetSize), layerPriority: ServerImageLoader.prefetchPriority, revision: Int(file.renderRevision))
                 }
             }
         }
@@ -410,6 +410,31 @@ class AllDaysViewModel: ObservableObject {
     /// Optimistically flip isEjected on loaded rows so thumbnails update
     /// immediately after a per-file or bulk eject/restore; authoritative state is
     /// reconciled via reloadLoadedPages().
+    /// ADJ-2: a file's edits changed: re-key its tile and reshape it in
+    /// every loaded day. The stale bucket list is dropped so the tile asks
+    /// the server (which resolves the current revision).
+    func applyAdjustments(filePath: String, renderRevision: Int32, displayWidth: Int32, displayHeight: Int32) {
+        for di in days.indices {
+            guard var day = days[di].day else { continue }
+            var changed = false
+            for fi in day.files.indices where day.files[fi].filePath == filePath {
+                guard day.files[fi].renderRevision != renderRevision
+                    || day.files[fi].displayWidth != displayWidth else { continue }
+                day.files[fi].renderRevision = renderRevision
+                if displayWidth > 0, displayHeight > 0 {
+                    day.files[fi].displayWidth = displayWidth
+                    day.files[fi].displayHeight = displayHeight
+                }
+                day.files[fi].cachedThumbnails = []
+                day.files[fi].cachedThumbnailPath = ""
+                changed = true
+            }
+            if changed {
+                days[di].day = day
+            }
+        }
+    }
+
     func applyEjectionState(_ paths: [String], isEjected: Bool) {
         let pathSet = Set(paths)
         for di in days.indices {

@@ -625,6 +625,53 @@ namespace MediaDedup
         inline constexpr std::string_view kDropThumbnailCacheTable =
             "DROP TABLE IF EXISTS thumbnail_cache";
 
+        // ADJ-1 (docs/todo_image_adjustments.md §5.5): per-file non-destructive
+        // adjustments. Keyed by file_path, NOT scanned_files.id — the scanner
+        // hard-deletes and re-inserts a row (new id) whenever the source's size
+        // or mtime changes, and an edit must survive that. document is the
+        // canonical sidecar JSON; render_revision is derived from it (§3.4);
+        // sidecar_mtime 0 means the sidecar is spooled (§5.6a), not at its
+        // configured destination.
+        inline constexpr std::string_view kCreateImageAdjustmentsTable =
+            "CREATE TABLE IF NOT EXISTS image_adjustments (\n"
+            "    file_path TEXT PRIMARY KEY,\n"
+            "    location_key TEXT NOT NULL,\n"
+            "    render_revision INTEGER NOT NULL,\n"
+            "    document TEXT NOT NULL,\n"
+            "    sidecar_path TEXT NOT NULL,\n"
+            "    sidecar_mtime INTEGER NOT NULL DEFAULT 0,\n"
+            "    updated_at INTEGER NOT NULL\n"
+            ");";
+        inline constexpr std::string_view kCreateImageAdjustmentsIndexLocation =
+            "CREATE INDEX IF NOT EXISTS idx_image_adjustments_location ON image_adjustments(location_key);";
+        inline constexpr std::string_view kUpsertImageAdjustment =
+            "INSERT INTO image_adjustments(file_path, location_key, render_revision, document, sidecar_path, sidecar_mtime, updated_at) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(file_path) DO UPDATE SET location_key=excluded.location_key, render_revision=excluded.render_revision, "
+            "document=excluded.document, sidecar_path=excluded.sidecar_path, sidecar_mtime=excluded.sidecar_mtime, "
+            "updated_at=excluded.updated_at";
+        inline constexpr std::string_view kSelectImageAdjustmentColumns =
+            "SELECT file_path, location_key, render_revision, document, sidecar_path, sidecar_mtime, updated_at FROM image_adjustments";
+        inline constexpr std::string_view kSelectImageAdjustmentByPath =
+            "SELECT file_path, location_key, render_revision, document, sidecar_path, sidecar_mtime, updated_at FROM image_adjustments WHERE file_path=?";
+        inline constexpr std::string_view kSelectImageAdjustmentsByLocation =
+            "SELECT file_path, location_key, render_revision, document, sidecar_path, sidecar_mtime, updated_at FROM image_adjustments WHERE location_key=? ORDER BY file_path";
+        // ADJ-1: every cached bucket and revision of one file, for the
+        // invalidation that follows an edit (rows AND files go).
+        inline constexpr std::string_view kSelectThumbnailsForPath =
+            "SELECT id, source_path, cached_path, thumbnail_size, render_revision, file_size_bytes, source_modified_at, "
+            "created_at, last_accessed_at FROM thumbnail_cache WHERE source_path=?";
+        inline constexpr std::string_view kDeleteImageAdjustmentByPath =
+            "DELETE FROM image_adjustments WHERE file_path=?";
+        inline constexpr std::string_view kDeleteImageAdjustmentsByLocation =
+            "DELETE FROM image_adjustments WHERE location_key=?";
+        inline constexpr std::string_view kUpdateImageAdjustmentSidecar =
+            "UPDATE image_adjustments SET sidecar_path=?, sidecar_mtime=? WHERE file_path=?";
+        inline constexpr std::string_view kUpdateImageAdjustmentFilePath =
+            "UPDATE image_adjustments SET file_path=?, location_key=? WHERE file_path=?";
+        inline constexpr std::string_view kSelectImageAdjustmentCountsByLocation =
+            "SELECT COUNT(*), SUM(CASE WHEN sidecar_mtime = 0 THEN 1 ELSE 0 END) FROM image_adjustments WHERE location_key=?";
+
         // Preview cache table (full resolution transcoded caches)
         inline constexpr std::string_view kCreatePreviewCacheTable =
             "CREATE TABLE IF NOT EXISTS preview_cache (\n"
@@ -792,12 +839,15 @@ namespace MediaDedup
 // directly, skipping the gRPC thumbnail round-trip. cached_thumbnail_path on
 // the records is derived from this list as the best fit for 256 (the rule the
 // old single-row subquery applied) for older clients.
-// THUMB-1: the render_revision = 0 literal becomes a correlated lookup of the
-// file's current revision once the non-destructive edit pipeline lands.
+// THUMB-1 reserved the seam; ADJ-1 fills it: the revision is a correlated
+// lookup of the file's current render revision (0 for an un-edited file),
+// so a list never hands out a pre-edit bitmap. image_adjustments is created
+// by ScannedFilesOps::ensureTable alongside scanned_files.
 #define VURIO_BEST_THUMB_SUBQUERY(src_col) \
     "(SELECT group_concat(tc.thumbnail_size || ':' || tc.cached_path, char(31)) " \
     "FROM thumbnail_cache tc " \
-    "WHERE tc.source_path = " src_col " AND tc.render_revision = 0)"
+    "WHERE tc.source_path = " src_col " AND tc.render_revision = " \
+    "COALESCE((SELECT ia.render_revision FROM image_adjustments ia WHERE ia.file_path = " src_col "), 0))"
 
         inline constexpr std::string_view kSelectDuplicateMembersByGroupId =
             "SELECT dm.file_id, dm.file_path, dm.similarity_score, dm.file_size, dm.created_date, dm.is_representative, dm.added_at, "

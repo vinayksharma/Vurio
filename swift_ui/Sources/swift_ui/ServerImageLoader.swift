@@ -203,6 +203,22 @@ actor ServerImageLoader {
     }
 
     private func handleMediaReady(_ event: Vurio_Dedup_MediaReadyEvent) {
+        // ADJ-2: the file's edits changed on the server (a sidecar imported
+        // by a scan, or a commit from another surface). Broadcast so strips,
+        // cards and the viewer re-key and reshape; the old-revision bitmaps
+        // simply age out of the caches under their own keys.
+        if event.mediaType == "adjustments" {
+            let info: [String: Any] = [
+                "filePath": event.filePath,
+                "renderRevision": Int(event.renderRevision),
+                "displayWidth": Int(event.displayWidth),
+                "displayHeight": Int(event.displayHeight),
+            ]
+            Task { @MainActor in
+                NotificationCenter.default.post(name: .adjustmentsChanged, object: nil, userInfo: info)
+            }
+            return
+        }
         let key = "\(event.mediaType)|\(event.filePath)"
         guard let waiters = readyWaiters[key] else { return }
         let eventSize = Int(event.size)
@@ -267,21 +283,24 @@ actor ServerImageLoader {
     ///   token once no shallower layer is still outstanding, so the visible top of
     ///   every stack loads before any hidden layer. Non-stacked callers leave this
     ///   at 0.
-    nonisolated func loadThumbnail(filePath: String, size: Int, cachedThumbnailPath: String? = nil, layerPriority: Int = 0) async throws -> NSImage {
+    /// - Parameter revision: ADJ-2, the file's render revision from its list
+    ///   row. Keys every cache layer; the server resolves the current one and
+    ///   echoes it, and the bitmap is cached under the echoed revision.
+    nonisolated func loadThumbnail(filePath: String, size: Int, cachedThumbnailPath: String? = nil, layerPriority: Int = 0, revision: Int = 0) async throws -> NSImage {
         let currentPriority = Task.currentPriority
-        let key = ThumbnailAssetKey.make(filePath: filePath, size: size)
+        let key = ThumbnailAssetKey.make(filePath: filePath, size: size, revision: revision)
 
         return try await joinInFlight(key: key) {
-            return try await self.performLoadThumbnail(filePath: filePath, size: size, priority: currentPriority, cachedThumbnailPath: cachedThumbnailPath, layerPriority: layerPriority)
+            return try await self.performLoadThumbnail(filePath: filePath, size: size, priority: currentPriority, cachedThumbnailPath: cachedThumbnailPath, layerPriority: layerPriority, revision: revision)
         }
     }
 
-    private func performLoadThumbnail(filePath: String, size: Int, priority: TaskPriority?, cachedThumbnailPath: String?, layerPriority: Int) async throws -> NSImage {
+    private func performLoadThumbnail(filePath: String, size: Int, priority: TaskPriority?, cachedThumbnailPath: String?, layerPriority: Int, revision: Int) async throws -> NSImage {
         logDebug("loadThumbnail requested for \(filePath)")
         
         if let cachedPath = cachedThumbnailPath, !cachedPath.isEmpty {
             if let image = await self.decodeImageInBackground(filePath: cachedPath, priority: priority) {
-                ImageCache.shared.setImage(image, forKey: ThumbnailAssetKey.make(filePath: filePath, size: size))
+                ImageCache.shared.setImage(image, forKey: ThumbnailAssetKey.make(filePath: filePath, size: size, revision: revision))
                 return image
             }
             logDebug("Failed to load direct cached thumbnail for \(filePath), falling back to gRPC.")
@@ -303,7 +322,7 @@ actor ServerImageLoader {
                 // are not stuck behind it. Skipped if a fresh request for the
                 // same asset has already been registered, since the server
                 // task is keyed by path and the cancel would hit that one.
-                let cancelKey = ThumbnailAssetKey.make(filePath: filePath, size: size)
+                let cancelKey = ThumbnailAssetKey.make(filePath: filePath, size: size, revision: revision)
                 Task {
                     if await self.hasLiveInFlight(key: cancelKey) { return }
                     do {
@@ -357,6 +376,7 @@ actor ServerImageLoader {
                 // (truncated write on a network cache, say) — ask it to drop
                 // and regenerate rather than serve the same bytes again.
                 request.regenerate = regenerateNext
+                request.renderRevision = Int32(revision)
                 regenerateNext = false
 
                 let response = try await client.getThumbnail(request)
@@ -365,7 +385,15 @@ actor ServerImageLoader {
                 try Task.checkCancellation()
 
                 if let image = await self.decodeImageInBackground(filePath: responsePath, priority: priority) {
-                    ImageCache.shared.setImage(image, forKey: ThumbnailAssetKey.make(filePath: filePath, size: size))
+                    // ADJ-2: cached under the revision the server actually
+                    // rendered (it resolves the current one) AND under the
+                    // requested key, so a tile holding a stale row still
+                    // paints and re-keys once the adjustments event lands.
+                    let served = Int(response.renderRevision)
+                    ImageCache.shared.setImage(image, forKey: ThumbnailAssetKey.make(filePath: filePath, size: size, revision: served))
+                    if served != revision {
+                        ImageCache.shared.setImage(image, forKey: ThumbnailAssetKey.make(filePath: filePath, size: size, revision: revision))
+                    }
                     logDebug("loadThumbnail SUCCESS for \(filePath)")
                     return image
                 } else {

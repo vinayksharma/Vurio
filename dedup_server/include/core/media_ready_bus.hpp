@@ -31,6 +31,12 @@ namespace MediaDedup
             // STRIP-2: pixel bucket of a finished thumbnail (0 for previews).
             // A waiter for the 512 asset must not wake on the 256 one.
             int size = 0;
+            // ADJ-1: media_type "adjustments" — the file's edits changed. The
+            // new revision and display geometry let every client surface
+            // re-key its caches without a list reload (docs §5.7 step 5).
+            int render_revision = 0;
+            int display_width = 0;
+            int display_height = 0;
         };
 
         struct Subscription

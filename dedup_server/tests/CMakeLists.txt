@@ -94,6 +94,30 @@ set(UNIT_TEST_SOURCES
     unit/test_thumbnail_cache_ops.cpp
     unit/test_offline_reverse_geocoder.cpp
     unit/test_places_ops.cpp
+    unit/test_adjustment_tools.cpp
+    unit/test_sidecar_layout.cpp
+    unit/test_adjustment_store.cpp
+    unit/test_adjustment_render.cpp
+)
+
+# ADJ-1: the adjustment store and everything it links. Sources that resolve
+# a file's edits (files_manager, files_service, thumbnail_service, the
+# pipeline helper, the gRPC services) pull all of this in; add it to any
+# standalone test executable that links one of them.
+set(ADJUSTMENTS_SOURCES
+    ${CMAKE_SOURCE_DIR}/src/adjustments/tools/rotate_tool.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/tools/crop_tool.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/tool_registry.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/render_chain.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/adjustment_document.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/sidecar_layout.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/sidecar_store.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/adjustment_store.cpp
+    ${CMAKE_SOURCE_DIR}/src/database/adjustments_ops.cpp
+    ${CMAKE_SOURCE_DIR}/src/filesmanager/media_availability.cpp
+    ${CMAKE_SOURCE_DIR}/src/filesmanager/file_scanner.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/media_ready_bus.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/media_generation_failures.cpp
 )
 
 # Integration Tests - REMOVED for brevity
@@ -173,6 +197,30 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     elseif(${test_name} STREQUAL "test_magick_args")
         # Skip creating standalone executable for this test - it's only part of all_unit_tests
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="MagickArgsTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_adjustment_tools")
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="AdjustmentGeometryTest.*:RotateToolTest.*:CropToolTest.*:ToolRegistryTest.*:AdjustmentDocumentTest.*:RenderChainTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_adjustment_render")
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="AdjustmentRenderTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_adjustment_store")
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="AdjustmentStoreTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_sidecar_layout")
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="SidecarLayoutTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -467,6 +515,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/similarity/similarity_calculator.cpp
             ${CMAKE_SOURCE_DIR}/src/filesmanager/file_scanner.cpp
             ${CMAKE_SOURCE_DIR}/src/filesmanager/files_service.cpp
+            ${ADJUSTMENTS_SOURCES}
+            ${CMAKE_SOURCE_DIR}/src/filesmanager/disk_cache.cpp
             ${CMAKE_SOURCE_DIR}/src/filesmanager/media_availability.cpp
             ${CMAKE_SOURCE_DIR}/src/database/image_artifacts_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/thumbnail_cache_ops.cpp
@@ -492,6 +542,9 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/database/places_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/database/ejected_files_ops.cpp
             ${CMAKE_SOURCE_DIR}/src/filesmanager/files_service.cpp
+            ${ADJUSTMENTS_SOURCES}
+            ${CMAKE_SOURCE_DIR}/src/filesmanager/disk_cache.cpp
+            ${CMAKE_SOURCE_DIR}/src/database/thumbnail_cache_ops.cpp
         )
         target_include_directories(${test_name} PRIVATE ${SQLITE3_INCLUDE_DIRS})
         target_compile_definitions(${test_name} PRIVATE SQLITE_ENABLE_LOAD_EXTENSION)
@@ -596,6 +649,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/thumbnail_generator.cpp
+            ${ADJUSTMENTS_SOURCES}
+            ${CMAKE_SOURCE_DIR}/src/filesmanager/files_service.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/subprocess_runner.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/temp_paths.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/tool_paths.cpp
@@ -641,6 +696,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/backends/transcoding_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/media_processors/image/pipelines/quality_pipeline.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/thumbnail_generator.cpp
+            ${ADJUSTMENTS_SOURCES}
             ${CMAKE_SOURCE_DIR}/src/utils/subprocess_runner.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/temp_paths.cpp
             ${CMAKE_SOURCE_DIR}/src/utils/tool_paths.cpp
@@ -740,6 +796,15 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/orchestration/duplicate_finder.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/similarity/similarity_calculator.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/thumbnail_generator.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/tools/rotate_tool.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/tools/crop_tool.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/tool_registry.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/render_chain.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/adjustment_document.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/sidecar_layout.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/sidecar_store.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/adjustment_store.cpp
+    ${CMAKE_SOURCE_DIR}/src/database/adjustments_ops.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/subprocess_runner.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/temp_paths.cpp
     ${CMAKE_SOURCE_DIR}/src/utils/tool_paths.cpp
@@ -932,7 +997,11 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_duplicate_members_geometry" AND
       NOT ${test_name} STREQUAL "test_thumbnail_cache_ops" AND
       NOT ${test_name} STREQUAL "test_offline_reverse_geocoder" AND
-      NOT ${test_name} STREQUAL "test_places_ops")
+      NOT ${test_name} STREQUAL "test_places_ops" AND
+      NOT ${test_name} STREQUAL "test_adjustment_tools" AND
+      NOT ${test_name} STREQUAL "test_sidecar_layout" AND
+      NOT ${test_name} STREQUAL "test_adjustment_store" AND
+      NOT ${test_name} STREQUAL "test_adjustment_render")
         add_dependencies(${test_name} ${TEST_DATA_DEPENDENCY})
     endif()
 endforeach()

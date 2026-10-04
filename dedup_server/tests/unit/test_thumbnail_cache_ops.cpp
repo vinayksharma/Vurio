@@ -120,6 +120,34 @@ TEST_F(ThumbnailCacheOpsTest, RevisionsCoexistAndLookupsReturnRevisionZero)
     EXPECT_EQ(rowCount(), 1) << "all revisions of a.jpg went";
 }
 
+// ADJ-1: the subquery follows the file's CURRENT revision from
+// image_adjustments — an edited file's list rows carry its edited buckets
+// and never a pre-edit one.
+TEST_F(ThumbnailCacheOpsTest, BestThumbSubqueryFollowsTheFilesRevision)
+{
+    ASSERT_TRUE(ThumbnailCacheOps::ensureTable(*db_));
+    ASSERT_TRUE(ThumbnailCacheOps::upsertThumbnail(*db_, record("/media/a.jpg", 256, 0, "/cache/a_256_r0.jpg")));
+    ASSERT_TRUE(ThumbnailCacheOps::upsertThumbnail(*db_, record("/media/a.jpg", 512, 77, "/cache/a_512_r77.jpg")));
+    {
+        auto lease = db_->acquireSessionLease();
+        lease.get() << "INSERT INTO image_adjustments(file_path, location_key, render_revision, document, sidecar_path, "
+                       "sidecar_mtime, updated_at) VALUES('/media/a.jpg', 'mediaLocation:x', 77, '{}', '/media/a.jpg.vurio.json', 1, 1)",
+            now;
+    }
+    auto lease = db_->acquireSessionLease();
+    std::string encoded;
+    lease.get() << "SELECT " VURIO_BEST_THUMB_SUBQUERY("'/media/a.jpg'"), into(encoded), now;
+    auto refs = ThumbnailCacheOps::parseCachedThumbnailList(encoded);
+    ASSERT_EQ(refs.size(), 1u);
+    EXPECT_EQ(refs[0].size, 512);
+    EXPECT_EQ(refs[0].path, "/cache/a_512_r77.jpg");
+
+    // Revision-keyed lookups take the revision explicitly.
+    EXPECT_TRUE(ThumbnailCacheOps::getBestFitThumbnail(*db_, "/media/a.jpg", 128, nullptr, 77).has_value());
+    EXPECT_EQ(ThumbnailCacheOps::getBestFitThumbnail(*db_, "/media/a.jpg", 128, nullptr, 77)->cached_path, "/cache/a_512_r77.jpg");
+    EXPECT_EQ(ThumbnailCacheOps::listForPath(*db_, "/media/a.jpg").size(), 2u);
+}
+
 TEST_F(ThumbnailCacheOpsTest, UpsertTwiceUpdatesInPlace)
 {
     ASSERT_TRUE(ThumbnailCacheOps::ensureTable(*db_));

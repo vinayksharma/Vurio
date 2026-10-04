@@ -4,6 +4,7 @@
 #include "filesmanager/disk_cache.hpp"
 #include "config/unified_observable_config.hpp"
 #include "utils/thumbnail_generator.hpp"
+#include "adjustments/adjustment_store.hpp"
 #include <Poco/Logger.h>
 #include "core/media_ready_bus.hpp"
 #include <Magick++.h>
@@ -61,15 +62,20 @@ namespace MediaDedup
                 return true; // Not an error, just skip cache files
             }
 
+            // ADJ-1: the file's edits; the pre-warm renders from the base
+            // QHD preview when one exists, which is why crops are normalized.
+            const Adjustments::RenderChain chain = Adjustments::AdjustmentStore::instance().chainFor(file_path);
+            const int revision = chain.revision();
+
             // Check if thumbnail already exists (if configured to skip existing)
-            if (only_if_missing && thumbnailExists(file_path, size, db))
+            if (only_if_missing && thumbnailExists(file_path, size, db, revision))
             {
                 logger.debug("Thumbnail already exists, skipping generation: %s (size: %d)", file_path, size);
                 return true;
             }
 
             // Unique filename for the thumbnail (THUMB-1: revision-qualified)
-            std::string cache_filename = ThumbnailCacheOps::cacheFileName(file_path, size, kNoRenderRevision);
+            std::string cache_filename = ThumbnailCacheOps::cacheFileName(file_path, size, revision);
 
             // Get source file modified time
             int64_t source_mtime = getFileModifiedTime(file_path);
@@ -83,7 +89,7 @@ namespace MediaDedup
             Magick::Blob blob;
             std::string source_for_generation = transcoded_path.empty() ? file_path : transcoded_path;
             int timeout_ms = config_manager.getPropertyValue<int>("media.image.transcoding.timeoutMs", ThumbnailGenerator::DEFAULT_TIMEOUT_MS);
-            if (!ThumbnailGenerator::generateToBlob(source_for_generation, size, blob, quality, timeout_ms))
+            if (!ThumbnailGenerator::generateToBlob(source_for_generation, size, blob, quality, timeout_ms, chain))
             {
                 logger.warning("Failed to generate thumbnail for: %s", file_path);
                 return false;
@@ -112,6 +118,7 @@ namespace MediaDedup
             record.source_path = file_path;
             record.cached_path = final_cached_path;
             record.thumbnail_size = size;
+            record.render_revision = revision; // ADJ-1
             record.file_size_bytes = thumb_size_bytes;
             record.source_modified_at = source_mtime;
             record.created_at = current_time;
@@ -149,11 +156,12 @@ namespace MediaDedup
 
     bool PipelineThumbnailHelper::thumbnailExists(const std::string &file_path,
                                                   int size,
-                                                  DatabaseManager &db)
+                                                  DatabaseManager &db,
+                                                  int render_revision)
     {
         try
         {
-            auto cached = ThumbnailCacheOps::getThumbnail(db, file_path, size);
+            auto cached = ThumbnailCacheOps::getThumbnail(db, file_path, size, render_revision);
             if (!cached.has_value())
             {
                 return false;

@@ -35,6 +35,15 @@ final class DuplicatesCoordinator: ObservableObject {
                   let isEjected = note.userInfo?["isEjected"] as? Bool else { return }
             self?.viewerChangedEjectState(filePath: filePath, isEjected: isEjected)
         }
+        // ADJ-2: an edit landed (this client or a server-side import).
+        subscribe(NotificationCenter.default, .adjustmentsChanged) { [weak self] note in
+            guard let filePath = note.userInfo?["filePath"] as? String,
+                  let revision = note.userInfo?["renderRevision"] as? Int else { return }
+            let w = note.userInfo?["displayWidth"] as? Int ?? 0
+            let h = note.userInfo?["displayHeight"] as? Int ?? 0
+            self?.adjustmentsChanged(filePath: filePath, revision: Int32(revision),
+                                     displayWidth: Int32(w), displayHeight: Int32(h))
+        }
         subscribe(NotificationCenter.default, .configSaved) { [weak self] _ in
             await self?.configSaved()
         }
@@ -160,6 +169,24 @@ final class DuplicatesCoordinator: ObservableObject {
         days.applyEjectionState([filePath], isEjected: isEjected)
         // Bin rescan not needed here: the viewer's own eject path posts
         // .ejectedBinsChanged, which AppState observes.
+    }
+
+    private func adjustmentsChanged(filePath: String, revision: Int32, displayWidth: Int32, displayHeight: Int32) {
+        for groupIndex in binned.groups.indices {
+            guard let fileIndex = binned.groups[groupIndex].group?.files.firstIndex(where: { $0.filePath == filePath }),
+                  var file = binned.groups[groupIndex].group?.files[fileIndex] else { continue }
+            guard file.renderRevision != revision || file.displayWidth != displayWidth else { continue }
+            file.renderRevision = revision
+            if displayWidth > 0, displayHeight > 0 {
+                file.displayWidth = displayWidth
+                file.displayHeight = displayHeight
+            }
+            file.cachedThumbnails = []
+            file.cachedThumbnailPath = ""
+            binned.groups[groupIndex].group?.files[fileIndex] = file
+        }
+        days.applyAdjustments(filePath: filePath, renderRevision: revision,
+                              displayWidth: displayWidth, displayHeight: displayHeight)
     }
 
     private func configSaved() async {

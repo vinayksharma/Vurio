@@ -265,7 +265,7 @@ struct DayGroupCard: View {
                     let layerSize = ThumbnailGeometry.tileSize(height: tileHeight,
                                                                displayWidth: file.displayWidth,
                                                                displayHeight: file.displayHeight)
-                    ThumbnailView(filePath: file.filePath, size: layerSize, cachedThumbnailPath: file.cachedThumbnailPath, cachedThumbnails: file.cachedThumbnails, layerPriority: index, requestSize: ServerImageLoader.tileAssetSize)
+                    ThumbnailView(filePath: file.filePath, size: layerSize, cachedThumbnailPath: file.cachedThumbnailPath, cachedThumbnails: file.cachedThumbnails, layerPriority: index, requestSize: ServerImageLoader.tileAssetSize, renderRevision: Int(file.renderRevision))
                         .frame(width: layerSize.width, height: layerSize.height)
                         .cornerRadius(8)
                         .overlay(

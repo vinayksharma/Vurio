@@ -37,14 +37,21 @@ struct ViewerRequest: Identifiable, Equatable {
 struct ViewerImage: Identifiable, Equatable {
     let id: String
     let filePath: String
-    let cachedThumbnailPath: String
-    let cachedThumbnails: [Vurio_Dedup_CachedThumbnail] // STRIP-2
     var isEjected: Bool
     let isAvailable: Bool
     let isRepresentative: Bool
     // THUMB-1: server-supplied display geometry (0 = unknown -> square tile).
-    let displayWidth: Int32
-    let displayHeight: Int32
+    // ADJ-2: post-edit; updated in place when the file's edits change.
+    var displayWidth: Int32
+    var displayHeight: Int32
+    // ADJ-2: the file's render revision (0 = no edits); part of every
+    // thumbnail cache key so an edited image never shows a pre-edit tile.
+    var renderRevision: Int32
+    // ADJ-2: the server's bucket list is for the revision the row was
+    // fetched at; cleared when the revision changes so the tile goes
+    // through GetThumbnail (which resolves the current one).
+    var cachedThumbnails: [Vurio_Dedup_CachedThumbnail] // STRIP-2
+    var cachedThumbnailPath: String
     // PLACE-1: "Fairy Falls · Yellowstone National Park · Wyoming"; empty
     // when the file has no GPS fix or no name resolved yet.
     let placeLabel: String
@@ -59,6 +66,7 @@ struct ViewerImage: Identifiable, Equatable {
         isRepresentative = file.isRepresentative
         displayWidth = file.displayWidth
         displayHeight = file.displayHeight
+        renderRevision = file.renderRevision
         placeLabel = file.placeLabel
     }
 
@@ -72,6 +80,7 @@ struct ViewerImage: Identifiable, Equatable {
         isRepresentative = file.isRepresentative
         displayWidth = file.displayWidth
         displayHeight = file.displayHeight
+        renderRevision = file.renderRevision
         placeLabel = "" // DuplicateFile does not carry a place (BINNED view)
     }
 }
@@ -315,6 +324,24 @@ final class ViewerViewModel: ObservableObject {
             }
         } catch {
             MessageCenter.shared.post("Eject/restore failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// ADJ-2: the file's edits changed (committed in this viewer or pushed
+    /// by the server): re-key its tile and reshape it. Idempotent.
+    func applyAdjustments(filePath: String, renderRevision: Int32, displayWidth: Int32, displayHeight: Int32) {
+        for index in items.indices {
+            guard case .image(var image) = items[index], image.filePath == filePath else { continue }
+            guard image.renderRevision != renderRevision
+                || image.displayWidth != displayWidth || image.displayHeight != displayHeight else { continue }
+            image.renderRevision = renderRevision
+            if displayWidth > 0, displayHeight > 0 {
+                image.displayWidth = displayWidth
+                image.displayHeight = displayHeight
+            }
+            image.cachedThumbnails = []
+            image.cachedThumbnailPath = ""
+            items[index] = .image(image)
         }
     }
 

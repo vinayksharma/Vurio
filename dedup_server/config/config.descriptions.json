@@ -1220,6 +1220,31 @@
       "text": "When enabled, the pipeline skips thumbnail generation if an existing thumbnail of the correct size is already present."
     }
   ],
+  "media.adjustments.enabled": "Image Adjustments",
+  "media.adjustments.enabled.long": [
+    {
+      "type": "headline",
+      "text": "Non-destructive image adjustments"
+    },
+    {
+      "type": "paragraph",
+      "text": "Crop and rotate edits made in the viewer. They never touch the source file: each edit is stored in a sidecar JSON next to the asset (or in the location's edits folder) and mirrored in the database. Off hides the tool panel and renders every image un-edited."
+    }
+  ],
+  "media.adjustments.sidecar.write": "Write Adjustment Sidecars",
+  "media.adjustments.sidecar.write.long": [
+    {
+      "type": "paragraph",
+      "text": "When off, edits are kept in the database only and no file is written beside the assets. They then do not travel with the library and are lost when the location is deregistered."
+    }
+  ],
+  "media.adjustments.sidecar.suffix": "Adjustment Sidecar Suffix",
+  "media.adjustments.sidecar.suffix.long": [
+    {
+      "type": "paragraph",
+      "text": "Appended to the asset's full file name: DSC04624.JPG becomes DSC04624.JPG.vurio.json. Changing it does not rename existing sidecars; they are re-imported under the new name only if renamed by hand."
+    }
+  ],
   "thumbnail.pipeline.size": "Pipeline Thumbnail Size",
   "thumbnail.pipeline.size.long": [
     {

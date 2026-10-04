@@ -76,6 +76,25 @@ namespace MediaDedup
             return false;
         }
 
+        // ADJ-1: image_adjustments is a dependent of scanned_files and the
+        // list queries' best-thumbnail subquery correlates on it, so it must
+        // exist wherever scanned_files does (tests included). Created here,
+        // without linking the adjustments module, from the same constants
+        // AdjustmentsOps::ensureTable uses.
+        if (!db.ensureTableExists("image_adjustments", SQL::kCreateImageAdjustmentsTable))
+        {
+            return false;
+        }
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            lease.get() << std::string(SQL::kCreateImageAdjustmentsIndexLocation), Keywords::now;
+        }
+        catch (const std::exception &e)
+        {
+            Poco::Logger::get("ScannedFilesOps").warning("image_adjustments index: %s", std::string(e.what()));
+        }
+
         // Ensure ignore_reason column exists (migration)
         try {
             auto lease = db.acquireSessionLease();
@@ -467,6 +486,12 @@ namespace MediaDedup
             Statement del_previews(sess);
             del_previews << "DELETE FROM preview_cache WHERE source_path IN (SELECT file_path FROM scanned_files WHERE location_key=?)", Keywords::use(key), Keywords::now;
 
+            // ADJ-1: the location's adjustment rows go with it (the sidecar
+            // files on disk are handled before this by the deregistration
+            // flow, per the user's keep/delete choice).
+            Statement del_adjustments(sess);
+            del_adjustments << std::string(SQL::kDeleteImageAdjustmentsByLocation), Keywords::use(key), Keywords::now;
+
             Statement del_ejected(sess);
             del_ejected << "DELETE FROM ejected_files_history WHERE original_location_key=?", Keywords::use(key), Keywords::now;
 
@@ -593,6 +618,13 @@ namespace MediaDedup
                 Statement del_previews(sess);
                 del_previews << "DELETE FROM preview_cache WHERE source_path=?", Keywords::use(file_path);
                 del_previews.execute();
+
+                // ADJ-1: a purged file's adjustments go with it. (removeByPath
+                // deliberately keeps them: the scanner re-inserts a changed
+                // file under the same path and the edits must survive.)
+                Statement del_adjustments(sess);
+                del_adjustments << std::string(SQL::kDeleteImageAdjustmentByPath), Keywords::use(file_path);
+                del_adjustments.execute();
 
                 // DF-4: the file's similarity edges go in the same transaction
                 // (edges are canonical file_a < file_b, so check both columns;

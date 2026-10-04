@@ -34,6 +34,14 @@ Completed tasks move to Done as one-liners; their spec documents are deleted
 
 ## Done
 
+- **ADJ-1/2/4 — non-destructive crop + rotate (sidecar JSON beside the
+  asset or in a per-location edits folder, `image_adjustments` table,
+  render chain in `buildMagickArgs`/`computeDisplayDimensions`, viewer
+  right-hand tool panel with straighten/auto-straighten/ruler, keep/delete
+  at deregistration, spool for unreachable edits folders).** Completed
+  2026-10-04 on `feature/image_adjustments`. ADJ-3 (analysis on edited
+  pixels) deferred by decision. Spec:
+  [todo_image_adjustments.md](todo_image_adjustments.md).
 - **PLACE-1/2 — offline place names + place-name search.** Completed
   2026-09-19. `scripts/build_places_db.py` builds a 731 MB GeoNames gazetteer
   (9.08 M places, gitignored); `OfflineReverseGeocoder` names every GPS photo

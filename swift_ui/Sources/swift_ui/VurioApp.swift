@@ -51,6 +51,8 @@ extension Notification.Name {
 class AppState: ObservableObject {
     @Published var registeredDirs: [String] = []
     @Published var ejectedDirs: [String] = []
+    // ADJ-2: parallel to registeredDirs; "" = the location's own folder.
+    @Published var editsRoots: [String] = []
     @Published var hasEjectedFilesInFolder: Bool = false
     // Registered roots that currently have real ejected files on disk. Recomputed
     // on every fetchStatus, so per-location "Ejected" buttons stay reactive.
@@ -192,6 +194,7 @@ class AppState: ObservableObject {
                     self.setIfChanged(\.isOnline, true)
                     self.setIfChanged(\.registeredDirs, response.registeredDirs)
                     self.setIfChanged(\.ejectedDirs, response.ejectedDirs)
+                    self.setIfChanged(\.editsRoots, response.editsRoots)
                     self.setIfChanged(\.scannedFilesCount, response.scannedFilesCount)
                     self.setIfChanged(\.processedFilesCount, response.processedFilesCount)
                     self.setIfChanged(\.threadCount, response.threadCount)
