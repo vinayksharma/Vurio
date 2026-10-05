@@ -6,8 +6,6 @@ import SwiftUI
 /// which applies it live and commits it.
 struct AdjustmentsPanel: View {
     @ObservedObject var model: AdjustmentsViewModel
-    /// The base bitmap on screen, for auto-straighten.
-    let currentImage: NSImage?
     let hasImage: Bool
 
     @State private var rotateCollapsed = false
@@ -40,7 +38,9 @@ struct AdjustmentsPanel: View {
             }
             .buttonStyle(.vurioIcon)
             .help("Show adjustments (⌘⌥A)")
-            railIcon("rotate.right", help: "Rotate", active: !(model.rotate?.isIdentity ?? true)) {
+            railIcon(model.isRulerMode ? "ruler" : "rotate.right",
+                     help: model.isRulerMode ? "Straighten ruler armed" : "Rotate",
+                     active: model.isRulerMode || !(model.rotate?.isIdentity ?? true)) {
                 model.isCollapsed = false
                 rotateCollapsed = false
             }
@@ -109,7 +109,7 @@ struct AdjustmentsPanel: View {
                             section("Rotate", icon: "rotate.right", collapsed: $rotateCollapsed,
                                     isEdited: !rotate.isIdentity,
                                     onReset: { model.resetTool(RotateToolUI.id) }) {
-                                RotateSection(model: model, tool: rotate, currentImage: currentImage, hasImage: hasImage)
+                                RotateSection(model: model, tool: rotate, hasImage: hasImage)
                             }
                         }
                         if let crop = model.crop {
@@ -189,49 +189,50 @@ struct AdjustmentsPanel: View {
 private struct RotateSection: View {
     @ObservedObject var model: AdjustmentsViewModel
     @ObservedObject var tool: RotateToolUI
-    let currentImage: NSImage?
     let hasImage: Bool
 
+    /// What the rotation currently amounts to: quarter turns and the
+    /// straighten angle as one number, since that is what the image is
+    /// actually turned by. Fixed-width so the buttons beside it do not shift
+    /// as the value changes.
+    private var totalDegrees: Double {
+        Double(tool.quarterTurns) * 90 + tool.angle
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 4) {
-                Button(action: { model.turn(by: -1) }) { Image(systemName: "rotate.left") }
-                    .buttonStyle(.vurioIcon).help("Rotate left").disabled(!hasImage)
-                Button(action: { model.turn(by: 1) }) { Image(systemName: "rotate.right") }
-                    .buttonStyle(.vurioIcon).help("Rotate right").disabled(!hasImage)
-                Text(tool.quarterTurns == 0 ? "" : "\(tool.quarterTurns * 90)°")
-                    .font(.custom("Menlo", size: 10))
-                    .foregroundColor(Theme.textSecondary)
-                Spacer()
-                Button(action: { Task { await model.autoStraighten(using: currentImage) } }) {
-                    HStack(spacing: 4) {
-                        if model.isDetectingHorizon {
-                            ProgressView().controlSize(.mini)
-                        } else {
-                            Image(systemName: "wand.and.stars")
-                        }
-                        Text("Auto")
-                    }
-                }
-                .vurioButtonStyle(tint: Theme.textAccent)
-                .disabled(!hasImage || currentImage == nil || model.isDetectingHorizon)
-                .help("Auto-straighten (level the detected horizon)")
-            }
-            HStack {
-                Text("Straighten")
-                    .font(.system(size: 11))
-                    .foregroundColor(Theme.textSecondary)
-                Spacer()
-                Text(String(format: "%+.1f°", tool.angle))
-                    .font(.custom("Menlo", size: 10))
-                    .foregroundColor(Theme.textPrimary)
-            }
-            AdjustmentSlider(value: tool.angle, range: tool.angleRange, step: tool.angleStep,
-                             onChange: { model.setAngle($0, commit: false) },
-                             onEnded: { model.setAngle($0, commit: true) })
-                .frame(height: 24)
+        HStack(alignment: .center, spacing: 6) {
+            // The readout wears the advanced-overlay look (Menlo, muted
+            // green) on a well that is darker than the section card.
+            Text(String(format: "%+.1f°", totalDegrees))
+                .font(.custom("Menlo", size: 9))
+                .foregroundColor(Theme.success)
+                .frame(width: 44, alignment: .center)
+                .padding(.vertical, 3)
+                .background(RoundedRectangle(cornerRadius: 4).fill(Theme.background))
+                .help("Total rotation: quarter turns plus straighten")
+
+            Button(action: { model.turn(by: -1) }) { Image(systemName: "rotate.left") }
+                .buttonStyle(.vurioIcon)
                 .disabled(!hasImage)
+                .help("Rotate left")
+
+            Button(action: { model.turn(by: 1) }) { Image(systemName: "rotate.right") }
+                .buttonStyle(.vurioIcon)
+                .disabled(!hasImage)
+                .help("Rotate right")
+
+            // The straighten ruler: a Rotate sub-tool. It does NOT open the
+            // crop editor — straightening is a rotation.
+            Button(action: { model.isRulerMode.toggle() }) {
+                Image(systemName: "ruler")
+            }
+            .buttonStyle(.vurioIcon(tint: model.isRulerMode ? Theme.textAccent : Theme.textPrimary))
+            .disabled(!hasImage)
+            .help(model.isRulerMode
+                  ? "Drag a line along something that should be level (Esc to cancel)"
+                  : "Straighten ruler: drag a line along something that should be level")
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -257,12 +258,6 @@ private struct CropSection: View {
                 .disabled(!hasImage)
                 .help(model.isCropEditing ? "Leave crop mode (Return)" : "Drag the handles over the image")
 
-                Button(action: { model.isRulerMode.toggle(); if model.isRulerMode { model.isCropEditing = true } }) {
-                    Image(systemName: "ruler")
-                }
-                .buttonStyle(.vurioIcon(tint: model.isRulerMode ? Theme.textAccent : Theme.textPrimary))
-                .disabled(!hasImage)
-                .help("Straighten ruler: drag a line along something that should be level")
                 Spacer()
                 Button(action: { model.flipAspect() }) {
                     Image(systemName: "rectangle.portrait.rotate")
@@ -307,55 +302,5 @@ private struct CropSection: View {
         case "custom": return "Custom"
         default: return option
         }
-    }
-}
-
-// MARK: - Slider
-
-/// A thin slider in the panel's idiom (track + accent thumb, as the face
-/// cutoff control draws it) that reports live motion and the release
-/// separately: the release is what commits.
-struct AdjustmentSlider: View {
-    let value: Double
-    let range: ClosedRange<Double>
-    let step: Double
-    let onChange: (Double) -> Void
-    let onEnded: (Double) -> Void
-
-    var body: some View {
-        GeometryReader { geometry in
-            let width = geometry.size.width
-            let thumb: CGFloat = 14
-            let span = range.upperBound - range.lowerBound
-            let x = CGFloat((value - range.lowerBound) / span) * width
-            ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(Theme.surfaceElevated)
-                    .frame(width: width, height: 6)
-                    .offset(y: 9)
-                Rectangle()
-                    .fill(Theme.textSecondary)
-                    .frame(width: 1, height: 10)
-                    .offset(x: width / 2, y: 7)
-                Circle()
-                    .fill(Theme.accent)
-                    .frame(width: thumb, height: thumb)
-                    .offset(x: x - thumb / 2, y: 12 - thumb / 2)
-            }
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { g in onChange(valueFor(x: g.location.x, width: width)) }
-                    .onEnded { g in onEnded(valueFor(x: g.location.x, width: width)) }
-            )
-        }
-    }
-
-    private func valueFor(x: CGFloat, width: CGFloat) -> Double {
-        guard width > 0 else { return value }
-        let span = range.upperBound - range.lowerBound
-        var v = range.lowerBound + Double(x / width) * span
-        if step > 0 { v = (v / step).rounded() * step }
-        return min(max(v, range.lowerBound), range.upperBound)
     }
 }

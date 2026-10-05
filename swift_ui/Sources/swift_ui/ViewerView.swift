@@ -110,7 +110,6 @@ struct ViewerView: View {
             // ADJ-2: the tool panel on the right edge, collapsible to a rail.
             if !model.items.isEmpty || model.isLoading {
                 AdjustmentsPanel(model: adjustments,
-                                 currentImage: isPlaceholderImage ? nil : currentImage,
                                  hasImage: currentImage != nil && !isPlaceholderImage)
             }
         }
@@ -297,7 +296,16 @@ struct ViewerView: View {
             // Open hand over the image, grab while panning. Hit-test-transparent
             // like the scroll catcher; the arrow stays when there is no image
             // (and in crop mode, where the handles own the pointer).
-            .overlay(PanCursorOverlay(isEnabled: currentImage != nil && !adjustments.isCropEditing, isDragging: isPanning))
+            // While the ruler is armed it owns the pointer. The pan overlay
+            // is removed rather than disabled: a disabled one still tracks
+            // the mouse and re-asserts the arrow on every move, which would
+            // wipe the ruler cursor the moment the pointer moved.
+            .overlay {
+                if !adjustments.isRulerMode {
+                    PanCursorOverlay(isEnabled: currentImage != nil && !adjustments.isCropEditing,
+                                     isDragging: isPanning)
+                }
+            }
             // Unobtrusive badge while a better bitmap than the one on screen is
             // being pulled — the thumbnail placeholder waiting on its preview,
             // or the preview waiting on its full-resolution render. What is
@@ -323,6 +331,9 @@ struct ViewerView: View {
     /// chain. The strip-tile placeholder is already edited pixels, so it is
     /// shown as is. In crop mode the whole rotated canvas is fitted, nothing
     /// is clipped, and the crop editor sits on top; zoom and pan are parked.
+    /// The straighten ruler, when armed, lies above everything — including
+    /// the crop editor — so a drag always draws a line and never moves the
+    /// crop. It needs no crop mode of its own: it is a Rotate sub-tool.
     @ViewBuilder
     private func adjustedImage(_ image: NSImage, in area: CGSize) -> some View {
         let base = image.pixelDimensions ?? image.size
@@ -349,10 +360,13 @@ struct ViewerView: View {
                 if editing, let cropTool = adjustments.crop {
                     CropOverlay(layout: layout, rect: cropTool.rect,
                                 lockedAspect: cropTool.lockedAspect(turnedBase: adjustments.turnedBase),
-                                rulerMode: adjustments.isRulerMode,
                                 onChange: { rect in adjustments.setCropRect(rect) },
-                                onEnded: { adjustments.commitCrop() },
-                                onRuler: { a, b in adjustments.applyRuler(from: a, to: b) })
+                                onEnded: { adjustments.commitCrop() })
+                        .frame(width: area.width, height: area.height)
+                }
+
+                if adjustments.isRulerMode, !isPlaceholderImage {
+                    RulerOverlay(onRuler: { a, b in adjustments.applyRuler(from: a, to: b) })
                         .frame(width: area.width, height: area.height)
                 }
             }
@@ -391,7 +405,7 @@ struct ViewerView: View {
         // starts and ends a pan of zero translation, which moves nothing.
         DragGesture(minimumDistance: 0)
             .onChanged { value in
-                guard !adjustments.isCropEditing else { return }
+                guard !adjustments.isCropEditing, !adjustments.isRulerMode else { return }
                 isPanning = true
                 panOffset = CGSize(
                     width: panBase.width + value.translation.width,
@@ -407,7 +421,7 @@ struct ViewerView: View {
     private var magnifyGesture: some Gesture {
         MagnificationGesture()
             .onChanged { value in
-                guard !adjustments.isCropEditing else { return }
+                guard !adjustments.isCropEditing, !adjustments.isRulerMode else { return }
                 scale = clampScale(gestureScaleBase * value.magnitude)
             }
             .onEnded { _ in
@@ -728,9 +742,16 @@ struct ViewerView: View {
     private var keyboardShortcuts: some View {
         if isActive {
             Group {
-                // ADJ-2: Esc leaves crop mode first; only then closes.
+                // ADJ-2: Esc disarms the ruler first, then leaves crop
+                // mode, and only then closes the viewer.
                 Button("") {
-                    if adjustments.isCropEditing { adjustments.exitCropEditing() } else { onClose() }
+                    if adjustments.isRulerMode {
+                        adjustments.isRulerMode = false
+                    } else if adjustments.isCropEditing {
+                        adjustments.exitCropEditing()
+                    } else {
+                        onClose()
+                    }
                 }
                     .keyboardShortcut(.escape, modifiers: [])
                     .hidden()

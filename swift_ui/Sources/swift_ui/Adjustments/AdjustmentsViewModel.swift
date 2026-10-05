@@ -45,7 +45,6 @@ final class AdjustmentsViewModel: ObservableObject {
     @Published var isCollapsed: Bool {
         didSet { UserDefaults.standard.set(isCollapsed, forKey: Self.collapsedKey) }
     }
-    @Published private(set) var isDetectingHorizon = false
 
     static let collapsedKey = "adjustmentsPanelCollapsed"
     static let expandedWidth: CGFloat = 280
@@ -177,15 +176,6 @@ final class AdjustmentsViewModel: ObservableObject {
         scheduleCommit()
     }
 
-    /// Live while the slider moves; the crop re-fits each step. Commits
-    /// when `commit` is true (the gesture ended).
-    func setAngle(_ value: Double, commit: Bool) {
-        guard let rotate else { return }
-        rotate.setAngle(value)
-        refitCropIfNeeded()
-        if commit { scheduleCommit() }
-    }
-
     /// Live during a handle drag. A candidate that would expose an empty
     /// corner is ignored and the last valid rectangle stays.
     func setCropRect(_ rect: AdjustmentGeometry.NormRect) {
@@ -241,30 +231,14 @@ final class AdjustmentsViewModel: ObservableObject {
         scheduleCommit()
     }
 
+    // Crop mode and the ruler are independent: the ruler is a Rotate
+    // sub-tool, so leaving the crop editor must not disarm it.
     func toggleCropEditing() {
         isCropEditing.toggle()
-        if !isCropEditing { isRulerMode = false }
     }
 
     func exitCropEditing() {
         isCropEditing = false
-        isRulerMode = false
-    }
-
-    /// Auto-straighten: Vision horizon on the base bitmap, applied as the
-    /// straighten angle on top of any quarter turn.
-    func autoStraighten(using image: NSImage?) async {
-        guard let image, let rotate, !isDetectingHorizon else { return }
-        isDetectingHorizon = true
-        defer { isDetectingHorizon = false }
-        guard let angle = await HorizonDetector.straightenAngle(for: image) else {
-            lastError = "No horizon found"
-            return
-        }
-        lastError = nil
-        rotate.setAngle(angle)
-        refitCropIfNeeded()
-        scheduleCommit()
     }
 
     /// The ruler: a line dragged across the image in edit mode becomes

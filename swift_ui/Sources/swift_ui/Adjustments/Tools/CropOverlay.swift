@@ -2,28 +2,25 @@ import SwiftUI
 
 /// ADJ-2 (docs §6.3): the crop editor drawn over the fitted, un-clipped
 /// rotated image: the rest of the canvas dimmed, a rule-of-thirds grid,
-/// eight handles, drag-to-move, and the straighten ruler. Works in main-area
-/// points and hands back normalized rectangles; the constraints (bounds,
-/// aspect lock, content fit) are applied by the view model.
+/// eight handles and drag-to-move. Works in main-area points and hands back
+/// normalized rectangles; the constraints (bounds, aspect lock, content
+/// fit) are applied by the view model. The straighten ruler is NOT here —
+/// it belongs to Rotate and lives in `RulerOverlay`.
 struct CropOverlay: View {
     let layout: AdjustmentLayout
     let rect: AdjustmentGeometry.NormRect
     let lockedAspect: Double?
-    let rulerMode: Bool
     /// Live candidate while a handle or the rectangle is dragged.
     let onChange: (AdjustmentGeometry.NormRect) -> Void
     /// The drag ended; the owner commits its current state (not the
     /// overlay's possibly stale `rect`).
     let onEnded: () -> Void
-    let onRuler: (CGPoint, CGPoint) -> Void
 
     enum Handle: CaseIterable {
         case topLeft, top, topRight, right, bottomRight, bottom, bottomLeft, left
     }
 
     @State private var dragStart: AdjustmentGeometry.NormRect?
-    @State private var rulerStart: CGPoint?
-    @State private var rulerEnd: CGPoint?
 
     private let handleSize: CGFloat = 12
 
@@ -77,18 +74,6 @@ struct CropOverlay: View {
                     .gesture(resizeGesture(handle))
                     .position(center)
             }
-
-            if rulerMode {
-                Rectangle()
-                    .fill(Color.clear)
-                    .contentShape(Rectangle())
-                    .gesture(rulerGesture)
-                if let a = rulerStart, let b = rulerEnd {
-                    Path { p in p.move(to: a); p.addLine(to: b) }
-                        .stroke(Theme.textAccent, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
-                        .allowsHitTesting(false)
-                }
-            }
         }
         .animation(nil, value: rect)
     }
@@ -135,21 +120,6 @@ struct CropOverlay: View {
             .onEnded { _ in
                 dragStart = nil
                 onEnded()
-            }
-    }
-
-    private var rulerGesture: some Gesture {
-        DragGesture(minimumDistance: 2)
-            .onChanged { value in
-                rulerStart = value.startLocation
-                rulerEnd = value.location
-            }
-            .onEnded { value in
-                let a = value.startLocation
-                let b = value.location
-                rulerStart = nil
-                rulerEnd = nil
-                onRuler(a, b)
             }
     }
 
