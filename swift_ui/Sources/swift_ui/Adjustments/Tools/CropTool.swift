@@ -11,6 +11,20 @@ final class CropToolUI: AdjustmentToolUI {
     let descriptor: ToolDescriptor
 
     @Published var rect: AdjustmentGeometry.NormRect = .full
+    /// The rectangle the user actually chose, before any straighten refit
+    /// shrank it to fit the rotated content. `rect` is derived from this
+    /// whenever the angle changes, so taking the angle back to zero gives
+    /// the user's crop back instead of leaving the shrunken one behind.
+    /// Session state only; the sidecar stores the effective `rect`.
+    var userRect: AdjustmentGeometry.NormRect = .full
+    /// False after a load until the view model has had a chance to decide
+    /// whether the stored rect was the user's or an automatic fit. The
+    /// rotation it was stored with is kept alongside, because that decision
+    /// has to compare against the fit for the angle the rect was made for,
+    /// not whatever the angle is by the time the base size is known.
+    var userRectResolved = true
+    var loadedQuarterTurns = 0
+    var loadedAngle = 0.0
     /// One of the server's options: free | original | 1:1 | 3:2 | 4:3 | 5:4 | 16:9 | custom.
     @Published var aspect: String = "free"
     @Published var customAspect: Double = 1.0
@@ -46,6 +60,8 @@ final class CropToolUI: AdjustmentToolUI {
         }
         if !aspectOptions.contains(aspect) { aspect = "free" }
         rect = Self.sanitized(r)
+        userRect = rect
+        userRectResolved = false
     }
 
     func encode() -> [String: Any]? {
@@ -65,6 +81,8 @@ final class CropToolUI: AdjustmentToolUI {
 
     func reset() {
         rect = .full
+        userRect = .full
+        userRectResolved = true
         aspect = "free"
         customAspect = 1.0
         flipped = false

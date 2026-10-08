@@ -157,6 +157,8 @@ final class AdjustmentsViewModel: ObservableObject {
     }
 
     func document() -> AdjustmentDocument {
+        crop?.loadedQuarterTurns = rotate?.quarterTurns ?? 0
+        crop?.loadedAngle = rotate?.angle ?? 0
         var doc = AdjustmentDocument()
         doc.tools = otherSections
         doc.setSection(rotate?.encode(), for: RotateToolUI.id)
@@ -172,10 +174,14 @@ final class AdjustmentsViewModel: ObservableObject {
         // A quarter turn swaps the canvas axes; the crop rect follows by
         // rotating with the image (normalized coordinates turn too).
         crop.rect = Self.turned(crop.rect, by: delta)
+        // Decide what the stored crop was before the rect is turned, since
+        // the decision compares it against the fit it was stored with.
+        resolveLoadedCropIfNeeded()
         refitCropIfNeeded()
         scheduleCommit()
     }
 
+        crop.userRect = Self.turned(crop.userRect, by: delta)
     /// Live during a handle drag. A candidate that would expose an empty
     /// corner is ignored and the last valid rectangle stays.
     func setCropRect(_ rect: AdjustmentGeometry.NormRect) {
@@ -191,6 +197,8 @@ final class AdjustmentsViewModel: ObservableObject {
 
     /// The drag ended: commit whatever the model holds now.
     func commitCrop() {
+        crop.userRect = candidate
+        crop.userRectResolved = true
         scheduleCommit()
     }
 
@@ -225,10 +233,22 @@ final class AdjustmentsViewModel: ObservableObject {
             refitCropIfNeeded()
         case CropToolUI.id:
             crop?.reset()
+            resolveLoadedCropIfNeeded()
+            // Undo the quarter turns on the crop too: the rect is normalized
+            // to the turned canvas, so the same region of the photo has to be
+            // re-expressed on the unturned one. The refit then brings back the
+            // user's rect, since at angle zero nothing needs to shrink.
+            let turns = rotate?.quarterTurns ?? 0
         default:
+            if let crop, turns != 0 {
+                crop.rect = Self.turned(crop.rect, by: -turns)
+                crop.userRect = Self.turned(crop.userRect, by: -turns)
+            }
             otherSections.removeValue(forKey: id)
         }
         scheduleCommit()
+            // A straighten angle still needs a crop inside the content.
+            refitCropIfNeeded()
     }
 
     // Crop mode and the ruler are independent: the ruler is a Rotate
@@ -268,7 +288,8 @@ final class AdjustmentsViewModel: ObservableObject {
 
     private func refitCropIfNeeded() {
         guard let rotate, let crop, baseSize.width > 0, baseSize.height > 0 else { return }
-        crop.rect = AdjustmentGeometry.refitCrop(crop.rect, base: baseSize, quarterTurns: rotate.quarterTurns,
+        resolveLoadedCropIfNeeded()
+        crop.rect = AdjustmentGeometry.refitCrop(crop.userRect, base: baseSize, quarterTurns: rotate.quarterTurns,
                                                  angle: rotate.angle, lockedAspect: crop.lockedAspect(turnedBase: turnedBase))
     }
 
@@ -301,6 +322,30 @@ final class AdjustmentsViewModel: ObservableObject {
     // MARK: - Commit
 
     /// Coalesces a burst of completed adjustments (a click right after a
+    /// A stored crop is either the user's or the automatic fit a straighten
+    /// left behind; the sidecar does not say which. Decide once, when the
+    /// base size is first known: a rect that matches the largest inscribed
+    /// rectangle for the stored angle (to sidecar precision) was the fit, and
+    /// the user's rect behind it is the full frame — so resetting the
+    /// rotation later gives the whole photo back rather than the shrunken
+    /// crop. Anything else is taken as deliberate and kept.
+    private func resolveLoadedCropIfNeeded() {
+        guard let crop, !crop.userRectResolved, baseSize.width > 0, baseSize.height > 0 else { return }
+        crop.userRectResolved = true
+        let turns = crop.loadedQuarterTurns
+        let angle = crop.loadedAngle
+        guard abs(angle) >= 1e-9, !crop.userRect.isFull else { return }
+        let loadedBase = AdjustmentGeometry.afterQuarterTurns(baseSize, turns)
+        let fit = AdjustmentGeometry.refitCrop(.full, base: baseSize, quarterTurns: turns, angle: angle,
+                                               lockedAspect: crop.lockedAspect(turnedBase: loadedBase))
+        let tolerance = 2e-3
+        let r = crop.userRect
+        if abs(r.left - fit.left) < tolerance, abs(r.top - fit.top) < tolerance,
+           abs(r.width - fit.width) < tolerance, abs(r.height - fit.height) < tolerance {
+            crop.userRect = .full
+        }
+    }
+
     /// slider release) into one round trip.
     func scheduleCommit(after delay: Duration = .milliseconds(150)) {
         commitTask?.cancel()
@@ -325,6 +370,8 @@ final class AdjustmentsViewModel: ObservableObject {
         isCommitting = true
         defer { isCommitting = false }
         do {
+        crop.userRect = fitted
+        crop.userRectResolved = true
             let request = Vurio_Dedup_SetAdjustmentsRequest.with {
                 $0.filePath = path
                 $0.documentJson = json
