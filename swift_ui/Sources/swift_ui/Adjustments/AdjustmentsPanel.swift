@@ -340,7 +340,9 @@ private struct RotateSection: View {
     private func commitEdit() {
         guard model.isEditingReadout else { return }
         let cleaned = editText.replacingOccurrences(of: "°", with: "").trimmingCharacters(in: .whitespaces)
-        if let value = Double(cleaned), abs(value - totalDegrees) > 1e-9 {
+        // "inf", "nan" and overflowing exponents parse as Doubles; they are
+        // not rotations, so they cancel like any other invalid entry.
+        if let value = Double(cleaned), value.isFinite, abs(value - totalDegrees) > 1e-9 {
             model.setTotalDegrees(value)
         }
         disarm()

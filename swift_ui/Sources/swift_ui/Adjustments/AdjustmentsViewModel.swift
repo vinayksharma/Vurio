@@ -280,9 +280,13 @@ final class AdjustmentsViewModel: ObservableObject {
     /// ±45°), so 93 is one turn plus 3° and -2 is just -2°. Quarter turns
     /// go through `turn(by:)` so the crop turns with them.
     func setTotalDegrees(_ total: Double) {
-        guard let rotate else { return }
-        let turns = Int((total / 90).rounded())
-        let remainder = total - Double(turns) * 90
+        guard let rotate, total.isFinite else { return }
+        // Wrap into one full turn first: `Int(_:)` traps on anything beyond
+        // its range, and "1e400" or "inf" typed into the readout must not
+        // bring the app down. Wrapping also makes 450 mean 90.
+        let wrapped = total.truncatingRemainder(dividingBy: 360)
+        let turns = Int((wrapped / 90).rounded())
+        let remainder = wrapped - Double(turns) * 90
         let delta = ((turns - rotate.quarterTurns) % 4 + 4) % 4
         if delta != 0 { turn(by: delta) }
         rotate.setAngle(remainder)
