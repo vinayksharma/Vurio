@@ -742,10 +742,12 @@ struct ViewerView: View {
     private var keyboardShortcuts: some View {
         if isActive {
             Group {
-                // ADJ-2: Esc disarms the ruler first, then leaves crop
-                // mode, and only then closes the viewer.
+                // ADJ-2: Esc cancels a readout edit first, then disarms the
+                // ruler, then leaves crop mode, and only then closes the viewer.
                 Button("") {
-                    if adjustments.isRulerMode {
+                    if adjustments.isEditingReadout {
+                        adjustments.isEditingReadout = false
+                    } else if adjustments.isRulerMode {
                         adjustments.isRulerMode = false
                     } else if adjustments.isCropEditing {
                         adjustments.exitCropEditing()

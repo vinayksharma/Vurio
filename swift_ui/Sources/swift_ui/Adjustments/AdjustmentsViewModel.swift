@@ -34,6 +34,9 @@ final class AdjustmentsViewModel: ObservableObject {
     @Published var baseSize: CGSize = .zero
     @Published var isCropEditing = false
     @Published var isRulerMode = false
+    /// The Rotate readout is a text field right now (click, or F2). Lives
+    /// here so the viewer's Esc can cancel it before anything else.
+    @Published var isEditingReadout = false
     @Published private(set) var renderRevision = 0
     @Published private(set) var isSpooled = false
     @Published private(set) var sidecarPath = ""
@@ -123,6 +126,7 @@ final class AdjustmentsViewModel: ObservableObject {
         filePath = newPath
         isCropEditing = false
         isRulerMode = false
+        isEditingReadout = false
         lastError = nil
         rotate?.reset()
         crop?.reset()
@@ -153,12 +157,12 @@ final class AdjustmentsViewModel: ObservableObject {
     private func apply(document: AdjustmentDocument) {
         rotate?.load(section: document.tools[RotateToolUI.id])
         crop?.load(section: document.tools[CropToolUI.id])
+        crop?.loadedQuarterTurns = rotate?.quarterTurns ?? 0
+        crop?.loadedAngle = rotate?.angle ?? 0
         otherSections = document.tools.filter { !Self.toolOrder.contains($0.key) }
     }
 
     func document() -> AdjustmentDocument {
-        crop?.loadedQuarterTurns = rotate?.quarterTurns ?? 0
-        crop?.loadedAngle = rotate?.angle ?? 0
         var doc = AdjustmentDocument()
         doc.tools = otherSections
         doc.setSection(rotate?.encode(), for: RotateToolUI.id)
@@ -170,18 +174,18 @@ final class AdjustmentsViewModel: ObservableObject {
 
     func turn(by delta: Int) {
         guard let rotate, let crop else { return }
+        // Decide what the stored crop was before the rect is turned, since
+        // the decision compares it against the fit it was stored with.
+        resolveLoadedCropIfNeeded()
         rotate.turn(by: delta)
         // A quarter turn swaps the canvas axes; the crop rect follows by
         // rotating with the image (normalized coordinates turn too).
         crop.rect = Self.turned(crop.rect, by: delta)
-        // Decide what the stored crop was before the rect is turned, since
-        // the decision compares it against the fit it was stored with.
-        resolveLoadedCropIfNeeded()
+        crop.userRect = Self.turned(crop.userRect, by: delta)
         refitCropIfNeeded()
         scheduleCommit()
     }
 
-        crop.userRect = Self.turned(crop.userRect, by: delta)
     /// Live during a handle drag. A candidate that would expose an empty
     /// corner is ignored and the last valid rectangle stays.
     func setCropRect(_ rect: AdjustmentGeometry.NormRect) {
@@ -193,12 +197,12 @@ final class AdjustmentsViewModel: ObservableObject {
             return
         }
         crop.rect = candidate
+        crop.userRect = candidate
+        crop.userRectResolved = true
     }
 
     /// The drag ended: commit whatever the model holds now.
     func commitCrop() {
-        crop.userRect = candidate
-        crop.userRectResolved = true
         scheduleCommit()
     }
 
@@ -229,26 +233,26 @@ final class AdjustmentsViewModel: ObservableObject {
     func resetTool(_ id: String) {
         switch id {
         case RotateToolUI.id:
-            rotate?.reset()
-            refitCropIfNeeded()
-        case CropToolUI.id:
-            crop?.reset()
             resolveLoadedCropIfNeeded()
             // Undo the quarter turns on the crop too: the rect is normalized
             // to the turned canvas, so the same region of the photo has to be
             // re-expressed on the unturned one. The refit then brings back the
             // user's rect, since at angle zero nothing needs to shrink.
             let turns = rotate?.quarterTurns ?? 0
-        default:
+            rotate?.reset()
             if let crop, turns != 0 {
                 crop.rect = Self.turned(crop.rect, by: -turns)
                 crop.userRect = Self.turned(crop.userRect, by: -turns)
             }
+            refitCropIfNeeded()
+        case CropToolUI.id:
+            crop?.reset()
+            // A straighten angle still needs a crop inside the content.
+            refitCropIfNeeded()
+        default:
             otherSections.removeValue(forKey: id)
         }
         scheduleCommit()
-            // A straighten angle still needs a crop inside the content.
-            refitCropIfNeeded()
     }
 
     // Crop mode and the ruler are independent: the ruler is a Rotate
@@ -259,6 +263,31 @@ final class AdjustmentsViewModel: ObservableObject {
 
     func exitCropEditing() {
         isCropEditing = false
+    }
+
+    /// A scroll over the readout: the straighten angle moves by `delta`.
+    /// Each step refits the crop; the burst of commits a scroll produces
+    /// coalesces under a longer debounce than a click gets.
+    func nudgeAngle(by delta: Double) {
+        guard let rotate, delta != 0 else { return }
+        rotate.setAngle(rotate.angle + delta)
+        refitCropIfNeeded()
+        scheduleCommit(after: .milliseconds(400))
+    }
+
+    /// A value typed into the readout: the total rotation. Split into the
+    /// nearest quarter turns and the straighten remainder (always within
+    /// ±45°), so 93 is one turn plus 3° and -2 is just -2°. Quarter turns
+    /// go through `turn(by:)` so the crop turns with them.
+    func setTotalDegrees(_ total: Double) {
+        guard let rotate else { return }
+        let turns = Int((total / 90).rounded())
+        let remainder = total - Double(turns) * 90
+        let delta = ((turns - rotate.quarterTurns) % 4 + 4) % 4
+        if delta != 0 { turn(by: delta) }
+        rotate.setAngle(remainder)
+        refitCropIfNeeded()
+        scheduleCommit()
     }
 
     /// The ruler: a line dragged across the image in edit mode becomes
@@ -293,35 +322,6 @@ final class AdjustmentsViewModel: ObservableObject {
                                                  angle: rotate.angle, lockedAspect: crop.lockedAspect(turnedBase: turnedBase))
     }
 
-    private func refitCropToAspect() {
-        guard let rotate, let crop, baseSize.width > 0, baseSize.height > 0 else { return }
-        guard let aspect = crop.lockedAspect(turnedBase: turnedBase) else { return }
-        // Keep the current center and area where possible; the inscribed
-        // fit is the fallback when the angle constrains it.
-        let canvas = AdjustmentGeometry.rotatedCanvas(baseSize, quarterTurns: rotate.quarterTurns, angle: rotate.angle)
-        let current = crop.rect
-        let areaPx = current.width * canvas.width * current.height * canvas.height
-        var wPx = (areaPx * aspect).squareRoot()
-        var hPx = wPx / aspect
-        if wPx > canvas.width { wPx = canvas.width; hPx = wPx / aspect }
-        if hPx > canvas.height { hPx = canvas.height; wPx = hPx * aspect }
-        var fitted = AdjustmentGeometry.NormRect()
-        fitted.width = wPx / canvas.width
-        fitted.height = hPx / canvas.height
-        fitted.left = min(max(current.center.x - fitted.width / 2, 0), 1 - fitted.width)
-        fitted.top = min(max(current.center.y - fitted.height / 2, 0), 1 - fitted.height)
-        if abs(rotate.angle) >= 1e-9,
-           !AdjustmentGeometry.cropInsideContent(base: baseSize, quarterTurns: rotate.quarterTurns,
-                                                 angle: rotate.angle, crop: fitted) {
-            fitted = AdjustmentGeometry.largestInscribedRect(base: baseSize, quarterTurns: rotate.quarterTurns,
-                                                             angle: rotate.angle, aspect: aspect)
-        }
-        crop.rect = fitted
-    }
-
-    // MARK: - Commit
-
-    /// Coalesces a burst of completed adjustments (a click right after a
     /// A stored crop is either the user's or the automatic fit a straighten
     /// left behind; the sidecar does not say which. Decide once, when the
     /// base size is first known: a rect that matches the largest inscribed
@@ -346,6 +346,37 @@ final class AdjustmentsViewModel: ObservableObject {
         }
     }
 
+    private func refitCropToAspect() {
+        guard let rotate, let crop, baseSize.width > 0, baseSize.height > 0 else { return }
+        guard let aspect = crop.lockedAspect(turnedBase: turnedBase) else { return }
+        // Keep the current center and area where possible; the inscribed
+        // fit is the fallback when the angle constrains it.
+        let canvas = AdjustmentGeometry.rotatedCanvas(baseSize, quarterTurns: rotate.quarterTurns, angle: rotate.angle)
+        let current = crop.rect
+        let areaPx = current.width * canvas.width * current.height * canvas.height
+        var wPx = (areaPx * aspect).squareRoot()
+        var hPx = wPx / aspect
+        if wPx > canvas.width { wPx = canvas.width; hPx = wPx / aspect }
+        if hPx > canvas.height { hPx = canvas.height; wPx = hPx * aspect }
+        var fitted = AdjustmentGeometry.NormRect()
+        fitted.width = wPx / canvas.width
+        fitted.height = hPx / canvas.height
+        fitted.left = min(max(current.center.x - fitted.width / 2, 0), 1 - fitted.width)
+        fitted.top = min(max(current.center.y - fitted.height / 2, 0), 1 - fitted.height)
+        if abs(rotate.angle) >= 1e-9,
+           !AdjustmentGeometry.cropInsideContent(base: baseSize, quarterTurns: rotate.quarterTurns,
+                                                 angle: rotate.angle, crop: fitted) {
+            fitted = AdjustmentGeometry.largestInscribedRect(base: baseSize, quarterTurns: rotate.quarterTurns,
+                                                             angle: rotate.angle, aspect: aspect)
+        }
+        crop.rect = fitted
+        crop.userRect = fitted
+        crop.userRectResolved = true
+    }
+
+    // MARK: - Commit
+
+    /// Coalesces a burst of completed adjustments (a click right after a
     /// slider release) into one round trip.
     func scheduleCommit(after delay: Duration = .milliseconds(150)) {
         commitTask?.cancel()
@@ -370,8 +401,6 @@ final class AdjustmentsViewModel: ObservableObject {
         isCommitting = true
         defer { isCommitting = false }
         do {
-        crop.userRect = fitted
-        crop.userRectResolved = true
             let request = Vurio_Dedup_SetAdjustmentsRequest.with {
                 $0.filePath = path
                 $0.documentJson = json

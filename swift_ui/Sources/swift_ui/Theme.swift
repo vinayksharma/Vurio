@@ -143,17 +143,20 @@ extension View {
 struct VurioIconButtonStyle: ButtonStyle {
     var tint: Color = Theme.textPrimary
     var size: CGFloat = 28
+    /// A faint outline, so a row of bare glyphs still reads as buttons.
+    var bordered: Bool = false
 
     func makeBody(configuration: Configuration) -> some View {
         // Hover state lives on a real View: a ButtonStyle is not one, and a
         // @State declared on it does not reliably drive updates.
-        VurioIconButtonBody(configuration: configuration, tint: tint, size: size)
+        VurioIconButtonBody(configuration: configuration, tint: tint, size: size, bordered: bordered)
     }
 
     private struct VurioIconButtonBody: View {
         let configuration: ButtonStyle.Configuration
         let tint: Color
         let size: CGFloat
+        let bordered: Bool
         @Environment(\.isEnabled) private var isEnabled
         @State private var isHovered = false
 
@@ -166,6 +169,11 @@ struct VurioIconButtonStyle: ButtonStyle {
                 .background(
                     RoundedRectangle(cornerRadius: 6)
                         .fill(lifted ? tint.opacity(0.15) : Color.clear)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(bordered ? Theme.borderActive.opacity(lifted ? 0.7 : 0.35) : Color.clear,
+                                lineWidth: 1)
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 6))
                 .scaleEffect(configuration.isPressed ? 0.92 : 1.0)
@@ -180,4 +188,12 @@ struct VurioIconButtonStyle: ButtonStyle {
 extension ButtonStyle where Self == VurioIconButtonStyle {
     static var vurioIcon: VurioIconButtonStyle { VurioIconButtonStyle() }
     static func vurioIcon(tint: Color) -> VurioIconButtonStyle { VurioIconButtonStyle(tint: tint) }
+    /// A tighter hit target, for rows where several icons sit shoulder to
+    /// shoulder and the default 28pt frames would hold them too far apart.
+    static func vurioIcon(size: CGFloat, bordered: Bool) -> VurioIconButtonStyle {
+        VurioIconButtonStyle(size: size, bordered: bordered)
+    }
+    static func vurioIcon(tint: Color, size: CGFloat, bordered: Bool) -> VurioIconButtonStyle {
+        VurioIconButtonStyle(tint: tint, size: size, bordered: bordered)
+    }
 }
