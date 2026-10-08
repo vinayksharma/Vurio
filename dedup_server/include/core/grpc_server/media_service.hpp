@@ -199,12 +199,19 @@ public:
                 return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, *reason);
             }
 
-            // ADJ-1: the native render carries the edit chain; its revision
-            // is part of the LRU identity so a pre-edit render is never served.
-            const MediaDedup::Adjustments::RenderChain chain =
-                MediaDedup::Adjustments::AdjustmentStore::instance().chainFor(file_path);
-            const int revision = chain.revision();
-            response->set_render_revision(revision);
+            // ADJ-2 (docs §6.2): the viewer holds BASE pixels and applies the
+            // edit chain itself as layout, exactly as it does for the QHD
+            // preview and the locally decoded non-RAW full-res. So this render
+            // is the identity chain. Handing out an edited render here made
+            // the viewer rotate and crop an already rotated, cropped bitmap:
+            // the straighten ruler then never levelled anything, each pass
+            // compounded the angle, and the crop refit shrank against the
+            // wrong canvas. The file's revision is still echoed for keys.
+            const MediaDedup::Adjustments::RenderChain &chain =
+                MediaDedup::Adjustments::RenderChain::identity();
+            const int revision = 0;
+            response->set_render_revision(
+                MediaDedup::Adjustments::AdjustmentStore::instance().revisionFor(file_path));
 
             int64_t full_mtime = sourceModifiedTime(file_path);
             if (auto hit = fullResCache().getFresh(file_path, full_mtime, revision)) {
@@ -217,7 +224,7 @@ public:
                 auto db_copy = db_owner_; // CC-5: owning share
                 auto config_copy = config_;
                 std::string path_copy = file_path;
-                tpm_->submit("fullres_generator", [db_copy, config_copy, path_copy, chain, revision]() {
+                tpm_->submit("fullres_generator", [db_copy, config_copy, path_copy, chain = chain, revision]() {
                     int timeout_ms = config_copy
                         ? config_copy->getPropertyValue<int>("media.image.transcoding.timeoutMs", ThumbnailGenerator::DEFAULT_TIMEOUT_MS)
                         : ThumbnailGenerator::DEFAULT_TIMEOUT_MS;

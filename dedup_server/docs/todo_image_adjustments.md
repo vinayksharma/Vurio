@@ -265,7 +265,7 @@ defaulting to identity so untouched callers compile):
 | `ThumbnailGenerator::generateToBlob` | passes chain to `buildMagickArgs`; **the OpenCV fast path is taken only when the chain is identity**; the LibRaw demosaic branch (native res) renders to a temp JPEG and, when the chain is non-identity, runs one magick pass over it. Adjusted RAW at native resolution is rare; one extra encode is acceptable. |
 | `ThumbnailService::generateAndCacheThumbnail`, `PipelineThumbnailHelper::generateThumbnail` | resolve chain via `AdjustmentStore::chainFor(path)`, write the row with `render_revision = chain.revision()`; the filename already includes it |
 | `MediaServiceImpl::GetThumbnail` | resolves the revision server-side, looks up best fit at that revision, echoes `render_revision` in `MediaPathResponse` |
-| `MediaServiceImpl::GetPreview(size="full")` | full-res LRU key becomes `path#rev`; the generator receives the chain |
+| `MediaServiceImpl::GetPreview(size="full")` | **serves base pixels** like the QHD preview (§6.2): the generator receives the identity chain and the LRU entry stays at revision 0; the file's revision is echoed for the client's keys. (Originally rendered with the chain, which made the viewer apply the edits twice on RAW files.) |
 | `MediaServiceImpl::GetPreview` (QHD) | **unchanged, serves base pixels** (§6.2) |
 | `computeDisplayDimensions(base, chain)` | the reserved parameter is filled in; list queries resolve the chain per row |
 | `VURIO_BEST_THUMB_SUBQUERY` | `tc.render_revision = COALESCE((SELECT render_revision FROM image_adjustments ia WHERE ia.file_path = <src>), 0)` |
