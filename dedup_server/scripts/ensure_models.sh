@@ -76,6 +76,21 @@ ASSETS=(
   "Query LLM (Qwen2.5 1.5B q4_k_m)|qwen2.5-1.5b-instruct-q4_k_m.gguf|1100000000|47475546|6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e|$QWEN_REPO/qwen2.5-1.5b-instruct-q4_k_m.gguf"
 )
 
+# CHAIN-5 (docs/todo_tool_chain.md §5.6): the detected-mask models. Optional:
+# a missing one hides its mask source in the catalogue (the server logs it
+# once) and never blocks a build — the picture tools work without them.
+#   CLIPSeg rd64-refined ... Xenova/clipseg-rd64-refined, the int8 dynamic
+#       quantisation of CIDAS/clipseg-rd64-refined (Apache-2.0); inputs
+#       input_ids / attention_mask / pixel_values (352², ImageNet mean/std),
+#       output logits (352²). Measured within 0.92–1.00 IoU of the fp16
+#       export on library photos at ~80 ms vs ~105 ms (CPU).
+#   MediaPipe selfie segmentation ... onnx-community/mediapipe_selfie_segmentation
+#       (Apache-2.0); input pixel_values (256², [0,1]), output alphas.
+OPTIONAL_ASSETS=(
+  "Prompt mask model (CLIPSeg int8)|clipseg-rd64-refined-q8.onnx|135000000|08|049010b152839f339d6115e668d560860d0031f7b750b24828c07167ba68812a|$HF/Xenova/clipseg-rd64-refined/resolve/main/onnx/model_quantized.onnx"
+  "People mask model (MediaPipe selfie segmentation)|selfie-segmentation.onnx|450000|08|3241ac4ad8aa35bdaf33946776db29f7c283a413aa0b0dacb9483594b4531aad|$HF/onnx-community/mediapipe_selfie_segmentation/resolve/main/onnx/model.onnx"
+)
+
 file_size() { stat -f%z "$1" 2>/dev/null || stat -c%s "$1" 2>/dev/null || echo 0; }
 
 # A file is real when it is big enough and starts with the right bytes. The
@@ -190,6 +205,38 @@ done
 # sqlite-vec: not a model, but the same shape of problem (gitignored, absent
 # in a fresh worktree, server degrades silently without it). The installer
 # pins its own release.
+optional_missing=()
+for spec in "${OPTIONAL_ASSETS[@]}"; do
+  IFS='|' read -r name rel min magic sha url <<< "$spec"
+  dest="$MODELS_DIR/$rel"
+  if is_valid "$dest" "$min" "$magic"; then
+    printf '[models]   ok       %-36s %s\n' "$rel" "$(human "$(file_size "$dest")")"
+    continue
+  fi
+  printf '[models]   optional %-36s (%s) not present\n' "$rel" "$name"
+  if [ "$CHECK_ONLY" = true ]; then
+    optional_missing+=("$rel")
+    continue
+  fi
+  if [ -n "${VURIO_MODELS_FROM:-}" ] && is_valid "$VURIO_MODELS_FROM/$rel" "$min" "$magic"; then
+    echo "[models]   copying  $rel from $VURIO_MODELS_FROM"
+    cp "$VURIO_MODELS_FROM/$rel" "$dest.part" && mv -f "$dest.part" "$dest"
+    copied+=("$rel")
+    continue
+  fi
+  echo "[models]   fetching $rel (optional)"
+  echo "[models]            $url"
+  if download_to "$url" "$dest" && [ "$(sha256_of "$dest")" = "$sha" ] && is_valid "$dest" "$min" "$magic"; then
+    echo "[models]   verified $rel sha256 ok"
+    fetched+=("$rel")
+  else
+    echo "[models]   WARNING  $rel could not be fetched intact; its mask source stays hidden" >&2
+    rm -f "$dest" "$dest.part"
+    optional_missing+=("$rel")
+  fi
+done
+[ ${#optional_missing[@]} -gt 0 ] && echo "[models] optional, not present: ${optional_missing[*]} (detected masks limited)"
+
 if [ -f "$EXT_DIR/vec0.dylib" ] || [ -f "$EXT_DIR/vec0.so" ]; then
   echo "[models]   ok       extensions/vec0 (sqlite-vec)"
 elif [ "$CHECK_ONLY" = true ]; then

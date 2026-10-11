@@ -102,6 +102,7 @@ set(UNIT_TEST_SOURCES
     unit/test_layer_tools.cpp
     unit/test_recipes.cpp
     unit/test_lanes.cpp
+    unit/test_mask_service.cpp
 )
 
 # ADJ-1: the adjustment store and everything it links. Sources that resolve
@@ -115,6 +116,9 @@ set(ADJUSTMENTS_SOURCES
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/layer_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/blend.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/masks.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/mask_detectors.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/mask_service.cpp
+    ${CMAKE_SOURCE_DIR}/src/media_processors/text/clip_tokenizer.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tool_registry.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/render_plan.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/chain_engine.cpp
@@ -838,6 +842,9 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/layer_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/blend.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/masks.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/mask_detectors.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/mask_service.cpp
+    ${CMAKE_SOURCE_DIR}/src/media_processors/text/clip_tokenizer.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tool_registry.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/render_plan.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/chain_engine.cpp

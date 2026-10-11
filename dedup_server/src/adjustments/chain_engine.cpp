@@ -155,7 +155,8 @@ namespace MediaDedup::Adjustments::ChainEngine
     }
 
     bool renderToJpeg(const cv::Mat &base_bgr8, const RenderPlan &plan, int target, int quality,
-                      std::vector<uint8_t> &jpeg_out, int *out_width, int *out_height)
+                      std::vector<uint8_t> &jpeg_out, int *out_width, int *out_height,
+                      const RenderPlan::RenderOptions &options)
     {
         if (base_bgr8.empty())
         {
@@ -165,7 +166,7 @@ namespace MediaDedup::Adjustments::ChainEngine
         Frame frame = fromBgr8(base_bgr8);
         double scale = workingScale(plan, frame.size(), target);
         scaleFrame(frame, scale);
-        plan.render(frame);
+        plan.render(frame, 0, nullptr, options);
         if (target > 0)
             fitFrame(frame, target);
         jpeg_out = encodeJpeg(frame, quality);

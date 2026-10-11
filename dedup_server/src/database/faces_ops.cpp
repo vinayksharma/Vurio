@@ -386,7 +386,8 @@ namespace MediaDedup
             Poco::Data::Session &sess = lease.get();
             int fid = file_id;
             Poco::Data::Statement stmt(sess);
-            stmt << "SELECT id, file_id, bbox_x, bbox_y, bbox_w, bbox_h, quality, embedding "
+            stmt << "SELECT id, file_id, bbox_x, bbox_y, bbox_w, bbox_h, quality, embedding, "
+                    "COALESCE(cluster_id, 0), COALESCE(person_id, 0) "
                     "FROM faces WHERE file_id = ? ORDER BY id",
                 use(fid);
             stmt.execute();
@@ -406,6 +407,8 @@ namespace MediaDedup
                     auto blob = rs[7].extract<Poco::Data::BLOB>();
                     r.embedding.assign(blob.rawContent(), blob.rawContent() + blob.size());
                 }
+                r.cluster_id = rs[8].convert<int>();
+                r.person_id = rs[9].convert<int>();
                 out.push_back(std::move(r));
             }
         }

@@ -319,6 +319,8 @@ add_executable(media_dedup_server
     src/adjustments/tools/layer_tools.cpp
     src/adjustments/blend.cpp
     src/adjustments/masks.cpp
+    src/adjustments/mask_detectors.cpp
+    src/adjustments/mask_service.cpp
     src/adjustments/tool_registry.cpp
     src/adjustments/render_plan.cpp
     src/adjustments/chain_engine.cpp
@@ -420,8 +422,13 @@ if(APPLE)
     target_sources(media_dedup_server PRIVATE src/media_processors/face/vision_face_detector.mm)
     set_source_files_properties(src/media_processors/face/vision_face_detector.mm
         PROPERTIES LANGUAGE CXX COMPILE_FLAGS "-x objective-c++ -fobjc-arc")
+    # CHAIN-5: Vision subject lifting behind the `subject` mask source,
+    # registered by its own static initializer (server target only).
+    target_sources(media_dedup_server PRIVATE src/adjustments/vision_subject_mask.mm)
+    set_source_files_properties(src/adjustments/vision_subject_mask.mm
+        PROPERTIES LANGUAGE CXX COMPILE_FLAGS "-x objective-c++ -fobjc-arc")
     target_link_libraries(media_dedup_server
-        "-framework Vision" "-framework ImageIO" "-framework CoreGraphics" "-framework Foundation")
+        "-framework Vision" "-framework ImageIO" "-framework CoreGraphics" "-framework CoreVideo" "-framework Foundation")
 endif()
 
 # Link libraries

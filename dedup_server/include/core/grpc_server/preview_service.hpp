@@ -46,6 +46,8 @@ public:
         for (int i = 0; i < 2; ++i)
             for (int j = 0; j < 3; ++j)
                 reply->add_base_to_canvas(r.base_to_canvas(i, j));
+        for (const auto& lane : r.pending_lanes)
+            reply->add_pending_lane_ids(lane);
         return grpc::Status::OK;
     }
 

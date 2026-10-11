@@ -1280,6 +1280,41 @@
       "text": "Seed a few example recipes (a red-filter monochrome, a soft contrast, a warm vignette) when the recipe list is empty. They can be renamed or deleted like any other recipe."
     }
   ],
+  "media.adjustments.masks.enabled": "Detected Masks",
+  "media.adjustments.masks.enabled.long": [
+    {
+      "type": "paragraph",
+      "text": "Lane masks that find things in the picture: the subject, people, faces from the library, or whatever a text prompt describes. Each is computed once per photo on the original pixels and cached; editing never re-runs a detector. Off hides these mask sources; lanes that use them render unchanged."
+    }
+  ],
+  "media.adjustments.masks.size": "Detected Mask Size",
+  "media.adjustments.masks.size.long": [
+    {
+      "type": "paragraph",
+      "text": "Longest side, in pixels, of a cached detected mask. Larger masks follow edges more closely and take more disk; 1024 suits the detectors' own resolution."
+    }
+  ],
+  "media.adjustments.masks.promptModelPath": "Prompt Mask Model",
+  "media.adjustments.masks.promptModelPath.long": [
+    {
+      "type": "paragraph",
+      "text": "The CLIPSeg ONNX model that turns a text prompt (\"the sky\", \"the red car\") into a mask, and the fallback for the subject mask where Apple Vision is not available. Missing file: the Prompt source is hidden."
+    }
+  ],
+  "media.adjustments.masks.peopleModelPath": "People Mask Model",
+  "media.adjustments.masks.peopleModelPath.long": [
+    {
+      "type": "paragraph",
+      "text": "The person-segmentation ONNX model (MediaPipe selfie segmentation) behind the People mask. Missing file: the People source is hidden."
+    }
+  ],
+  "media.adjustments.masks.useCoreML": "Mask Models on CoreML",
+  "media.adjustments.masks.useCoreML.long": [
+    {
+      "type": "paragraph",
+      "text": "Run the mask models through the CoreML execution provider where available. Off runs them on the CPU, which is where the quantised models are fastest to start."
+    }
+  ],
   "media.adjustments.sidecar.suffix": "Adjustment Sidecar Suffix",
   "media.adjustments.sidecar.suffix.long": [
     {

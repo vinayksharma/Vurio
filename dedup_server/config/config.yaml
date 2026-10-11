@@ -129,6 +129,12 @@ media.adjustments.preview.idleSeconds: 120
 media.adjustments.preview.sessionSide: 2560
 media.adjustments.history.maxEntries: 100
 media.adjustments.recipes.builtin: true
+# CHAIN-5 (docs/todo_tool_chain.md §11): detected masks (subject, people, faces, prompt)
+media.adjustments.masks.enabled: true
+media.adjustments.masks.size: 1024
+media.adjustments.masks.promptModelPath: models/clipseg-rd64-refined-q8.onnx
+media.adjustments.masks.peopleModelPath: models/selfie-segmentation.onnx
+media.adjustments.masks.useCoreML: false
 scheduler.backoff.maxMs: 30000
 scheduler.maxConsecutiveFailures: 5
 media.video.mkv: false

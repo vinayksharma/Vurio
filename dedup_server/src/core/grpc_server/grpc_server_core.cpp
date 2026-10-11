@@ -1,3 +1,6 @@
+#include "core/media_ready_bus.hpp"
+#include "database/faces_ops.hpp"
+#include "adjustments/mask_service.hpp"
 /*
  * AR-5: grpc_server_core.cpp is now ONLY server lifecycle (start/stop) —
  * pairing-secret publication, builder wiring, auth processor registration,
@@ -157,6 +160,52 @@ void GrpcServerCore::start(const std::string& instance_dir,
             [](const std::string& file_path) {
                 return MediaDedup::Adjustments::AdjustmentStore::instance().documentJsonFor(file_path);
             });
+
+        // CHAIN-5 (docs §5.6): detected masks — the same base decode, the
+        // library's face boxes, a "mask" event when a detection lands.
+        {
+            using MediaDedup::Adjustments::MaskService;
+            MaskService::Config mc;
+            mc.enabled = cfg ? cfg->getPropertyValue<bool>("media.adjustments.masks.enabled", true) : true;
+            mc.size = cfg ? cfg->getPropertyValue<int>("media.adjustments.masks.size", 1024) : 1024;
+            std::string cache_root = cfg ? cfg->getPropertyValue<std::string>("cache.disk.location", "data/cache.previews") : "data/cache.previews";
+            mc.cache_dir = (std::filesystem::path(cache_root) / "masks").string();
+            mc.models.prompt_model = cfg ? cfg->getPropertyValue<std::string>("media.adjustments.masks.promptModelPath", "models/clipseg-rd64-refined-q8.onnx") : "models/clipseg-rd64-refined-q8.onnx";
+            mc.models.people_model = cfg ? cfg->getPropertyValue<std::string>("media.adjustments.masks.peopleModelPath", "models/selfie-segmentation.onnx") : "models/selfie-segmentation.onnx";
+            mc.models.use_coreml = cfg ? cfg->getPropertyValue<bool>("media.adjustments.masks.useCoreML", false) : false;
+            std::filesystem::path model_dir = std::filesystem::path(mc.models.prompt_model).parent_path();
+            if (model_dir.empty()) model_dir = "models";
+            mc.models.vocab_json = (model_dir / "vocab.json").string();
+            mc.models.merges_txt = (model_dir / "merges.txt").string();
+            MaskService::FaceLookup faces;
+            if (db_shared) {
+                faces = [db_shared](const std::string& file_path) {
+                    std::vector<MediaDedup::Adjustments::MaskDetectors::FaceBox> boxes;
+                    auto row = MediaDedup::ScannedFilesOps::getByPath(*db_shared, file_path);
+                    if (!row) return boxes;
+                    for (const auto& f : MediaDedup::FacesOps::listFacesForFile(*db_shared, row->id)) {
+                        MediaDedup::Adjustments::MaskDetectors::FaceBox b;
+                        b.x = f.bbox_x; b.y = f.bbox_y; b.w = f.bbox_w; b.h = f.bbox_h;
+                        b.person_id = f.person_id; b.cluster_id = f.cluster_id;
+                        boxes.push_back(b);
+                    }
+                    return boxes;
+                };
+            }
+            MaskService::instance().configure(
+                mc,
+                [](const std::string& file_path, int max_side, MediaDedup::Adjustments::Size& base_full) {
+                    return MediaDedup::Adjustments::PreviewSessionManager::instance().loadBase(file_path, max_side, base_full);
+                },
+                faces,
+                [](const std::string& file_path) {
+                    MediaDedup::MediaReadyBus::Event ev;
+                    ev.file_path = file_path;
+                    ev.media_type = "mask";
+                    ev.success = true;
+                    MediaDedup::MediaReadyBus::instance().publish(ev);
+                });
+        }
     }
 
     duplicate_finder_ = duplicate_finder; // CC-6: for callback teardown in stop()
@@ -245,6 +294,7 @@ void GrpcServerCore::stop() {
         // that reopens a database at the same path) finds the old one still
         // held open.
         MediaDedup::Adjustments::PreviewSessionManager::instance().reset();
+        MediaDedup::Adjustments::MaskService::instance().reset(); // CHAIN-5: stop the detector worker
         Poco::Logger::get("GrpcServerCore").information("gRPC Server stopped.");
     }
     if (!instance_dir_.empty()) {

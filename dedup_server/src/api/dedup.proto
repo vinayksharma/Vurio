@@ -204,6 +204,9 @@ message FaceClusterInfo {
   // popup rings it so the user can see the current representative.
   bool cover_pinned = 12;
   int32 cover_face_id = 13;
+  // CHAIN-5: the person this cluster is named as (0 = unnamed); the
+  // faces mask's `person_ids` picker uses it.
+  int32 person_id = 14;
 }
 
 message ListFaceClustersRequest {
@@ -667,7 +670,7 @@ message MediaPathResponse {
 
 message MediaReadyEvent {
   string file_path = 1;
-  string media_type = 2; // "thumbnail" | "preview" | "preview_full" | "adjustments"
+  string media_type = 2; // "thumbnail" | "preview" | "preview_full" | "adjustments" | "mask" (CHAIN-5: a detected mask finished)
   bool success = 3;
   string error_message = 4; // set when success == false
   // STRIP-2: pixel bucket of a finished thumbnail; 0 for previews and for
@@ -707,6 +710,9 @@ service AdjustmentsService {
   // chain is committed like any edit (without appending a new step) and the
   // resulting document is returned. OUT_OF_RANGE when there is no such step.
   rpc StepHistory(StepHistoryRequest) returns (AdjustmentDocumentResponse);
+  // CHAIN-5 (docs §9.3): detected-mask backends, models and cache.
+  rpc MaskStatus(Empty) returns (MaskStatusResponse);
+  rpc ClearMaskCache(Empty) returns (MaskStatusResponse);
 }
 
 // ---------------------------------------------------------
@@ -864,6 +870,28 @@ message PreviewFrame {
   // CHAIN-4 (docs §3.4): normalised base coordinates → frame pixels, as a
   // 2×3 affine (a b c / d e f), for mask pins drawn over the frame.
   repeated double base_to_canvas = 10;
+  // CHAIN-5 (docs §5.6): lanes whose detected mask is still computing;
+  // they rendered as no-ops. A MediaReadyEvent "mask" follows.
+  repeated string pending_lane_ids = 11;
+}
+
+// CHAIN-5: one detected mask source's backend and model state.
+message MaskSourceStatus {
+  string id = 1;            // subject | people | faces | prompt
+  string backend = 2;       // vision | onnx | database
+  string model_path = 3;
+  bool available = 4;
+  bool model_present = 5;
+  bool loaded = 6;
+  string note = 7;
+}
+
+message MaskStatusResponse {
+  repeated MaskSourceStatus sources = 1;
+  int64 cache_bytes = 2;    // detected-mask PNGs on disk
+  int32 cache_files = 3;
+  int32 pending = 4;        // detections queued or running
+  bool enabled = 5;
 }
 
 message StepHistoryRequest {

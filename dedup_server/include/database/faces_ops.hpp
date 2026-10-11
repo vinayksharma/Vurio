@@ -45,6 +45,8 @@ namespace MediaDedup
             double bbox_x = 0, bbox_y = 0, bbox_w = 0, bbox_h = 0;
             double quality = 0; // detector confidence/capture quality 0..1
             std::vector<std::uint8_t> embedding; // 512 floats, unit-normalized
+            int cluster_id = 0; // CHAIN-5: filled by listFacesForFile (0 = none)
+            int person_id = 0;
         };
 
         struct SweepCandidate

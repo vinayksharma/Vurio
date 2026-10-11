@@ -58,13 +58,15 @@ namespace
 
 // ------------------------------------------------------------ mask sources
 
-TEST(MaskSourceTest, RegistryServesFiveProceduralSources)
+TEST(MaskSourceTest, RegistryServesFiveProceduralSourcesFirst)
 {
     const auto &sources = MaskRegistry::instance().sources();
-    ASSERT_EQ(sources.size(), 5u);
+    ASSERT_EQ(sources.size(), 9u) << "five procedural, four detected (CHAIN-5)";
     EXPECT_EQ(sources[0]->id(), "full");
     EXPECT_NE(MaskRegistry::instance().find("radial"), nullptr);
-    EXPECT_EQ(MaskRegistry::instance().find("subject"), nullptr) << "CHAIN-5";
+    for (size_t i = 0; i < 5; ++i)
+        EXPECT_FALSE(sources[i]->detected()) << sources[i]->id();
+    EXPECT_NE(MaskRegistry::instance().find("subject"), nullptr) << "CHAIN-5";
     for (const MaskSource *m : sources)
         EXPECT_EQ(m->descriptor().category, ToolCategory::Mask) << m->id();
 }

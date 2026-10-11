@@ -221,6 +221,16 @@ namespace MediaDedup
         /// size is the same at every level and tells whether a level still
         /// reaches `target` on the output's longest side. `target` <= 0 is
         /// native: the full decode.
+        // CHAIN-5: a thumbnail or full render computes a missing detected
+        // mask inline (it is off the UI thread already, docs §5.6).
+        Adjustments::RenderPlan::RenderOptions editOptions(const std::string &source_path)
+        {
+            Adjustments::RenderPlan::RenderOptions options;
+            options.file_path = source_path;
+            options.inline_masks = true;
+            return options;
+        }
+
         cv::Mat decodeBaseForTarget(const std::string &path, const Adjustments::RenderPlan &plan, int target)
         {
             if (target > 0)
@@ -351,7 +361,7 @@ namespace MediaDedup
                                                    static_cast<const uint8_t *>(blob.data()) + blob.length());
                     cv::Mat base = Adjustments::ChainEngine::decodeBgr8(developed);
                     std::vector<uint8_t> jpeg;
-                    if (!Adjustments::ChainEngine::renderToJpeg(base, plan, size, quality, jpeg))
+                    if (!Adjustments::ChainEngine::renderToJpeg(base, plan, size, quality, jpeg, nullptr, nullptr, editOptions(source_path)))
                     {
                         logger.error("Edit chain failed on the developed RAW: %s", source_path);
                         return false;
@@ -416,7 +426,7 @@ namespace MediaDedup
                     return false;
                 }
                 std::vector<uint8_t> jpeg;
-                if (!Adjustments::ChainEngine::renderToJpeg(base, plan, size, quality, jpeg))
+                if (!Adjustments::ChainEngine::renderToJpeg(base, plan, size, quality, jpeg, nullptr, nullptr, editOptions(source_path)))
                 {
                     logger.error("Edit chain render failed for: %s", source_path);
                     return false;

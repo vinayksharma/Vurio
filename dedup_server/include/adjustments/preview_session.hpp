@@ -43,6 +43,7 @@ namespace MediaDedup::Adjustments
         Size base_full;     // full-resolution base (EXIF-oriented)
         Size display_full;  // full-resolution size of what the frame shows
         cv::Matx23d base_to_canvas = cv::Matx23d(1, 0, 0, 0, 1, 0); // normalised base → frame pixels
+        std::vector<std::string> pending_lanes; // CHAIN-5: lanes whose detected mask is still computing
     };
 
     class PreviewSession
@@ -103,6 +104,8 @@ namespace MediaDedup::Adjustments
         void configure(int max_sessions, size_t cache_bytes_per_session, int idle_seconds, int session_side,
                        BaseLoader loader, DocumentLookup documents);
         void reset();
+        // CHAIN-5: the same decode the sessions use, for the mask service.
+        cv::Mat loadBase(const std::string &file_path, int max_side, Size &base_full) const;
 
         enum class Outcome { Ok, Invalid, NotFound, Internal };
         struct Response

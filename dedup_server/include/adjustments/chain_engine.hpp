@@ -55,6 +55,7 @@ namespace MediaDedup::Adjustments
         // JPEG. `target` <= 0 renders at the base's own resolution. Returns
         // false (and logs) when the base is empty or encoding fails.
         bool renderToJpeg(const cv::Mat &base_bgr8, const RenderPlan &plan, int target, int quality,
-                          std::vector<uint8_t> &jpeg_out, int *out_width = nullptr, int *out_height = nullptr);
+                          std::vector<uint8_t> &jpeg_out, int *out_width = nullptr, int *out_height = nullptr,
+                          const RenderPlan::RenderOptions &options = RenderPlan::RenderOptions());
     }
 }

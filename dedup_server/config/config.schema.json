@@ -663,6 +663,26 @@
     "type": "bool",
     "default": true
   },
+  "media.adjustments.masks.enabled": {
+    "type": "bool",
+    "default": true
+  },
+  "media.adjustments.masks.size": {
+    "type": "int",
+    "default": 1024
+  },
+  "media.adjustments.masks.promptModelPath": {
+    "type": "string",
+    "default": "models/clipseg-rd64-refined-q8.onnx"
+  },
+  "media.adjustments.masks.peopleModelPath": {
+    "type": "string",
+    "default": "models/selfie-segmentation.onnx"
+  },
+  "media.adjustments.masks.useCoreML": {
+    "type": "bool",
+    "default": false
+  },
   "thumbnail.qhd_preview.threshold_mb": {
     "type": "double",
     "default": 5.0

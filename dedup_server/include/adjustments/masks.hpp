@@ -18,6 +18,18 @@
 
 namespace MediaDedup::Adjustments
 {
+    // CHAIN-5: what a detected source needs to find its cached coverage —
+    // the file the frame came from — and how to behave when it is not
+    // there yet: a preview leaves the lane as a no-op and flags `pending`
+    // (the detection is queued), a thumbnail or full render computes it
+    // on the spot. Procedural sources ignore it.
+    struct MaskContext
+    {
+        std::string file_path;
+        bool inline_detection = true;
+        mutable bool pending = false;
+    };
+
     class MaskSource
     {
     public:
@@ -32,7 +44,9 @@ namespace MediaDedup::Adjustments
         std::unique_ptr<ToolState> defaultState() const { return schema_.defaultState(); }
 
         // Coverage in [0,1] (CV_32FC1, fork size) for `state` on `fork`.
-        virtual void coverage(const ToolState &state, const Frame &fork, cv::Mat &out) const = 0;
+        virtual void coverage(const ToolState &state, const Frame &fork, cv::Mat &out, const MaskContext &ctx) const = 0;
+        // CHAIN-5: computed once per file by the MaskService, not per render.
+        virtual bool detected() const { return false; }
 
     protected:
         MaskSource() : schema_(descriptor_) {}
@@ -77,7 +91,9 @@ namespace MediaDedup::Adjustments
         // Parse the document's "mask" object. Unknown sources are refused.
         static bool parse(const nlohmann::json &mask, LaneMask &out, std::string &error);
         // Coverage on the fork (CV_32FC1).
-        void coverage(const Frame &fork, cv::Mat &out) const;
+        void coverage(const Frame &fork, cv::Mat &out, const MaskContext &ctx = MaskContext()) const;
+        // Any component that is a detected source.
+        bool hasDetected() const;
     };
 
     namespace MaskMath

@@ -378,6 +378,7 @@ public:
                 p->add_aliases(a);
             p->set_cover_pinned(c.cover_pinned);
             p->set_cover_face_id(c.cover_face_id);
+            p->set_person_id(c.person_id);
         }
         return grpc::Status::OK;
     }

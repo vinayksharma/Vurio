@@ -1,6 +1,8 @@
 #include "adjustments/masks.hpp"
 #include "adjustments/chain_engine.hpp"
+#include "adjustments/mask_service.hpp"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <opencv2/imgproc.hpp>
 
@@ -27,7 +29,7 @@ namespace MediaDedup::Adjustments
                 descriptor_.icon = "rectangle";
                 descriptor_.summary = "whole image";
             }
-            void coverage(const ToolState &, const Frame &fork, cv::Mat &out) const override { fillMask(descriptor_, out, fork, 1.0f); }
+            void coverage(const ToolState &, const Frame &fork, cv::Mat &out, const MaskContext &) const override { fillMask(descriptor_, out, fork, 1.0f); }
         };
 
         // 1 at p0, 0 at p1, a linear ramp between; both in base space.
@@ -46,7 +48,7 @@ namespace MediaDedup::Adjustments
                 number("x1", "End x", 0, 1, 0.5, 0.001);
                 number("y1", "End y", 0, 1, 0.6, 0.001);
             }
-            void coverage(const ToolState &state, const Frame &fork, cv::Mat &out) const override
+            void coverage(const ToolState &state, const Frame &fork, cv::Mat &out, const MaskContext &) const override
             {
                 const ParamState &s = as(state);
                 cv::Point2d p0 = fork.project(s.number("x0", 0.5), s.number("y0", 0.2));
@@ -91,7 +93,7 @@ namespace MediaDedup::Adjustments
                 schema_.number("rotation", "Rotation", -180, 180, 0, 1);
                 schema_.number("softness", "Softness", 0, 1, 0.5, 0.01);
             }
-            void coverage(const ToolState &state, const Frame &fork, cv::Mat &out) const override
+            void coverage(const ToolState &state, const Frame &fork, cv::Mat &out, const MaskContext &) const override
             {
                 const ParamState &s = as(state);
                 cv::Point2d c = fork.project(s.number("cx", 0.5), s.number("cy", 0.5));
@@ -134,7 +136,7 @@ namespace MediaDedup::Adjustments
                 schema_.number("hi", "Brightest", 0, 1, 1.0, 0.01);
                 schema_.number("knee", "Softness", 0, 0.5, 0.1, 0.01);
             }
-            void coverage(const ToolState &state, const Frame &fork, cv::Mat &out) const override
+            void coverage(const ToolState &state, const Frame &fork, cv::Mat &out, const MaskContext &) const override
             {
                 const ParamState &s = as(state);
                 double lo = s.number("lo", 0.5), hi = s.number("hi", 1.0), knee = s.number("knee", 0.1);
@@ -169,7 +171,7 @@ namespace MediaDedup::Adjustments
                 schema_.number("sat_min", "Minimum saturation", 0, 1, 0.15, 0.01);
                 schema_.number("softness", "Softness", 0, 1, 0.5, 0.01);
             }
-            void coverage(const ToolState &state, const Frame &fork, cv::Mat &out) const override
+            void coverage(const ToolState &state, const Frame &fork, cv::Mat &out, const MaskContext &) const override
             {
                 const ParamState &s = as(state);
                 double hue = s.number("hue", 210), range = s.number("range", 30);
@@ -202,6 +204,158 @@ namespace MediaDedup::Adjustments
         return r;
     }
 
+    namespace
+    {
+        // ------------------------------------------------ detected (CHAIN-5)
+
+        // A source whose coverage the MaskService computes once per file on
+        // the base (docs §5.6). The cached base-space mask is carried to the
+        // fork by the frame's affine, then shaped by threshold/softness —
+        // view parameters that never re-run a detector, so they are not
+        // part of the cache key.
+        class DetectedMask : public MaskSource
+        {
+        public:
+            bool detected() const override { return true; }
+
+            void coverage(const ToolState &state, const Frame &fork, cv::Mat &out, const MaskContext &ctx) const override
+            {
+                const ParamState &s = as(state);
+                cv::Mat base_mask;
+                MaskService::Status status = MaskService::Status::Unavailable;
+                if (!ctx.file_path.empty())
+                    status = MaskService::instance().coverage(ctx.file_path, id(), detectorParams(s), ctx.inline_detection, base_mask);
+                if (status == MaskService::Status::Pending)
+                    ctx.pending = true;
+                if (status != MaskService::Status::Ready || base_mask.empty())
+                {
+                    out = cv::Mat(fork.height(), fork.width(), CV_32FC1, cv::Scalar(0.0f));
+                    return;
+                }
+                // Threshold and softness: smoothstep about the threshold.
+                double th = s.number("threshold", 0.5);
+                double soft = s.number("softness", 0.15);
+                cv::Mat shaped(base_mask.size(), CV_32FC1);
+                for (int y = 0; y < base_mask.rows; ++y)
+                {
+                    const float *src = base_mask.ptr<float>(y);
+                    float *dst = shaped.ptr<float>(y);
+                    for (int x = 0; x < base_mask.cols; ++x)
+                        dst[x] = static_cast<float>(MaskMath::smoothstep(th - soft, th + soft, src[x]));
+                }
+                transport(shaped, fork, out);
+            }
+
+            // Mask pixels → fork pixels: normalise by the mask size, then the
+            // frame's base→canvas affine (docs §3.4).
+            static void transport(const cv::Mat &base_mask, const Frame &fork, cv::Mat &out)
+            {
+                const cv::Matx23d &m = fork.base_to_canvas;
+                double sx = 1.0 / base_mask.cols, sy = 1.0 / base_mask.rows;
+                cv::Matx23d a(m(0, 0) * sx, m(0, 1) * sy, m(0, 2), m(1, 0) * sx, m(1, 1) * sy, m(1, 2));
+                cv::warpAffine(base_mask, out, a, cv::Size(fork.width(), fork.height()), cv::INTER_LINEAR,
+                               cv::BORDER_CONSTANT, cv::Scalar(0.0f));
+            }
+
+        protected:
+            // The params the detector itself depends on (the cache key).
+            virtual nlohmann::json detectorParams(const ParamState &) const { return nlohmann::json::object(); }
+
+            void shapeParams()
+            {
+                schema_.number("threshold", "Threshold", 0, 1, 0.5, 0.01);
+                schema_.number("softness", "Softness", 0, 0.5, 0.15, 0.01);
+            }
+        };
+
+        class SubjectMask final : public DetectedMask
+        {
+        public:
+            SubjectMask()
+            {
+                descriptor_.id = "subject";
+                descriptor_.label = "Subject";
+                descriptor_.category = ToolCategory::Mask;
+                descriptor_.icon = "person.crop.rectangle";
+                descriptor_.summary = "subject";
+                shapeParams();
+            }
+        };
+
+        class PeopleMask final : public DetectedMask
+        {
+        public:
+            PeopleMask()
+            {
+                descriptor_.id = "people";
+                descriptor_.label = "People";
+                descriptor_.category = ToolCategory::Mask;
+                descriptor_.icon = "person.2";
+                descriptor_.summary = "people";
+                shapeParams();
+            }
+        };
+
+        class FacesMask final : public DetectedMask
+        {
+        public:
+            FacesMask()
+            {
+                descriptor_.id = "faces";
+                descriptor_.label = "Faces";
+                descriptor_.category = ToolCategory::Mask;
+                descriptor_.icon = "face.smiling";
+                descriptor_.summary = "faces";
+                schema_.text("person_ids", "People", "");
+                schema_.number("grow", "Grow", 0.5, 3, 1.4, 0.05);
+                shapeParams();
+            }
+
+        protected:
+            nlohmann::json detectorParams(const ParamState &s) const override
+            {
+                return nlohmann::json{{"person_ids", s.string("person_ids")}, {"grow", s.number("grow", 1.4)}};
+            }
+        };
+
+        class PromptMask final : public DetectedMask
+        {
+        public:
+            PromptMask()
+            {
+                descriptor_.id = "prompt";
+                descriptor_.label = "Prompt";
+                descriptor_.category = ToolCategory::Mask;
+                descriptor_.icon = "text.magnifyingglass";
+                descriptor_.summary = "{text}";
+                schema_.text("text", "Describe it", "");
+                shapeParams();
+            }
+
+        protected:
+            nlohmann::json detectorParams(const ParamState &s) const override
+            {
+                // Lower-cased, single-spaced: "the sky" and "the  Sky" share a mask.
+                std::string text = s.string("text");
+                std::string norm;
+                bool space = false;
+                for (unsigned char c : text)
+                {
+                    if (std::isspace(c))
+                    {
+                        space = !norm.empty();
+                        continue;
+                    }
+                    if (space)
+                        norm += ' ';
+                    space = false;
+                    norm += static_cast<char>(std::tolower(c));
+                }
+                return nlohmann::json{{"text", norm}};
+            }
+        };
+    }
+
     MaskRegistry::MaskRegistry()
     {
         owned_.push_back(std::make_unique<FullMask>());
@@ -209,6 +363,10 @@ namespace MediaDedup::Adjustments
         owned_.push_back(std::make_unique<RadialMask>());
         owned_.push_back(std::make_unique<LuminanceMask>());
         owned_.push_back(std::make_unique<ColorRangeMask>());
+        owned_.push_back(std::make_unique<SubjectMask>());
+        owned_.push_back(std::make_unique<PeopleMask>());
+        owned_.push_back(std::make_unique<FacesMask>());
+        owned_.push_back(std::make_unique<PromptMask>());
         for (const auto &m : owned_)
             order_.push_back(m.get());
     }
@@ -328,14 +486,22 @@ namespace MediaDedup::Adjustments
         return true;
     }
 
-    void LaneMask::coverage(const Frame &fork, cv::Mat &out) const
+    bool LaneMask::hasDetected() const
+    {
+        for (const Component &c : components)
+            if (c.source && c.source->detected())
+                return true;
+        return false;
+    }
+
+    void LaneMask::coverage(const Frame &fork, cv::Mat &out, const MaskContext &ctx) const
     {
         cv::Mat acc;
         bool first = true;
         for (const Component &c : components)
         {
             cv::Mat cov;
-            c.source->coverage(*c.state, fork, cov);
+            c.source->coverage(*c.state, fork, cov, ctx);
             if (first)
             {
                 acc = cov;

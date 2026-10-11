@@ -6,6 +6,7 @@
 // instantiate the TU-private impls).
 
 #include "core/grpc_server/grpc_service_common.hpp"
+#include "adjustments/mask_service.hpp"
 #include "database/faces_ops.hpp"
 #include "core/grpc_server/full_res_cache_registry.hpp"
 
@@ -231,6 +232,7 @@ public:
                 // Same tolerance as the cache-table clears above.
             }
             clearFullResCache();
+            MediaDedup::Adjustments::MaskService::instance().clearCache(); // CHAIN-5: regenerable
 
             reply->set_success(thumb_success && transcode_success);
             reply->set_thumbnail_cache_cleared(thumb_success);

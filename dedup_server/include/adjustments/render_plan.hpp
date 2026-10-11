@@ -53,6 +53,14 @@ namespace MediaDedup::Adjustments
         {
             std::string solo_lane_id;
             std::string overlay_lane_id;
+            // CHAIN-5: detected masks are looked up by file; a preview
+            // never computes one inline (the lane renders as a no-op and
+            // its id lands in `pending_lanes`), a thumbnail or full render
+            // does.
+            std::string file_path;
+            bool inline_masks;
+            std::shared_ptr<std::vector<std::string>> pending_lanes;
+            RenderOptions() : inline_masks(true) {}
             bool any() const { return !solo_lane_id.empty() || !overlay_lane_id.empty(); }
         };
 

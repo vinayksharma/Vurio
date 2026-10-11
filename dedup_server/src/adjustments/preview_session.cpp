@@ -130,8 +130,19 @@ namespace MediaDedup::Adjustments
             frame.base_to_canvas = scaled.base_to_canvas;
         }
 
+        // CHAIN-5: a preview never waits for a detector; a lane whose mask
+        // is still computing renders as a no-op and is reported, and nothing
+        // from that node on is cached (the mask's arrival changes it).
+        RenderPlan::RenderOptions opts = options;
+        opts.file_path = file_path_;
+        opts.inline_masks = false;
+        opts.pending_lanes = std::make_shared<std::vector<std::string>>();
         plan.render(frame, start, [&](size_t index, const Frame &after)
-                    { put(nodes[index].prefix_hash + wk, after); }, options);
+                    {
+                        if (opts.pending_lanes->empty())
+                            put(nodes[index].prefix_hash + wk, after);
+                    }, opts);
+        out.pending_lanes = *opts.pending_lanes;
 
         ChainEngine::fitFrame(frame, max_side);
         out.base_to_canvas = frame.base_to_canvas;
@@ -168,6 +179,19 @@ namespace MediaDedup::Adjustments
     {
         static PreviewSessionManager m;
         return m;
+    }
+
+    cv::Mat PreviewSessionManager::loadBase(const std::string &file_path, int max_side, Size &base_full) const
+    {
+        BaseLoader loader;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            loader = loader_;
+        }
+        base_full = {};
+        if (!loader)
+            return {};
+        return loader(file_path, max_side, base_full);
     }
 
     void PreviewSessionManager::configure(int max_sessions, size_t cache_bytes_per_session, int idle_seconds,

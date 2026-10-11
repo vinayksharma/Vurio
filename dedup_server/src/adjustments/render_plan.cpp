@@ -252,7 +252,12 @@ namespace MediaDedup::Adjustments
             if (lane.steps)
                 lane.steps->render(laneOut, 0, nullptr, options);
             cv::Mat coverage;
-            lane.mask.coverage(fork, coverage);
+            MaskContext ctx;
+            ctx.file_path = options.file_path;
+            ctx.inline_detection = options.inline_masks;
+            lane.mask.coverage(fork, coverage, ctx);
+            if (ctx.pending && options.pending_lanes)
+                options.pending_lanes->push_back(lane.id);
 
             if (lane.id == options.solo_lane_id && !options.solo_lane_id.empty())
             {

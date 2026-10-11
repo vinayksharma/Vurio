@@ -10,6 +10,8 @@
 #include "core/grpc_server/grpc_service_common.hpp"
 #include "adjustments/adjustment_document.hpp"
 #include "adjustments/adjustment_store.hpp"
+#include "adjustments/mask_service.hpp"
+#include "adjustments/preview_session.hpp"
 #include "adjustments/masks.hpp"
 #include "adjustments/tool_registry.hpp"
 
@@ -35,8 +37,12 @@ public:
             split.summary = "{lanes} lanes";
             fillDescriptor(split, reply->add_tools());
         }
+        // CHAIN-5: a detected source whose backend cannot run here (no
+        // model, masks disabled) is hidden from the catalogue; a document
+        // that names it still parses and renders that lane as a no-op.
         for (const auto& d : MediaDedup::Adjustments::MaskRegistry::instance().descriptors())
-            fillDescriptor(d, reply->add_mask_sources());
+            if (MediaDedup::Adjustments::MaskService::instance().available(d.id))
+                fillDescriptor(d, reply->add_mask_sources());
         reply->set_document_version(MediaDedup::Adjustments::AdjustmentDocument::kVersion);
         for (const auto& mode : MediaDedup::Adjustments::RenderPlan::blendModes()) reply->add_blend_modes(mode);
         return grpc::Status::OK;
@@ -115,6 +121,40 @@ public:
             h->set_at(step.second);
         }
         return statusOf(result);
+    }
+
+    // CHAIN-5 (docs §9.3): backends, models and the mask cache.
+    static void fillMaskStatus(vurio::dedup::MaskStatusResponse* reply) {
+        auto& service = MediaDedup::Adjustments::MaskService::instance();
+        for (const auto& s : service.status()) {
+            auto* m = reply->add_sources();
+            m->set_id(s.id);
+            m->set_backend(s.backend);
+            m->set_model_path(s.model_path);
+            m->set_available(s.available);
+            m->set_model_present(s.model_present);
+            m->set_loaded(s.loaded);
+            m->set_note(s.note);
+        }
+        auto stats = service.cacheStats();
+        reply->set_cache_bytes(static_cast<int64_t>(stats.bytes));
+        reply->set_cache_files(static_cast<int>(stats.files));
+        reply->set_pending(static_cast<int>(stats.pending));
+        reply->set_enabled(service.enabled());
+    }
+
+    grpc::Status MaskStatus(grpc::ServerContext*, const vurio::dedup::Empty*,
+                            vurio::dedup::MaskStatusResponse* reply) override {
+        fillMaskStatus(reply);
+        return grpc::Status::OK;
+    }
+
+    grpc::Status ClearMaskCache(grpc::ServerContext*, const vurio::dedup::Empty*,
+                                vurio::dedup::MaskStatusResponse* reply) override {
+        MediaDedup::Adjustments::MaskService::instance().clearCache();
+        MediaDedup::Adjustments::PreviewSessionManager::instance().reset();
+        fillMaskStatus(reply);
+        return grpc::Status::OK;
     }
 
     grpc::Status StepHistory(grpc::ServerContext*, const vurio::dedup::StepHistoryRequest* request,
