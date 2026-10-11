@@ -384,15 +384,6 @@ TEST(AdjustmentDocumentTest, UnknownToolIsPreservedAndNotIdentity)
     EXPECT_EQ(back.chain[0]["id"], "abcdefgh");
 }
 
-TEST(AdjustmentDocumentTest, SplitNodesAreRefusedUntilChainFour)
-{
-    AdjustmentDocument d = chainDoc(json::array({{{"tool", "split"}, {"lanes", json::array()}}}));
-    RenderPlan plan;
-    std::string error;
-    EXPECT_FALSE(d.compile(ToolRegistry::instance(), plan, error));
-    EXPECT_NE(error.find("split"), std::string::npos);
-}
-
 TEST(AdjustmentDocumentTest, HistoryAppendsTruncatesRedoAndCaps)
 {
     AdjustmentDocument d = chainDoc(json::array({node("rotate", {{"version", 1}, {"quarter_turns", 1}})}));

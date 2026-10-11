@@ -130,16 +130,26 @@ TEST(LayerToolTest, RegistryServesTheCatalogueWithCategories)
         EXPECT_FALSE(d.summary.empty()) << d.id;
         if (d.category == ToolCategory::Layer) ++layers;
         if (d.category == ToolCategory::Raster) ++rasters;
-        // Defaults are identity and round-trip.
+        // Defaults are identity (unless the tool declares its defaults
+        // active — Monochrome converts as soon as it is added) and
+        // round-trip.
         auto def = t->defaultState();
-        EXPECT_TRUE(t->isIdentity(*def)) << d.id;
+        EXPECT_EQ(t->isIdentity(*def), !d.active_at_defaults) << d.id;
         std::string error;
         auto back = t->parse(t->serialize(*def), error);
         ASSERT_NE(back, nullptr) << d.id << ": " << error;
-        EXPECT_TRUE(t->isIdentity(*back)) << d.id;
+        EXPECT_EQ(t->isIdentity(*back), !d.active_at_defaults) << d.id;
     }
     EXPECT_EQ(layers, 9);
     EXPECT_EQ(rasters, 2);
+    // Monochrome is active at its defaults and identity only when switched off.
+    const AdjustmentTool *mono = ToolRegistry::instance().find("monochrome");
+    ASSERT_NE(mono, nullptr);
+    EXPECT_TRUE(mono->descriptor().active_at_defaults);
+    std::string err;
+    auto off = mono->parse(json{{"version", 1}, {"enabled_mono", false}}, err);
+    ASSERT_NE(off, nullptr) << err;
+    EXPECT_TRUE(mono->isIdentity(*off));
 }
 
 TEST(LayerToolTest, ParamToolRefusesOutOfRangeAndUnknownChoices)

@@ -112,7 +112,8 @@ TEST_F(RecipeStoreTest, SaveDropsGeometryByDefaultAndValidates)
     auto bad = store.save("Bad", "", R"([{"tool":"exposure","params":{"version":1,"ev":99}}])", "", false);
     EXPECT_EQ(bad.outcome, RecipeStore::Outcome::Invalid);
     EXPECT_NE(bad.error.find("ev"), std::string::npos);
-    EXPECT_EQ(store.save("Split", "", R"([{"tool":"split","lanes":[]}])", "", false).outcome, RecipeStore::Outcome::Invalid);
+    EXPECT_EQ(store.save("Split", "", R"([{"tool":"split","lanes":[{"steps":[{"tool":"rotate","params":{"version":1,"quarter_turns":1}}]}]}])", "", false).outcome,
+              RecipeStore::Outcome::Invalid) << "geometry cannot live in a lane";
     EXPECT_EQ(store.save("Garbage", "", "not json", "", false).outcome, RecipeStore::Outcome::Invalid);
     EXPECT_EQ(store.list().size(), 2u);
 

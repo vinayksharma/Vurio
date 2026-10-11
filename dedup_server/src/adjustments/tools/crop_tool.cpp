@@ -199,6 +199,7 @@ namespace MediaDedup::Adjustments
         // A copy, not a view: later nodes and the node cache expect a
         // contiguous frame that owns its pixels.
         io.pixels = io.pixels(roi).clone();
+        io.composeAffine(cv::Matx23d(1, 0, -static_cast<double>(roi.x), 0, 1, -static_cast<double>(roi.y)));
     }
 
     Size CropTool::transformSize(const ToolState &state, Size input) const

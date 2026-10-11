@@ -10,6 +10,7 @@
 #include "core/grpc_server/grpc_service_common.hpp"
 #include "adjustments/adjustment_document.hpp"
 #include "adjustments/adjustment_store.hpp"
+#include "adjustments/masks.hpp"
 #include "adjustments/tool_registry.hpp"
 
 namespace MediaDedup {
@@ -21,9 +22,29 @@ public:
 
     grpc::Status DescribeTools(grpc::ServerContext*, const vurio::dedup::Empty*,
                                vurio::dedup::ToolDescriptors* reply) override {
+        for (const auto& d : MediaDedup::Adjustments::ToolRegistry::instance().descriptors())
+            fillDescriptor(d, reply->add_tools());
+        // CHAIN-4: the split itself is a tool in the catalogue; its lanes'
+        // mask sources are described alongside.
+        {
+            MediaDedup::Adjustments::ToolDescriptor split;
+            split.id = MediaDedup::Adjustments::AdjustmentDocument::kSplitTool;
+            split.label = "Split";
+            split.category = MediaDedup::Adjustments::ToolCategory::Split;
+            split.icon = "arrow.triangle.branch";
+            split.summary = "{lanes} lanes";
+            fillDescriptor(split, reply->add_tools());
+        }
+        for (const auto& d : MediaDedup::Adjustments::MaskRegistry::instance().descriptors())
+            fillDescriptor(d, reply->add_mask_sources());
+        reply->set_document_version(MediaDedup::Adjustments::AdjustmentDocument::kVersion);
+        for (const auto& mode : MediaDedup::Adjustments::RenderPlan::blendModes()) reply->add_blend_modes(mode);
+        return grpc::Status::OK;
+    }
+
+    static void fillDescriptor(const MediaDedup::Adjustments::ToolDescriptor& d, vurio::dedup::ToolDescriptor* t) {
         using MediaDedup::Adjustments::ParamSpec;
-        for (const auto& d : MediaDedup::Adjustments::ToolRegistry::instance().descriptors()) {
-            auto* t = reply->add_tools();
+        {
             t->set_id(d.id);
             t->set_label(d.label);
             t->set_version(d.version);
@@ -32,6 +53,7 @@ public:
             t->set_lane_allowed(d.lane_allowed);
             t->set_resolution_dependent(d.resolution_dependent);
             t->set_summary(d.summary);
+            t->set_active_at_defaults(d.active_at_defaults);
             for (const auto& p : d.params) {
                 auto* ps = t->add_params();
                 ps->set_id(p.id);
@@ -45,9 +67,6 @@ public:
                 for (const auto& o : p.options) ps->add_options(o);
             }
         }
-        reply->set_document_version(MediaDedup::Adjustments::AdjustmentDocument::kVersion);
-        for (const auto& mode : MediaDedup::Adjustments::RenderPlan::blendModes()) reply->add_blend_modes(mode);
-        return grpc::Status::OK;
     }
 
     grpc::Status GetAdjustments(grpc::ServerContext*, const vurio::dedup::AdjustmentsFileRequest* request,

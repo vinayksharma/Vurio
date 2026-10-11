@@ -207,6 +207,12 @@ namespace MediaDedup::Adjustments
         number("tint_hue", "Tint hue", 0, 360, 40, 1);
         number("tint_amount", "Tint amount", 0, 1, 0, 0.01);
         flag("enabled_mono", "Convert to monochrome", true);
+        descriptor_.active_at_defaults = true;
+    }
+
+    bool MonochromeTool::isIdentity(const ToolState &state) const
+    {
+        return as(state).number("enabled_mono", 1) == 0;
     }
 
     void MonochromeTool::weights(const std::string &preset, double r, double g, double b, double &wr, double &wg, double &wb)

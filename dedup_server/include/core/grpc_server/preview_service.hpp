@@ -24,6 +24,8 @@ public:
         req.quality = request->quality();
         req.truncate_at_node_id = request->truncate_at_node_id();
         req.before = request->before();
+        req.solo_lane_id = request->solo_lane_id();
+        req.overlay_lane_id = request->overlay_lane_id();
         auto response = MediaDedup::Adjustments::PreviewSessionManager::instance().render(request->file_path(), req);
         reply->set_seq(request->seq());
         switch (response.outcome) {
@@ -41,6 +43,9 @@ public:
         reply->set_base_height(static_cast<int>(std::lround(r.base_full.height)));
         reply->set_display_width(static_cast<int>(std::lround(r.display_full.width)));
         reply->set_display_height(static_cast<int>(std::lround(r.display_full.height)));
+        for (int i = 0; i < 2; ++i)
+            for (int j = 0; j < 3; ++j)
+                reply->add_base_to_canvas(r.base_to_canvas(i, j));
         return grpc::Status::OK;
     }
 

@@ -30,6 +30,8 @@ namespace MediaDedup::Adjustments
         int quality = 85;
         std::string truncate_at_node_id; // render only the nodes before this one
         bool before = false;             // identity render
+        std::string solo_lane_id;        // CHAIN-4: the lane alone over grey
+        std::string overlay_lane_id;     // CHAIN-4: red tint where the lane's mask covers
     };
 
     struct PreviewResult
@@ -40,6 +42,7 @@ namespace MediaDedup::Adjustments
         int render_ms = 0;
         Size base_full;     // full-resolution base (EXIF-oriented)
         Size display_full;  // full-resolution size of what the frame shows
+        cv::Matx23d base_to_canvas = cv::Matx23d(1, 0, 0, 0, 1, 0); // normalised base → frame pixels
     };
 
     class PreviewSession
@@ -56,7 +59,8 @@ namespace MediaDedup::Adjustments
 
         // Render `plan` (already compiled from the request's document, and
         // already truncated) at `max_side`. Serialised per session.
-        bool render(const RenderPlan &plan, int max_side, int quality, PreviewResult &out, std::string &error);
+        bool render(const RenderPlan &plan, int max_side, int quality, PreviewResult &out, std::string &error,
+                    const RenderPlan::RenderOptions &options = RenderPlan::RenderOptions());
 
         // For tests and the debug overlay.
         size_t cachedFrames() const;

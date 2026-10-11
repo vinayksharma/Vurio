@@ -98,12 +98,41 @@ namespace MediaDedup::Adjustments
             return c;
         }
 
+        bool validateChainShape(const nlohmann::json &chain, const std::string &where, std::set<std::string> &ids,
+                                std::string &error);
+
         bool validateNodeShape(const nlohmann::json &node, size_t index, std::string &error)
         {
             if (!node.is_object())
             {
                 error = "chain[" + std::to_string(index) + "] is not an object";
                 return false;
+            }
+            if (node.contains("lanes"))
+            {
+                if (!node["lanes"].is_array())
+                {
+                    error = "chain[" + std::to_string(index) + "] lanes is not an array";
+                    return false;
+                }
+                for (const auto &lane : node["lanes"])
+                {
+                    if (!lane.is_object())
+                    {
+                        error = "chain[" + std::to_string(index) + "] has a lane that is not an object";
+                        return false;
+                    }
+                    if (lane.contains("steps") && !lane["steps"].is_array())
+                    {
+                        error = "chain[" + std::to_string(index) + "] lane steps is not an array";
+                        return false;
+                    }
+                    if (lane.contains("mask") && !lane["mask"].is_object() && !lane["mask"].is_null())
+                    {
+                        error = "chain[" + std::to_string(index) + "] lane mask is not an object";
+                        return false;
+                    }
+                }
             }
             if (!node.contains("tool") || !node["tool"].is_string() || node["tool"].get<std::string>().empty())
             {
@@ -134,6 +163,48 @@ namespace MediaDedup::Adjustments
             {
                 error = "chain[" + std::to_string(index) + "] strength is not a number";
                 return false;
+            }
+            return true;
+        }
+
+        // Every node, lane and lane step in the tree: shape and id uniqueness.
+        bool validateChainShape(const nlohmann::json &chain, const std::string &where, std::set<std::string> &ids,
+                                std::string &error)
+        {
+            if (!chain.is_array())
+            {
+                error = where + " is not an array";
+                return false;
+            }
+            for (size_t i = 0; i < chain.size(); ++i)
+            {
+                const nlohmann::json &node = chain[i];
+                if (!validateNodeShape(node, i, error))
+                    return false;
+                if (node.contains("id"))
+                {
+                    std::string id = node["id"].get<std::string>();
+                    if (!id.empty() && !ids.insert(id).second)
+                    {
+                        error = "duplicate node id '" + id + "'";
+                        return false;
+                    }
+                }
+                if (node.contains("lanes"))
+                    for (const auto &lane : node["lanes"])
+                    {
+                        if (lane.contains("id") && lane["id"].is_string())
+                        {
+                            std::string id = lane["id"].get<std::string>();
+                            if (!id.empty() && !ids.insert(id).second)
+                            {
+                                error = "duplicate lane id '" + id + "'";
+                                return false;
+                            }
+                        }
+                        if (lane.contains("steps") && !validateChainShape(lane["steps"], where + " lane steps", ids, error))
+                            return false;
+                    }
             }
             return true;
         }
@@ -230,20 +301,8 @@ namespace MediaDedup::Adjustments
         }
 
         std::set<std::string> ids;
-        for (size_t i = 0; i < doc.chain.size(); ++i)
-        {
-            if (!validateNodeShape(doc.chain[i], i, error))
-                return false;
-            if (doc.chain[i].contains("id"))
-            {
-                std::string id = doc.chain[i]["id"].get<std::string>();
-                if (!id.empty() && !ids.insert(id).second)
-                {
-                    error = "duplicate node id '" + id + "'";
-                    return false;
-                }
-            }
-        }
+        if (!validateChainShape(doc.chain, "chain", ids, error))
+            return false;
         doc.ensureNodeIds();
         out = std::move(doc);
         return true;
@@ -301,48 +360,112 @@ namespace MediaDedup::Adjustments
         return rev == 0 ? 1 : rev;
     }
 
+    namespace
+    {
+        bool compileChain(const nlohmann::json &chain, const ToolRegistry &registry, RenderPlan &out,
+                          std::string &error, bool top_level);
+
+        bool compileSplit(const nlohmann::json &node, const ToolRegistry &registry, RenderPlan::Node &n, std::string &error)
+        {
+            std::string tag = n.id.empty() ? std::string() : "node=" + n.id + " ";
+            nlohmann::json lanes = node.value("lanes", nlohmann::json::array());
+            for (const auto &lane : lanes)
+            {
+                if (!lane.is_object() || !nodeEnabled(lane))
+                    continue;
+                RenderPlan::Lane l;
+                l.id = lane.value("id", std::string());
+                l.name = lane.value("name", std::string());
+                std::string merr;
+                if (!LaneMask::parse(lane.value("mask", nlohmann::json()), l.mask, merr))
+                {
+                    error = tag + "lane " + l.id + ": " + merr;
+                    return false;
+                }
+                nlohmann::json merge = lane.value("merge", nlohmann::json::object());
+                if (merge.is_object())
+                {
+                    if (merge.contains("blend") && merge["blend"].is_string())
+                        l.blend = merge["blend"].get<std::string>();
+                    if (merge.contains("strength") && merge["strength"].is_number())
+                        l.strength = merge["strength"].get<double>();
+                }
+                l.steps = std::make_shared<RenderPlan>();
+                if (!compileChain(lane.value("steps", nlohmann::json::array()), registry, *l.steps, error, false))
+                    return false;
+                // A lane with nothing to do and a plain merge changes no
+                // pixel; one with a non-normal merge still blends the fork
+                // onto the trunk (a self-multiply darkens), so it stays.
+                if (l.steps->isIdentity() && l.blend == "normal")
+                    continue;
+                if (l.strength <= 0.0)
+                    continue;
+                n.lanes.push_back(std::move(l));
+            }
+            return true;
+        }
+
+        bool compileChain(const nlohmann::json &chain, const ToolRegistry &registry, RenderPlan &out,
+                          std::string &error, bool top_level)
+        {
+            RenderPlan plan;
+            nlohmann::json canonical_prefix = nlohmann::json::array();
+            for (size_t i = 0; chain.is_array() && i < chain.size(); ++i)
+            {
+                const nlohmann::json &node = chain[i];
+                if (!node.is_object() || !nodeEnabled(node))
+                    continue;
+                std::string tool_id = node.value("tool", std::string());
+                std::string id = node.value("id", std::string());
+                auto tag = [&]() { return id.empty() ? std::string() : "node=" + id + " "; };
+                canonical_prefix.push_back(canonicalNode(node));
+                if (tool_id == AdjustmentDocument::kSplitTool)
+                {
+                    RenderPlan::Node n;
+                    n.id = id;
+                    if (!compileSplit(node, registry, n, error))
+                        return false;
+                    n.prefix_hash = std::to_string(AdjustmentDocument::fnv1a32(canonical_prefix.dump()));
+                    n.doc_index = i;
+                    if (!n.lanes.empty())
+                        plan.add(std::move(n));
+                    continue;
+                }
+                const AdjustmentTool *tool = registry.find(tool_id);
+                if (!tool)
+                    continue; // unknown tool: preserved in the document, a no-op in the render
+                std::string tool_error;
+                std::unique_ptr<ToolState> state = tool->parse(node.value("params", nlohmann::json::object()), tool_error);
+                if (!state)
+                {
+                    error = tag() + tool_error;
+                    return false;
+                }
+                if (tool->isIdentity(*state))
+                    continue;
+                RenderPlan::Node n;
+                n.id = id;
+                n.tool = tool;
+                n.state = std::move(state);
+                if (node.contains("blend"))
+                    n.blend = node["blend"].get<std::string>();
+                if (node.contains("strength"))
+                    n.strength = node["strength"].get<double>();
+                n.prefix_hash = std::to_string(AdjustmentDocument::fnv1a32(canonical_prefix.dump()));
+                n.doc_index = i;
+                plan.add(std::move(n));
+            }
+            (void)top_level;
+            out = std::move(plan);
+            return true;
+        }
+    }
+
     bool AdjustmentDocument::compile(const ToolRegistry &registry, RenderPlan &out, std::string &error) const
     {
         RenderPlan plan;
-        nlohmann::json canonical_prefix = nlohmann::json::array();
-        for (size_t i = 0; i < chain.size(); ++i)
-        {
-            const nlohmann::json &node = chain[i];
-            if (!node.is_object() || !nodeEnabled(node))
-                continue;
-            std::string tool_id = node.value("tool", std::string());
-            std::string id = node.value("id", std::string());
-            auto tag = [&]() { return id.empty() ? std::string() : "node=" + id + " "; };
-            if (tool_id == kSplitTool)
-            {
-                error = tag() + "split nodes are not supported by this build (CHAIN-4)";
-                return false;
-            }
-            canonical_prefix.push_back(canonicalNode(node));
-            const AdjustmentTool *tool = registry.find(tool_id);
-            if (!tool)
-                continue; // unknown tool: preserved in the document, a no-op in the render
-            std::string tool_error;
-            std::unique_ptr<ToolState> state = tool->parse(node.value("params", nlohmann::json::object()), tool_error);
-            if (!state)
-            {
-                error = tag() + tool_error;
-                return false;
-            }
-            if (tool->isIdentity(*state))
-                continue;
-            RenderPlan::Node n;
-            n.id = id;
-            n.tool = tool;
-            n.state = std::move(state);
-            if (node.contains("blend"))
-                n.blend = node["blend"].get<std::string>();
-            if (node.contains("strength"))
-                n.strength = node["strength"].get<double>();
-            n.prefix_hash = std::to_string(fnv1a32(canonical_prefix.dump()));
-            n.doc_index = i;
-            plan.add(std::move(n));
-        }
+        if (!compileChain(chain, registry, plan, error, true))
+            return false;
         plan.setRevision(revision());
         out = std::move(plan);
         return true;
@@ -357,6 +480,30 @@ namespace MediaDedup::Adjustments
             if (!node.is_object() || !nodeEnabled(node))
                 continue;
             std::string tool_id = node.value("tool", std::string());
+            if (tool_id == kSplitTool)
+            {
+                // A split renders something as soon as one enabled lane has
+                // an enabled non-identity step, or merges with a blend other
+                // than normal (the fork blended onto the trunk is a change).
+                for (const auto &lane : node.value("lanes", nlohmann::json::array()))
+                {
+                    if (!lane.is_object() || !nodeEnabled(lane))
+                        continue;
+                    nlohmann::json merge = lane.value("merge", nlohmann::json::object());
+                    double strength = merge.is_object() && merge.contains("strength") && merge["strength"].is_number()
+                                          ? merge["strength"].get<double>() : 1.0;
+                    if (strength <= 0.0)
+                        continue;
+                    std::string blend = merge.is_object() ? merge.value("blend", std::string("normal")) : "normal";
+                    if (blend != "normal")
+                        return false;
+                    AdjustmentDocument sub;
+                    sub.chain = lane.value("steps", nlohmann::json::array());
+                    if (!sub.isIdentity(registry))
+                        return false;
+                }
+                continue;
+            }
             const AdjustmentTool *tool = registry.find(tool_id);
             if (!tool)
                 return false; // an unknown tool is data we cannot call identity
@@ -387,27 +534,66 @@ namespace MediaDedup::Adjustments
         return id;
     }
 
-    void AdjustmentDocument::ensureNodeIds()
+    namespace
     {
-        if (!chain.is_array())
-            return;
-        std::set<std::string> ids;
-        for (auto &node : chain)
-            if (node.is_object() && node.contains("id") && node["id"].is_string())
-                ids.insert(node["id"].get<std::string>());
-        for (auto &node : chain)
+        void collectIds(const nlohmann::json &chain, std::set<std::string> &ids)
         {
-            if (!node.is_object())
-                continue;
-            if (!node.contains("id") || !node["id"].is_string() || node["id"].get<std::string>().empty())
+            if (!chain.is_array())
+                return;
+            for (const auto &node : chain)
+            {
+                if (!node.is_object())
+                    continue;
+                if (node.contains("id") && node["id"].is_string())
+                    ids.insert(node["id"].get<std::string>());
+                if (node.contains("lanes") && node["lanes"].is_array())
+                    for (const auto &lane : node["lanes"])
+                    {
+                        if (lane.is_object() && lane.contains("id") && lane["id"].is_string())
+                            ids.insert(lane["id"].get<std::string>());
+                        if (lane.is_object() && lane.contains("steps"))
+                            collectIds(lane["steps"], ids);
+                    }
+            }
+        }
+
+        void assignIds(nlohmann::json &chain, std::set<std::string> &ids)
+        {
+            if (!chain.is_array())
+                return;
+            auto fresh = [&ids]()
             {
                 std::string id;
                 do
-                    id = newNodeId();
+                    id = AdjustmentDocument::newNodeId();
                 while (!ids.insert(id).second);
-                node["id"] = id;
+                return id;
+            };
+            for (auto &node : chain)
+            {
+                if (!node.is_object())
+                    continue;
+                if (!node.contains("id") || !node["id"].is_string() || node["id"].get<std::string>().empty())
+                    node["id"] = fresh();
+                if (node.contains("lanes") && node["lanes"].is_array())
+                    for (auto &lane : node["lanes"])
+                    {
+                        if (!lane.is_object())
+                            continue;
+                        if (!lane.contains("id") || !lane["id"].is_string() || lane["id"].get<std::string>().empty())
+                            lane["id"] = fresh();
+                        if (lane.contains("steps"))
+                            assignIds(lane["steps"], ids);
+                    }
             }
         }
+    }
+
+    void AdjustmentDocument::ensureNodeIds()
+    {
+        std::set<std::string> ids;
+        collectIds(chain, ids);
+        assignIds(chain, ids);
     }
 
     int AdjustmentDocument::historyIndex() const

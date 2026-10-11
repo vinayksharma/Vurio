@@ -4,6 +4,7 @@
 #include "adjustments/tools/rotate_tool.hpp"
 #include <cmath>
 #include <opencv2/imgproc.hpp>
+#include <vector>
 
 namespace MediaDedup::Adjustments
 {
@@ -17,9 +18,30 @@ namespace MediaDedup::Adjustments
             c.state = n.state ? n.state->clone() : nullptr;
             c.blend = n.blend;
             c.strength = n.strength;
+            for (const RenderPlan::Lane &l : n.lanes)
+            {
+                RenderPlan::Lane lc;
+                lc.id = l.id;
+                lc.name = l.name;
+                lc.mask = l.mask;
+                lc.steps = l.steps ? std::make_shared<RenderPlan>(*l.steps) : nullptr;
+                lc.blend = l.blend;
+                lc.strength = l.strength;
+                c.lanes.push_back(std::move(lc));
+            }
             c.prefix_hash = n.prefix_hash;
             c.doc_index = n.doc_index;
             return c;
+        }
+
+        // trunk = trunk + (blended − trunk) × strength × coverage, per pixel.
+        void mixMasked(cv::Mat &trunk, const cv::Mat &blended, double strength, const cv::Mat &coverage)
+        {
+            cv::Mat weight = coverage * strength; // CV_32FC1
+            cv::Mat weight3;
+            cv::merge(std::vector<cv::Mat>{weight, weight, weight}, weight3);
+            cv::Mat diff = blended - trunk;
+            trunk += diff.mul(weight3);
         }
     }
 
@@ -49,9 +71,18 @@ namespace MediaDedup::Adjustments
 
     void RenderPlan::add(Node node)
     {
-        if (!node.tool || !node.state)
+        if (!node.isSplit() && !node.state)
             return;
         nodes_.push_back(std::move(node));
+    }
+
+    bool RenderPlan::hasLane(const std::string &lane_id) const
+    {
+        for (const Node &n : nodes_)
+            for (const Lane &l : n.lanes)
+                if (l.id == lane_id || (l.steps && l.steps->hasLane(lane_id)))
+                    return true;
+        return false;
     }
 
     RenderPlan RenderPlan::prefix(size_t count) const
@@ -77,7 +108,8 @@ namespace MediaDedup::Adjustments
             return base;
         Size s = base;
         for (size_t i = 0; i < nodes_.size() && i < index; ++i)
-            s = nodes_[i].tool->transformSize(*nodes_[i].state, s);
+            if (!nodes_[i].isSplit())
+                s = nodes_[i].tool->transformSize(*nodes_[i].state, s);
         return s;
     }
 
@@ -98,13 +130,47 @@ namespace MediaDedup::Adjustments
         return {w, h};
     }
 
-    bool RenderPlan::validate(Size base, std::string &error) const
+    bool RenderPlan::validate(Size base, std::string &error, int depth) const
     {
         auto nodeTag = [](const Node &n) { return n.id.empty() ? std::string() : "node=" + n.id + " "; };
         Size input = base;
         for (size_t i = 0; i < nodes_.size(); ++i)
         {
             const Node &n = nodes_[i];
+            if (n.isSplit())
+            {
+                if (depth + 1 > kMaxLaneDepth)
+                {
+                    error = nodeTag(n) + "split: lanes nest at most " + std::to_string(kMaxLaneDepth) + " deep";
+                    return false;
+                }
+                for (const Lane &l : n.lanes)
+                {
+                    if (!isBlendMode(l.blend))
+                    {
+                        error = nodeTag(n) + "lane " + l.id + ": unknown merge blend '" + l.blend + "'";
+                        return false;
+                    }
+                    if (l.strength < 0.0 || l.strength > 1.0)
+                    {
+                        error = nodeTag(n) + "lane " + l.id + ": merge strength must be within [0, 1]";
+                        return false;
+                    }
+                    if (l.steps)
+                    {
+                        for (const Node &step : l.steps->nodes())
+                            if (!step.isSplit() && step.tool->category() == ToolCategory::Geometry)
+                            {
+                                error = "node=" + step.id + " " + step.tool->id() +
+                                        ": a geometry tool cannot live in a lane, the lane must keep its canvas (docs §3.2)";
+                                return false;
+                            }
+                        if (!l.steps->validate(input, error, depth + 1))
+                            return false;
+                    }
+                }
+                continue;
+            }
             if (n.tool->category() == ToolCategory::Geometry &&
                 (n.blend != "normal" || std::fabs(n.strength - 1.0) > 1e-9))
             {
@@ -142,7 +208,7 @@ namespace MediaDedup::Adjustments
                 {
                     const Node *next_geometry = nullptr;
                     for (size_t j = i + 1; j < nodes_.size(); ++j)
-                        if (nodes_[j].tool->category() == ToolCategory::Geometry)
+                        if (!nodes_[j].isSplit() && nodes_[j].tool->category() == ToolCategory::Geometry)
                         {
                             next_geometry = &nodes_[j];
                             break;
@@ -170,8 +236,55 @@ namespace MediaDedup::Adjustments
 
     bool RenderPlan::isBlendMode(const std::string &name) { return Blend::isMode(name); }
 
-    void RenderPlan::applyNode(const Node &node, Frame &frame)
+    void RenderPlan::applySplit(const Node &node, Frame &frame, const RenderOptions &options)
     {
+        // Lanes fork from the split's input and are mixed back in order: the
+        // second lane sees the first's merge on the trunk, never in its own
+        // input (docs §3.3).
+        Frame fork;
+        fork.pixels = frame.pixels.clone();
+        fork.base_to_canvas = frame.base_to_canvas;
+        for (const Lane &lane : node.lanes)
+        {
+            Frame laneOut;
+            laneOut.pixels = fork.pixels.clone();
+            laneOut.base_to_canvas = fork.base_to_canvas;
+            if (lane.steps)
+                lane.steps->render(laneOut, 0, nullptr, options);
+            cv::Mat coverage;
+            lane.mask.coverage(fork, coverage);
+
+            if (lane.id == options.solo_lane_id && !options.solo_lane_id.empty())
+            {
+                // The lane alone over mid-grey, where its mask reaches.
+                cv::Mat grey(frame.pixels.size(), CV_32FC3, cv::Scalar(0.5f, 0.5f, 0.5f));
+                mixMasked(grey, laneOut.pixels, 1.0, coverage);
+                frame.pixels = grey;
+                return;
+            }
+            cv::Mat blended;
+            if (lane.blend == "normal")
+                blended = laneOut.pixels;
+            else
+                Blend::apply(lane.blend, frame.pixels, laneOut.pixels, blended);
+            mixMasked(frame.pixels, blended, lane.strength, coverage);
+
+            if (lane.id == options.overlay_lane_id && !options.overlay_lane_id.empty())
+            {
+                // Lightroom's convention: the coverage as a 50 % red tint.
+                cv::Mat red(frame.pixels.size(), CV_32FC3, cv::Scalar(0.1f, 0.1f, 1.0f));
+                mixMasked(frame.pixels, red, 0.5, coverage);
+            }
+        }
+    }
+
+    void RenderPlan::applyNode(const Node &node, Frame &frame, const RenderOptions &options)
+    {
+        if (node.isSplit())
+        {
+            applySplit(node, frame, options);
+            return;
+        }
         RenderContext ctx;
         ctx.pixel_scale = frame.pixelScale();
         const bool composed = node.tool->category() != ToolCategory::Geometry &&
@@ -201,13 +314,13 @@ namespace MediaDedup::Adjustments
         cv::addWeighted(frame.pixels, 1.0 - node.strength, blended, node.strength, 0.0, frame.pixels);
     }
 
-    void RenderPlan::render(Frame &frame, size_t first, const Observer &observer) const
+    void RenderPlan::render(Frame &frame, size_t first, const Observer &observer, const RenderOptions &options) const
     {
         for (size_t i = first; i < nodes_.size(); ++i)
         {
             if (frame.empty())
                 return;
-            applyNode(nodes_[i], frame);
+            applyNode(nodes_[i], frame, options);
             if (observer)
                 observer(i, frame);
         }

@@ -154,7 +154,7 @@ TEST(PreviewSessionTest, ManagerCreatesTruncatesExpiresAndRefuses)
 
     // A document the engine refuses.
     PreviewRequest bad = req;
-    bad.document_json = docText(json::array({{{"tool", "split"}, {"lanes", json::array()}}}));
+    bad.document_json = docText(json::array({{{"tool", "exposure"}, {"params", {{"version", 1}, {"ev", 99}}}}}));
     r = mgr.render("/a.jpg", bad);
     EXPECT_EQ(r.outcome, PreviewSessionManager::Outcome::Invalid);
 

@@ -101,6 +101,7 @@ set(UNIT_TEST_SOURCES
     unit/test_preview_session.cpp
     unit/test_layer_tools.cpp
     unit/test_recipes.cpp
+    unit/test_lanes.cpp
 )
 
 # ADJ-1: the adjustment store and everything it links. Sources that resolve
@@ -113,6 +114,7 @@ set(ADJUSTMENTS_SOURCES
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/param_tool.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/layer_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/blend.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/masks.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tool_registry.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/render_plan.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/chain_engine.cpp
@@ -219,6 +221,12 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         )
     elseif(${test_name} STREQUAL "test_adjustment_render")
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="AdjustmentRenderTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_lanes")
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="LaneTest.*:MaskSourceTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -829,6 +837,7 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/param_tool.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/layer_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/blend.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/masks.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tool_registry.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/render_plan.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/chain_engine.cpp
@@ -1039,7 +1048,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_adjustment_render" AND
       NOT ${test_name} STREQUAL "test_preview_session" AND
       NOT ${test_name} STREQUAL "test_layer_tools" AND
-      NOT ${test_name} STREQUAL "test_recipes")
+      NOT ${test_name} STREQUAL "test_recipes" AND
+      NOT ${test_name} STREQUAL "test_lanes")
         add_dependencies(${test_name} ${TEST_DATA_DEPENDENCY})
     endif()
 endforeach()

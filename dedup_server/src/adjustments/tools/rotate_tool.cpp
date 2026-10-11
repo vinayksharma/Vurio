@@ -119,11 +119,21 @@ namespace MediaDedup::Adjustments
             return;
         // Exact quarter turns first: lossless, and they decide the canvas
         // the fine angle expands.
+        const double w0 = io.width(), h0 = io.height();
         switch (s.quarter_turns)
         {
-        case 1: cv::rotate(io.pixels, io.pixels, cv::ROTATE_90_CLOCKWISE); break;
-        case 2: cv::rotate(io.pixels, io.pixels, cv::ROTATE_180); break;
-        case 3: cv::rotate(io.pixels, io.pixels, cv::ROTATE_90_COUNTERCLOCKWISE); break;
+        case 1:
+            cv::rotate(io.pixels, io.pixels, cv::ROTATE_90_CLOCKWISE);
+            io.composeAffine(cv::Matx23d(0, -1, h0, 1, 0, 0)); // (x,y) → (h0 − y, x)
+            break;
+        case 2:
+            cv::rotate(io.pixels, io.pixels, cv::ROTATE_180);
+            io.composeAffine(cv::Matx23d(-1, 0, w0, 0, -1, h0));
+            break;
+        case 3:
+            cv::rotate(io.pixels, io.pixels, cv::ROTATE_90_COUNTERCLOCKWISE);
+            io.composeAffine(cv::Matx23d(0, 1, 0, -1, 0, w0)); // (x,y) → (y, w0 − x)
+            break;
         default: break;
         }
         if (std::fabs(s.angle) < 1e-9)
@@ -146,6 +156,8 @@ namespace MediaDedup::Adjustments
         cv::warpAffine(io.pixels, out, m, cv::Size(cw, ch), cv::INTER_CUBIC, cv::BORDER_CONSTANT,
                        cv::Scalar(0, 0, 0));
         io.pixels = out;
+        io.composeAffine(cv::Matx23d(m.at<double>(0, 0), m.at<double>(0, 1), m.at<double>(0, 2),
+                                     m.at<double>(1, 0), m.at<double>(1, 1), m.at<double>(1, 2)));
     }
 
     Size RotateTool::transformSize(const ToolState &state, Size input) const

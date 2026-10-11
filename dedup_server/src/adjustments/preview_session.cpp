@@ -53,6 +53,7 @@ namespace MediaDedup::Adjustments
         lru_.push_front(key);
         Cached c;
         c.frame.pixels = frame.pixels.clone();
+        c.frame.base_to_canvas = frame.base_to_canvas;
         c.lru = lru_.begin();
         cache_bytes_ += bytes;
         cache_.emplace(key, std::move(c));
@@ -67,7 +68,8 @@ namespace MediaDedup::Adjustments
         return &it->second.frame;
     }
 
-    bool PreviewSession::render(const RenderPlan &plan, int max_side, int quality, PreviewResult &out, std::string &error)
+    bool PreviewSession::render(const RenderPlan &plan, int max_side, int quality, PreviewResult &out, std::string &error,
+                                const RenderPlan::RenderOptions &options)
     {
         std::lock_guard<std::mutex> lock(mutex_);
         auto t0 = std::chrono::steady_clock::now();
@@ -92,13 +94,19 @@ namespace MediaDedup::Adjustments
             else
             {
                 scaled.pixels = base_.pixels;
+                scaled.base_to_canvas = base_.base_to_canvas;
                 ChainEngine::scaleFrame(scaled, scale);
                 if (scaled.pixels.data == base_.pixels.data)
                     scaled.pixels = base_.pixels; // scale 1: share, never mutated below before the clone
                 put(base_key, scaled);
             }
+            scaled.base_to_canvas = base_.base_to_canvas;
+            if (std::fabs(scale - 1.0) > 1e-9)
+                scaled.composeAffine(cv::Matx23d(static_cast<double>(scaled.width()) / base_.width(), 0, 0, 0,
+                                                 static_cast<double>(scaled.height()) / base_.height(), 0));
         }
-        const std::string wk = workingKey(scaled);
+        // View modes change every node's output: their own cache lines.
+        const std::string wk = workingKey(scaled) + (options.any() ? "|solo=" + options.solo_lane_id + "|ov=" + options.overlay_lane_id : "");
 
         // Longest cached prefix.
         const auto &nodes = plan.nodes();
@@ -110,18 +118,23 @@ namespace MediaDedup::Adjustments
             if (const Frame *hit = get(nodes[i - 1].prefix_hash + wk))
             {
                 frame.pixels = hit->pixels.clone();
+                frame.base_to_canvas = hit->base_to_canvas;
                 start = i;
                 last_cache_hits_ = static_cast<int>(i);
                 break;
             }
         }
         if (start == 0)
+        {
             frame.pixels = scaled.pixels.clone();
+            frame.base_to_canvas = scaled.base_to_canvas;
+        }
 
         plan.render(frame, start, [&](size_t index, const Frame &after)
-                    { put(nodes[index].prefix_hash + wk, after); });
+                    { put(nodes[index].prefix_hash + wk, after); }, options);
 
         ChainEngine::fitFrame(frame, max_side);
+        out.base_to_canvas = frame.base_to_canvas;
         out.jpeg = ChainEngine::encodeJpeg(frame, quality);
         if (out.jpeg.empty())
         {
@@ -303,8 +316,11 @@ namespace MediaDedup::Adjustments
             }
         }
 
+        RenderPlan::RenderOptions options;
+        options.solo_lane_id = request.solo_lane_id;
+        options.overlay_lane_id = request.overlay_lane_id;
         if (!session->render(plan, request.max_side > 0 ? request.max_side : 2560,
-                             request.quality > 0 ? request.quality : 85, response.result, error))
+                             request.quality > 0 ? request.quality : 85, response.result, error, options))
         {
             response.outcome = Outcome::Internal;
             response.error = error;

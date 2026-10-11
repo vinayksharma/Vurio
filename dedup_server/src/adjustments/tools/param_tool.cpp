@@ -4,7 +4,7 @@
 
 namespace MediaDedup::Adjustments
 {
-    void ParamTool::number(const char *id, const char *label, double min, double max, double def, double step)
+    void ParamSchema::number(const char *id, const char *label, double min, double max, double def, double step)
     {
         ParamSpec p;
         p.id = id;
@@ -17,7 +17,7 @@ namespace MediaDedup::Adjustments
         descriptor_.params.push_back(p);
     }
 
-    void ParamTool::integer(const char *id, const char *label, int min, int max, int def)
+    void ParamSchema::integer(const char *id, const char *label, int min, int max, int def)
     {
         ParamSpec p;
         p.id = id;
@@ -30,7 +30,7 @@ namespace MediaDedup::Adjustments
         descriptor_.params.push_back(p);
     }
 
-    void ParamTool::choice(const char *id, const char *label, std::vector<std::string> options, const char *def)
+    void ParamSchema::choice(const char *id, const char *label, std::vector<std::string> options, const char *def)
     {
         ParamSpec p;
         p.id = id;
@@ -41,7 +41,7 @@ namespace MediaDedup::Adjustments
         descriptor_.params.push_back(p);
     }
 
-    void ParamTool::flag(const char *id, const char *label, bool def)
+    void ParamSchema::flag(const char *id, const char *label, bool def)
     {
         ParamSpec p;
         p.id = id;
@@ -51,7 +51,7 @@ namespace MediaDedup::Adjustments
         descriptor_.params.push_back(p);
     }
 
-    void ParamTool::text(const char *id, const char *label, const char *def)
+    void ParamSchema::text(const char *id, const char *label, const char *def)
     {
         ParamSpec p;
         p.id = id;
@@ -61,7 +61,7 @@ namespace MediaDedup::Adjustments
         descriptor_.params.push_back(p);
     }
 
-    std::unique_ptr<ToolState> ParamTool::defaultState() const
+    std::unique_ptr<ToolState> ParamSchema::defaultState() const
     {
         auto s = std::make_unique<ParamState>();
         for (const auto &p : descriptor_.params)
@@ -74,7 +74,7 @@ namespace MediaDedup::Adjustments
         return s;
     }
 
-    std::unique_ptr<ToolState> ParamTool::parse(const nlohmann::json &params, std::string &error) const
+    std::unique_ptr<ToolState> ParamSchema::parse(const nlohmann::json &params, std::string &error) const
     {
         const std::string &id = descriptor_.id;
         if (!params.is_object())
@@ -152,9 +152,9 @@ namespace MediaDedup::Adjustments
         return state;
     }
 
-    nlohmann::json ParamTool::serialize(const ToolState &state) const
+    nlohmann::json ParamSchema::serialize(const ToolState &state) const
     {
-        const ParamState &s = as(state);
+        const ParamState &s = static_cast<const ParamState &>(state);
         nlohmann::json j;
         j["version"] = descriptor_.version;
         for (const auto &p : descriptor_.params)
@@ -171,9 +171,9 @@ namespace MediaDedup::Adjustments
         return j;
     }
 
-    bool ParamTool::isIdentity(const ToolState &state) const
+    bool ParamSchema::isIdentity(const ToolState &state) const
     {
-        const ParamState &s = as(state);
+        const ParamState &s = static_cast<const ParamState &>(state);
         for (const auto &p : descriptor_.params)
         {
             if (p.kind == ParamSpec::Kind::Enum || p.kind == ParamSpec::Kind::Text)

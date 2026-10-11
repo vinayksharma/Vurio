@@ -65,6 +65,9 @@ namespace MediaDedup::Adjustments
         static constexpr const char *kId = "monochrome";
         MonochromeTool();
         void apply(const ToolState &, Frame &io, const RenderContext &) const override;
+        /// Identity only when the conversion is switched off: the defaults
+        /// already convert (active_at_defaults).
+        bool isIdentity(const ToolState &state) const override;
         static void weights(const std::string &preset, double r, double g, double b, double &wr, double &wg, double &wb);
     };
 

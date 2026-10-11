@@ -7,10 +7,12 @@
 // nodes through the engine. Blend and strength are applied here, per node,
 // so a tool only ever produces its derived frame.
 //
-// Format 2 keeps the node tree in mind (splits with lanes land in CHAIN-4);
-// in CHAIN-1 a plan is a list of tool nodes.
+// A node is a tool node or a split node (CHAIN-4): lanes forked from the
+// split's input, each with a mask, its own sub-plan and a merge, mixed back
+// onto the trunk in lane order (docs §3.3).
 
 #include "adjustments/adjustment_tool.hpp"
+#include "adjustments/masks.hpp"
 #include "utils/display_geometry.hpp"
 #include <functional>
 #include <memory>
@@ -22,15 +24,36 @@ namespace MediaDedup::Adjustments
     class RenderPlan
     {
     public:
+        struct Lane;
         struct Node
         {
             std::string id;                        // document node id (empty for synthetic plans)
-            const AdjustmentTool *tool = nullptr;
+            const AdjustmentTool *tool = nullptr;  // null for a split node
             std::unique_ptr<ToolState> state;
             std::string blend = "normal";          // layer/raster only
             double strength = 1.0;                 // layer/raster only
+            std::vector<Lane> lanes;               // split node only
             std::string prefix_hash;               // canonical hash of nodes[0..this], set by the compiler
             size_t doc_index = 0;                  // position in the document's chain, set by the compiler
+            bool isSplit() const { return tool == nullptr; }
+        };
+        struct Lane
+        {
+            std::string id;
+            std::string name;
+            LaneMask mask;
+            std::shared_ptr<RenderPlan> steps;     // the lane's sub-plan
+            std::string blend = "normal";          // merge
+            double strength = 1.0;                 // merge
+        };
+
+        // View modes the preview asks for (docs §5.4): render a lane alone
+        // over mid-grey, or tint a lane's coverage red on the normal render.
+        struct RenderOptions
+        {
+            std::string solo_lane_id;
+            std::string overlay_lane_id;
+            bool any() const { return !solo_lane_id.empty() || !overlay_lane_id.empty(); }
         };
 
         RenderPlan() = default;
@@ -46,7 +69,8 @@ namespace MediaDedup::Adjustments
         int revision() const { return revision_; }
         void setRevision(int revision) { revision_ = revision; }
 
-        // Append a non-identity node. Order of calls is the user's order.
+        // Append a non-identity node (a tool node or a split). Order of
+        // calls is the user's order.
         void add(Node node);
         const std::vector<Node> &nodes() const { return nodes_; }
         size_t size() const { return nodes_.size(); }
@@ -67,15 +91,21 @@ namespace MediaDedup::Adjustments
 
         // Placement and cross-node rules that need the image (§3.2, §3.3):
         // blend/strength refused on geometry, a straighten angle needs a
-        // following crop that lies inside the rotated content. A base of
+        // following crop that lies inside the rotated content, no geometry
+        // inside a lane, lanes nest at most `kMaxLaneDepth` deep. A base of
         // unknown size skips the geometry check (it cannot be verified).
-        bool validate(Size base, std::string &error) const;
+        bool validate(Size base, std::string &error) const { return validate(base, error, 0); }
+        static constexpr int kMaxLaneDepth = 3;
 
         // Run nodes [first, size()) on `frame` in place. `first` lets a
         // caller resume from a cached intermediate frame (§5.4). After each
         // node `observer`, when set, sees the index and the frame.
         using Observer = std::function<void(size_t index, const Frame &after)>;
-        void render(Frame &frame, size_t first = 0, const Observer &observer = nullptr) const;
+        void render(Frame &frame, size_t first = 0, const Observer &observer = nullptr,
+                    const RenderOptions &options = RenderOptions()) const;
+
+        // Does a lane with this id exist anywhere in the plan?
+        bool hasLane(const std::string &lane_id) const;
 
         // The blend names the engine implements (CHAIN-1: "normal" only;
         // CHAIN-2 adds the sixteen modes of docs §5.3).
@@ -83,7 +113,9 @@ namespace MediaDedup::Adjustments
         static bool isBlendMode(const std::string &name);
 
     private:
-        static void applyNode(const Node &node, Frame &frame);
+        bool validate(Size base, std::string &error, int depth) const;
+        static void applyNode(const Node &node, Frame &frame, const RenderOptions &options);
+        static void applySplit(const Node &node, Frame &frame, const RenderOptions &options);
         std::vector<Node> nodes_;
         int revision_ = 0;
     };

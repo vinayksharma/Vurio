@@ -28,6 +28,7 @@ namespace MediaDedup::Adjustments::ChainEngine
             src.convertTo(f.pixels, CV_32FC3, 1.0 / 65535.0);
         else
             src.convertTo(f.pixels, CV_32FC3, 1.0 / 255.0);
+        f.resetAffine();
         return f;
     }
 
@@ -99,7 +100,9 @@ namespace MediaDedup::Adjustments::ChainEngine
             return;
         cv::Mat out;
         cv::resize(frame.pixels, out, cv::Size(nw, nh), 0, 0, scale < 1.0 ? cv::INTER_AREA : cv::INTER_LINEAR);
+        double sx = static_cast<double>(nw) / frame.width(), sy = static_cast<double>(nh) / frame.height();
         frame.pixels = out;
+        frame.composeAffine(cv::Matx23d(sx, 0, 0, 0, sy, 0));
     }
 
     void fitFrame(Frame &frame, int max_side)

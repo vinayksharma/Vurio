@@ -845,6 +845,10 @@ message RenderPreviewRequest {
   // the frame is exactly the canvas that node receives.
   string truncate_at_node_id = 6;
   bool before = 7;             // before/after: render the base image
+  // CHAIN-4: view modes for lanes — the lane alone over mid-grey, or the
+  // lane's coverage tinted red on the normal render.
+  string solo_lane_id = 8;
+  string overlay_lane_id = 9;
 }
 
 message PreviewFrame {
@@ -857,6 +861,9 @@ message PreviewFrame {
   int32 base_height = 7;
   int32 display_width = 8;     // full-resolution size of what the frame shows
   int32 display_height = 9;
+  // CHAIN-4 (docs §3.4): normalised base coordinates → frame pixels, as a
+  // 2×3 affine (a b c / d e f), for mask pins drawn over the frame.
+  repeated double base_to_canvas = 10;
 }
 
 message StepHistoryRequest {
@@ -895,12 +902,14 @@ message ToolDescriptor {
   bool lane_allowed = 7;       // false for geometry (a lane must keep its canvas)
   bool resolution_dependent = 8;
   string summary = 9;          // chain-row text template, "{param:fmt}" placeholders
+  bool active_at_defaults = 10; // the tool changes pixels even with every param at its default (Monochrome)
 }
 
 message ToolDescriptors {
   repeated ToolDescriptor tools = 1; // catalogue order (by category, then label)
   int32 document_version = 2;        // the document format version this build writes
   repeated string blend_modes = 3;   // CHAIN-1: the blend names a layer node may carry
+  repeated ToolDescriptor mask_sources = 4; // CHAIN-4: the lane mask sources (category "mask")
 }
 
 message AdjustmentsFileRequest {

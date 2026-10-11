@@ -78,6 +78,7 @@ namespace MediaDedup::Adjustments
         bool lane_allowed = true;           // false for geometry
         bool resolution_dependent = false;  // wants RenderContext::pixel_scale
         std::string summary;                // chain-row template, e.g. "{angle:+.1f}°"
+        bool active_at_defaults = false;    // true when the defaults already change pixels (Monochrome)
         std::vector<ParamSpec> params;
     };
 }
