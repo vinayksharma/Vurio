@@ -790,10 +790,24 @@ history step "Apply recipe …" (replace) or "Add recipe …" (append/insert).
 
 ### CHAIN-4 — Splits, lanes, procedural masks, merge
 
-- [ ] Engine: `SplitNode` rendering (fork frame cache, per-lane eval, mask transport through `base_to_canvas`, feather/invert, merge), procedural sources (`full`, `linear`, `radial`, `luminance`, `color_range`), lane validation
-- [ ] Preview flags `solo_lane_id`, `overlay_lane_id`
-- [ ] Client: lane rows + rails, add/remove/rename lane, lane inspector (mask + merge), gradient pin overlays via `base_to_canvas`, solo, overlay toggle
-- [ ] Tests: evaluation order (second lane sees first's merge on the trunk, not in its input); lane canvas rules; mask transport alignment with a crop and a rotation above the split (synthetic rectangle); goldens per merge mode
+- [x] Engine: `SplitNode` rendering (fork frame cache, per-lane eval, mask transport through `base_to_canvas`, feather/invert, merge), procedural sources (`full`, `linear`, `radial`, `luminance`, `color_range`), lane validation
+- [x] Preview flags `solo_lane_id`, `overlay_lane_id`
+- [x] Client: lane rows + rails, add/remove/rename lane, lane inspector (mask + merge), gradient pin overlays via `base_to_canvas`, solo, overlay toggle
+- [x] Tests: evaluation order (second lane sees first's merge on the trunk, not in its input); lane canvas rules; mask transport alignment with a crop and a rotation above the split (synthetic rectangle); goldens per merge mode
+
+Notes from the implementation (2026-10-11): the fork is a clone of the frame
+entering the split (no separate cache entry; the node cache keys on the
+split's prefix hash); a lane with identity steps and a normal merge is
+dropped at compile so an empty split hashes like no split. Mask parameters
+are base-space fractions (`cx`, `rx` in units of the normalised base) and
+the radial radii scale by the affine's scale, so a crop or quarter turn
+above the split carries the ellipse with the picture; the client draws the
+pins through `PreviewFrame.project`/`unproject` at fit zoom only. A
+`ToolDescriptor.active_at_defaults` flag was added for Monochrome: its
+defaults convert, so the generic "all params at default = identity" rule
+had been silently dropping a freshly added Monochrome (trunk or lane).
+The inspector region scrolls (max 420 pt) now that lanes and Monochrome
+have more controls than the panel has height.
 
 ### CHAIN-5 — Detected masks
 
