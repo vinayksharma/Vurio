@@ -147,7 +147,13 @@ TEST_F(AdjustmentStoreTest, CommitWritesRowAndSidecarAndInvalidatesRenders)
     EXPECT_EQ(row->location_key, key_);
 
     EXPECT_EQ(store.revisionFor(asset_), result.render_revision);
-    EXPECT_FALSE(store.chainFor(asset_).isIdentity());
+    EXPECT_FALSE(store.planFor(asset_).isIdentity());
+    EXPECT_EQ(result.history_index, 1) << "Original, then this edit";
+    ASSERT_EQ(result.history_steps.size(), 2u);
+    EXPECT_EQ(result.history_steps[0].first, "Original");
+    EXPECT_FALSE(row->history.empty());
+    EXPECT_EQ(row->document.find("\"history\""), std::string::npos) << "history lives in its own column";
+    EXPECT_NE(result.document_json.find("\"chain\""), std::string::npos);
     EXPECT_EQ(store.displayDimsFor(asset_, 1000, 800).width, 800);
     EXPECT_EQ(store.revisionFor("/elsewhere.jpg"), 0);
 
@@ -165,21 +171,120 @@ TEST_F(AdjustmentStoreTest, CommitWritesRowAndSidecarAndInvalidatesRenders)
     EXPECT_EQ(store.revisionFor(asset_), result.render_revision);
 }
 
-TEST_F(AdjustmentStoreTest, IdentityCommitRemovesRowAndSidecar)
+TEST_F(AdjustmentStoreTest, IdentityCommitAfterAnEditKeepsTheHistoryAtRevisionZero)
 {
     auto &store = AdjustmentStore::instance();
-    ASSERT_EQ(store.setDocument(asset_, kRotate90).outcome, AdjustmentStore::Outcome::Ok);
+    ASSERT_EQ(store.setDocument(asset_, kRotate90, "Rotate right").outcome, AdjustmentStore::Outcome::Ok);
     ASSERT_TRUE(fs::exists(sidecarOf(asset_)));
     adjustmentEvents();
 
-    auto result = store.setDocument(asset_, kIdentity);
+    // CHAIN-1 (docs §3.5): the chain renders nothing, but the history is
+    // the user's work and stays, so the row and sidecar stay too.
+    auto result = store.setDocument(asset_, kIdentity, "Reset");
     ASSERT_EQ(result.outcome, AdjustmentStore::Outcome::Ok) << result.error;
     EXPECT_EQ(result.render_revision, 0);
     EXPECT_EQ(result.display_dims.width, 1000);
-    EXPECT_FALSE(fs::exists(sidecarOf(asset_)));
-    EXPECT_FALSE(AdjustmentsOps::get(*db_, asset_).has_value());
+    EXPECT_TRUE(fs::exists(sidecarOf(asset_)));
+    auto row = AdjustmentsOps::get(*db_, asset_);
+    ASSERT_TRUE(row.has_value());
+    EXPECT_EQ(row->render_revision, 0);
     EXPECT_EQ(store.revisionFor(asset_), 0);
+    EXPECT_TRUE(store.planFor(asset_).isIdentity());
+    EXPECT_EQ(result.history_index, 2);
+    EXPECT_EQ(result.history_steps.size(), 3u);
     EXPECT_EQ(adjustmentEvents(), 1);
+    std::string text, err;
+    ASSERT_TRUE(Adjustments::SidecarStore::readText(sidecarOf(asset_), text, err));
+    EXPECT_NE(text.find("\"history\""), std::string::npos) << "the sidecar carries the history";
+
+    // An identity commit on a file that was never edited stores nothing.
+    std::string other = (base_ / "lib" / "2024" / "other.JPG").string();
+    writeFile(other, "not really a jpeg");
+    addScannedRow(other, "2024/other.JPG");
+    auto nothing = store.setDocument(other, kIdentity, "Nothing");
+    EXPECT_EQ(nothing.outcome, AdjustmentStore::Outcome::Ok);
+    EXPECT_FALSE(AdjustmentsOps::get(*db_, other).has_value());
+    EXPECT_FALSE(fs::exists(sidecarOf(other)));
+}
+
+TEST_F(AdjustmentStoreTest, HistoryStepsUndoRedoAndTruncateTheRedoTail)
+{
+    auto &store = AdjustmentStore::instance();
+    auto first = store.setDocument(asset_, kRotate90, "Rotate right");
+    ASSERT_EQ(first.outcome, AdjustmentStore::Outcome::Ok) << first.error;
+    auto second = store.setDocument(asset_, kRotate180, "Rotate 180");
+    ASSERT_EQ(second.outcome, AdjustmentStore::Outcome::Ok) << second.error;
+    EXPECT_NE(first.render_revision, second.render_revision);
+    EXPECT_EQ(second.history_index, 2);
+    adjustmentEvents();
+
+    // Undo: back to the quarter turn, committed and published like an edit.
+    auto undo = store.stepHistory(asset_, -1, false, 0);
+    ASSERT_EQ(undo.outcome, AdjustmentStore::Outcome::Ok) << undo.error;
+    EXPECT_EQ(undo.render_revision, first.render_revision);
+    EXPECT_EQ(undo.history_index, 1);
+    EXPECT_EQ(undo.history_steps.size(), 3u) << "the redo tail is still there";
+    EXPECT_EQ(store.revisionFor(asset_), first.render_revision);
+    EXPECT_EQ(store.displayDimsFor(asset_, 1000, 800).width, 800);
+    EXPECT_EQ(adjustmentEvents(), 1);
+
+    // Redo.
+    auto redo = store.stepHistory(asset_, +1, false, 0);
+    ASSERT_EQ(redo.outcome, AdjustmentStore::Outcome::Ok) << redo.error;
+    EXPECT_EQ(redo.render_revision, second.render_revision);
+    EXPECT_EQ(store.stepHistory(asset_, +1, false, 0).outcome, AdjustmentStore::Outcome::OutOfRange);
+
+    // Jump to Original: identity, row kept.
+    auto original = store.stepHistory(asset_, 0, true, 0);
+    ASSERT_EQ(original.outcome, AdjustmentStore::Outcome::Ok) << original.error;
+    EXPECT_EQ(original.render_revision, 0);
+    EXPECT_TRUE(AdjustmentsOps::get(*db_, asset_).has_value());
+
+    // A new edit after an undo drops the redo tail.
+    auto third = store.setDocument(asset_, kRotate90, "Rotate right again");
+    ASSERT_EQ(third.outcome, AdjustmentStore::Outcome::Ok);
+    EXPECT_EQ(third.history_index, 1);
+    EXPECT_EQ(third.history_steps.size(), 2u);
+
+    // Survives a restart.
+    store.initialize(db_, nullptr, Adjustments::SidecarStore::defaultSpoolRoot(db_path_));
+    auto after = store.stepHistory(asset_, -1, false, 0);
+    ASSERT_EQ(after.outcome, AdjustmentStore::Outcome::Ok) << after.error;
+    EXPECT_EQ(after.render_revision, 0);
+
+    EXPECT_EQ(store.stepHistory("/nope/x.jpg", -1, false, 0).outcome, AdjustmentStore::Outcome::NotFound);
+}
+
+TEST_F(AdjustmentStoreTest, FormatOneRowsAreRekeyedOnStartup)
+{
+    auto &store = AdjustmentStore::instance();
+    ThumbnailCacheRecord thumb;
+    thumb.source_path = asset_;
+    thumb.cached_path = (base_ / "thumb_r12345.jpg").string();
+    thumb.thumbnail_size = 256;
+    thumb.render_revision = 12345;
+    writeFile(thumb.cached_path, "x");
+    ASSERT_TRUE(ThumbnailCacheOps::upsertThumbnail(*db_, thumb));
+
+    // A row written by ADJ-1: format-1 document, the format-1 hash.
+    ImageAdjustmentRow row;
+    row.file_path = asset_;
+    row.location_key = key_;
+    row.render_revision = 12345;
+    row.document = kRotate90;
+    row.sidecar_path = sidecarOf(asset_);
+    row.sidecar_mtime = 1;
+    row.updated_at = 1;
+    ASSERT_TRUE(AdjustmentsOps::upsert(*db_, row));
+
+    store.initialize(db_, nullptr, Adjustments::SidecarStore::defaultSpoolRoot(db_path_));
+    auto reloaded = AdjustmentsOps::get(*db_, asset_);
+    ASSERT_TRUE(reloaded.has_value());
+    EXPECT_NE(reloaded->render_revision, 12345) << "re-keyed under the format-2 canonical form";
+    EXPECT_EQ(reloaded->render_revision, store.revisionFor(asset_));
+    EXPECT_NE(reloaded->document.find("\"chain\""), std::string::npos) << "document column rewritten as format 2";
+    EXPECT_TRUE(ThumbnailCacheOps::listForPath(*db_, asset_).empty()) << "old tiles dropped";
+    EXPECT_EQ(store.displayDimsFor(asset_, 1000, 800).width, 800);
 }
 
 TEST_F(AdjustmentStoreTest, RefusesInvalidDocumentsAndUnknownFiles)
@@ -187,7 +292,7 @@ TEST_F(AdjustmentStoreTest, RefusesInvalidDocumentsAndUnknownFiles)
     auto &store = AdjustmentStore::instance();
     auto bad = store.setDocument(asset_, kAngleNoCrop);
     EXPECT_EQ(bad.outcome, AdjustmentStore::Outcome::Invalid);
-    EXPECT_NE(bad.error.find("requires a crop"), std::string::npos) << bad.error;
+    EXPECT_NE(bad.error.find("requires a following crop"), std::string::npos) << bad.error;
     EXPECT_EQ(store.setDocument(asset_, "{not json").outcome, AdjustmentStore::Outcome::Invalid);
     EXPECT_EQ(store.setDocument("/nope/x.jpg", kRotate90).outcome, AdjustmentStore::Outcome::NotFound);
     EXPECT_FALSE(fs::exists(sidecarOf(asset_)));

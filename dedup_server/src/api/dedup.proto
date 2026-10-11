@@ -667,7 +667,7 @@ message MediaPathResponse {
 
 message MediaReadyEvent {
   string file_path = 1;
-  string media_type = 2; // "thumbnail" | "preview" | "preview_full"
+  string media_type = 2; // "thumbnail" | "preview" | "preview_full" | "adjustments"
   bool success = 3;
   string error_message = 4; // set when success == false
   // STRIP-2: pixel bucket of a finished thumbnail; 0 for previews and for
@@ -701,12 +701,69 @@ service AdjustmentsService {
   // "" = back to the default. Existing sidecars are moved into the new
   // layout. Refused when another location uses or nests with the folder.
   rpc SetEditsRoot(SetEditsRootRequest) returns (SetEditsRootResponse);
+  // CHAIN-1 (docs/todo_tool_chain.md §9.2): move through the photo's
+  // persisted undo/redo history. `delta` steps relative to the current
+  // index (-1 undo, +1 redo); `use_index` jumps to `index`. The step's
+  // chain is committed like any edit (without appending a new step) and the
+  // resulting document is returned. OUT_OF_RANGE when there is no such step.
+  rpc StepHistory(StepHistoryRequest) returns (AdjustmentDocumentResponse);
+}
+
+// ---------------------------------------------------------
+// Preview Service (CHAIN-1, docs/todo_tool_chain.md §5.4)
+//
+// The viewer's live preview. Every frame is rendered by the server's engine
+// from the file's decoded working-size base, through the chain the client
+// is editing (committed or not). One request in flight per client; the
+// client sends the newest document when the previous frame returns.
+// ---------------------------------------------------------
+service PreviewService {
+  rpc RenderPreview(RenderPreviewRequest) returns (PreviewFrame);
+  // Drop the file's render session (decoded base + node cache) early;
+  // sessions also expire on their own.
+  rpc ReleasePreview(AdjustmentsFileRequest) returns (Empty);
+}
+
+message RenderPreviewRequest {
+  string file_path = 1;
+  string document_json = 2;    // the chain being edited; "" = the committed one
+  int32 max_side = 3;          // longest side of the frame (1280 while dragging, 2560 at rest)
+  int32 quality = 4;           // JPEG quality; 0 = server default
+  int64 seq = 5;               // echoed so the client can drop stale frames
+  // Crop editing: render the chain only up to (not including) this node, so
+  // the frame is exactly the canvas that node receives.
+  string truncate_at_node_id = 6;
+  bool before = 7;             // before/after: render the base image
+}
+
+message PreviewFrame {
+  bytes jpeg = 1;
+  int32 width = 2;             // frame pixels
+  int32 height = 3;
+  int64 seq = 4;
+  int32 render_ms = 5;         // engine + encode time, for the debug overlay
+  int32 base_width = 6;        // the full-resolution base (EXIF-oriented)
+  int32 base_height = 7;
+  int32 display_width = 8;     // full-resolution size of what the frame shows
+  int32 display_height = 9;
+}
+
+message StepHistoryRequest {
+  string file_path = 1;
+  int32 delta = 2;
+  int32 index = 3;
+  bool use_index = 4;
+}
+
+message HistoryStep {
+  string label = 1;
+  string at = 2; // ISO-8601 UTC
 }
 
 message ParamSpec {
   string id = 1;
   string label = 2;
-  string kind = 3; // "number" | "integer" | "enum"
+  string kind = 3; // "number" | "integer" | "enum" | "bool" | "text"
   double min = 4;
   double max = 5;
   double step = 6;          // 0 = continuous
@@ -716,15 +773,23 @@ message ParamSpec {
 }
 
 message ToolDescriptor {
-  string id = 1;    // "rotate", "crop" — also the key of the document section
+  string id = 1;    // "rotate", "crop" — also the node's "tool" value
   string label = 2;
-  int32 version = 3; // the section version this build writes
+  int32 version = 3; // the params version this build writes
   repeated ParamSpec params = 4;
+  // CHAIN-1 (docs/todo_tool_chain.md §3.2, §5.6): how the engine composes
+  // the tool and where it may be placed.
+  string category = 5;         // "geometry" | "raster" | "layer" | "mask" | "split"
+  string icon = 6;             // SF Symbol name for the catalogue and chain rows
+  bool lane_allowed = 7;       // false for geometry (a lane must keep its canvas)
+  bool resolution_dependent = 8;
+  string summary = 9;          // chain-row text template, "{param:fmt}" placeholders
 }
 
 message ToolDescriptors {
-  repeated ToolDescriptor tools = 1; // in application order
+  repeated ToolDescriptor tools = 1; // catalogue order (by category, then label)
   int32 document_version = 2;        // the document format version this build writes
+  repeated string blend_modes = 3;   // CHAIN-1: the blend names a layer node may carry
 }
 
 message AdjustmentsFileRequest {
@@ -739,11 +804,15 @@ message AdjustmentDocumentResponse {
   int32 display_height = 5;
   bool sidecar_spooled = 6;   // the sidecar waits for its folder to be reachable
   string sidecar_path = 7;    // where it is (destination or spool)
+  // CHAIN-1: the photo's persisted undo/redo history (docs §4).
+  int32 history_index = 8;
+  repeated HistoryStep history_steps = 9;
 }
 
 message SetAdjustmentsRequest {
   string file_path = 1;
-  string document_json = 2;   // a complete document; identity deletes the edit
+  string document_json = 2;   // a complete document; an empty chain with no history deletes the edit
+  string step_label = 3;      // CHAIN-1: what this edit did, for the History list ("Rotate −2.5°")
 }
 
 message SetAdjustmentsResponse {
@@ -754,6 +823,9 @@ message SetAdjustmentsResponse {
   int32 display_height = 5;
   bool sidecar_spooled = 6;
   string sidecar_path = 7;
+  // CHAIN-1: history after this commit.
+  int32 history_index = 8;
+  repeated HistoryStep history_steps = 9;
 }
 
 message EditsRootRequest {

@@ -17,11 +17,12 @@ namespace MediaDedup
     {
         std::string file_path;
         std::string location_key;   // "mediaLocation:<sha1>"
-        int render_revision = 0;    // derived from document; never 0 in a stored row
+        int render_revision = 0;    // derived from document; 0 when the chain renders nothing but history remains
         std::string document;       // canonical sidecar JSON
         std::string sidecar_path;   // destination, or the spool path while sidecar_mtime == 0
         int64_t sidecar_mtime = 0;  // mtime of the delivered sidecar; 0 = spooled/pending
         int64_t updated_at = 0;     // unix seconds
+        std::string history;        // CHAIN-1: {"index", "steps":[...]} JSON, "" = none
     };
 
     class AdjustmentsOps

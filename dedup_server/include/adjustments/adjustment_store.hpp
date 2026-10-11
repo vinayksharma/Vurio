@@ -13,9 +13,10 @@
 // delivered later (§5.6a).
 
 #include "adjustments/adjustment_document.hpp"
-#include "adjustments/render_chain.hpp"
+#include "adjustments/render_plan.hpp"
 #include "adjustments/sidecar_layout.hpp"
 #include "database/adjustments_ops.hpp"
+#include "database/scanned_files_ops.hpp"
 #include "utils/display_geometry.hpp"
 #include <memory>
 #include <optional>
@@ -51,14 +52,15 @@ namespace MediaDedup::Adjustments
 
         // ----- hot read side (every render path, every list row) -----
         bool enabled() const;
-        RenderChain chainFor(const std::string &file_path) const;
+        // The file's compiled plan (identity for an un-edited file).
+        RenderPlan planFor(const std::string &file_path) const;
         int revisionFor(const std::string &file_path) const;
         DisplayDims displayDimsFor(const std::string &file_path, int base_width, int base_height) const;
         // The document JSON, or nullopt when the file has no edits.
         std::optional<ImageAdjustmentRow> rowFor(const std::string &file_path) const;
 
         // ----- commits (the RPC) -----
-        enum class Outcome { Ok, Disabled, NotFound, Invalid, Internal };
+        enum class Outcome { Ok, Disabled, NotFound, Invalid, OutOfRange, Internal };
         struct CommitResult
         {
             Outcome outcome = Outcome::Internal;
@@ -67,8 +69,24 @@ namespace MediaDedup::Adjustments
             DisplayDims display_dims;
             bool sidecar_spooled = false;
             std::string sidecar_path;
+            // CHAIN-1: the document after the commit (chain only, format 2)
+            // and the history it now has.
+            std::string document_json;
+            int history_index = -1;
+            std::vector<std::pair<std::string, std::string>> history_steps; // (label, at)
         };
-        CommitResult setDocument(const std::string &file_path, const std::string &document_json);
+        // Commit a chain. `step_label` names the edit in the photo's history
+        // (docs §9.2); the server appends the step. An identity chain for a
+        // file without a row stores nothing.
+        CommitResult setDocument(const std::string &file_path, const std::string &document_json,
+                                 const std::string &step_label = "");
+        // Move through the photo's history: by `delta` from the current
+        // step, or to `index` when `use_index`. Commits that step's chain
+        // without appending.
+        CommitResult stepHistory(const std::string &file_path, int delta, bool use_index, int index);
+        // The committed document text of a file ("" when none), for the
+        // preview session.
+        std::string documentJsonFor(const std::string &file_path) const;
 
         // ----- edits roots (§5.6) -----
         static std::string editsRootSettingKey(const std::string &location_key);
@@ -123,7 +141,7 @@ namespace MediaDedup::Adjustments
 
         struct Entry
         {
-            RenderChain chain;
+            RenderPlan plan;
             ImageAdjustmentRow row;
         };
 
@@ -139,7 +157,11 @@ namespace MediaDedup::Adjustments
         bool sidecarWritesEnabled() const;
 
         // Shared tail of a commit and an import: row + map + caches + push.
-        void storeEntry(const ImageAdjustmentRow &row, const RenderChain &chain, const DisplayDims &dims);
+        void storeEntry(const ImageAdjustmentRow &row, const RenderPlan &plan, const DisplayDims &dims);
+        int historyMaxEntries() const;
+        // Shared tail of setDocument/stepHistory: persist `doc` for `file_path`.
+        CommitResult commitDocument(const std::string &file_path, AdjustmentDocument &doc, const RenderPlan &plan,
+                                    const ScannedFileRow &scanned, const DisplayDims &base);
         void dropEntry(const std::string &file_path, const DisplayDims &base_dims);
         void invalidateRenders(const std::string &file_path);
         void publish(const std::string &file_path, int revision, const DisplayDims &dims);

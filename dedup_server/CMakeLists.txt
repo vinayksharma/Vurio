@@ -130,14 +130,13 @@ if(LIBTIFF_FOUND)
     message(STATUS "libtiff found: ${LIBTIFF_VERSION}")
 endif()
 
-find_package(OpenCV QUIET)
-if(OpenCV_FOUND)
-    message(STATUS "OpenCV found: ${OpenCV_VERSION}")
-    include_directories(${OpenCV_INCLUDE_DIRS})
-    add_definitions(-DHAVE_OPENCV)
-else()
-    message(STATUS "OpenCV not found - image pipelines will use stubs")
-endif()
+# CHAIN-1 (docs/todo_tool_chain.md §5.1): OpenCV is the engine every edited
+# render goes through, so it is required. HAVE_OPENCV stays defined for the
+# older optional code paths.
+find_package(OpenCV REQUIRED)
+message(STATUS "OpenCV found: ${OpenCV_VERSION}")
+include_directories(${OpenCV_INCLUDE_DIRS})
+add_definitions(-DHAVE_OPENCV)
 
 # Keep FetchContent downloads OUTSIDE the build tree.
 #
@@ -317,7 +316,9 @@ add_executable(media_dedup_server
     src/adjustments/tools/rotate_tool.cpp
     src/adjustments/tools/crop_tool.cpp
     src/adjustments/tool_registry.cpp
-    src/adjustments/render_chain.cpp
+    src/adjustments/render_plan.cpp
+    src/adjustments/chain_engine.cpp
+    src/adjustments/preview_session.cpp
     src/adjustments/adjustment_document.cpp
     src/adjustments/sidecar_layout.cpp
     src/adjustments/sidecar_store.cpp

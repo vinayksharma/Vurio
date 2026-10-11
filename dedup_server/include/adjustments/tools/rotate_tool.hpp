@@ -1,7 +1,10 @@
 #pragma once
 
-// ADJ-1: Rotate — exact quarter turns plus a fine straighten angle.
-// Section: {"version":1,"quarter_turns":0..3,"angle":-45..45}
+// ADJ-1 / CHAIN-1: Rotate — exact quarter turns plus a fine straighten
+// angle. Geometry: the canvas grows to the rotated bounding box (the
+// ImageMagick canvas rule in adjustment_geometry.hpp, kept so the client's
+// geometry and every stored crop stay valid).
+// Params: {"version":1,"quarter_turns":0..3,"angle":-45..45}
 
 #include "adjustments/adjustment_tool.hpp"
 
@@ -28,10 +31,10 @@ namespace MediaDedup::Adjustments
         nlohmann::json serialize(const ToolState &state) const override;
         bool isIdentity(const ToolState &state) const override;
         bool validate(const ToolState &state, Size input, std::string &error) const override;
-        void appendMagickOps(const ToolState &state, std::vector<std::string> &args) const override;
+        void apply(const ToolState &state, Frame &io, const RenderContext &ctx) const override;
         Size transformSize(const ToolState &state, Size input) const override;
 
-        // Total rotation handed to ImageMagick, degrees clockwise.
+        // Total rotation, degrees clockwise.
         static double totalDegrees(const RotateState &s) { return s.quarter_turns * 90.0 + s.angle; }
 
     private:

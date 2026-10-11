@@ -98,6 +98,7 @@ set(UNIT_TEST_SOURCES
     unit/test_sidecar_layout.cpp
     unit/test_adjustment_store.cpp
     unit/test_adjustment_render.cpp
+    unit/test_preview_session.cpp
 )
 
 # ADJ-1: the adjustment store and everything it links. Sources that resolve
@@ -108,7 +109,9 @@ set(ADJUSTMENTS_SOURCES
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/rotate_tool.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/crop_tool.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tool_registry.cpp
-    ${CMAKE_SOURCE_DIR}/src/adjustments/render_chain.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/render_plan.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/chain_engine.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/preview_session.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/adjustment_document.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/sidecar_layout.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/sidecar_store.cpp
@@ -202,13 +205,19 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             TIMEOUT 300
         )
     elseif(${test_name} STREQUAL "test_adjustment_tools")
-        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="AdjustmentGeometryTest.*:RotateToolTest.*:CropToolTest.*:ToolRegistryTest.*:AdjustmentDocumentTest.*:RenderChainTest.*")
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="AdjustmentGeometryTest.*:RotateToolTest.*:CropToolTest.*:ToolRegistryTest.*:AdjustmentDocumentTest.*:RenderPlanTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
         )
     elseif(${test_name} STREQUAL "test_adjustment_render")
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="AdjustmentRenderTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_preview_session")
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="PreviewSessionTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -799,7 +808,9 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/rotate_tool.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/crop_tool.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tool_registry.cpp
-    ${CMAKE_SOURCE_DIR}/src/adjustments/render_chain.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/render_plan.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/chain_engine.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/preview_session.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/adjustment_document.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/sidecar_layout.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/sidecar_store.cpp
@@ -1001,7 +1012,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_adjustment_tools" AND
       NOT ${test_name} STREQUAL "test_sidecar_layout" AND
       NOT ${test_name} STREQUAL "test_adjustment_store" AND
-      NOT ${test_name} STREQUAL "test_adjustment_render")
+      NOT ${test_name} STREQUAL "test_adjustment_render" AND
+      NOT ${test_name} STREQUAL "test_preview_session")
         add_dependencies(${test_name} ${TEST_DATA_DEPENDENCY})
     endif()
 endforeach()

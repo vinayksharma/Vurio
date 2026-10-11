@@ -15,6 +15,12 @@
 #include "core/grpc_server/advanced_settings_service.hpp"
 #include "core/grpc_server/media_service.hpp"
 #include "core/grpc_server/adjustments_service.hpp"
+#include "core/grpc_server/preview_service.hpp"
+#include "adjustments/adjustment_store.hpp"
+#include "adjustments/chain_engine.hpp"
+#include "database/preview_cache_ops.hpp"
+#include "media_processors/image/backends/transcoding_pipeline.hpp"
+#include "utils/thumbnail_generator.hpp"
 #include "search/text_search_engine.hpp"
 
 #include <grpcpp/grpcpp.h>
@@ -109,6 +115,47 @@ void GrpcServerCore::start(const std::string& instance_dir,
     std::unique_ptr<vurio::dedup::AdvancedSettingsService::Service> advanced_settings_service = std::make_unique<AdvancedSettingsServiceImpl>(database_manager, config_manager, thumbnail_cache, transcoding_cache, scheduler_service, thread_pool_manager);
     auto media_streaming_service = std::make_unique<MediaServiceImpl>(config_manager, database_manager, thumbnail_cache, transcoding_cache, thread_pool_manager);
     auto adjustments_service = std::make_unique<AdjustmentsServiceImpl>(); // ADJ-1
+    // CHAIN-1 (docs/todo_tool_chain.md §5.4): live preview sessions. The
+    // base loader reuses the existing decode paths: the QHD preview when
+    // the format needs one, the original (scaled decode) otherwise.
+    auto preview_service = std::make_unique<PreviewServiceImpl>();
+    {
+        auto cfg = config_manager;
+        auto db_shared = database_manager;
+        MediaDedup::Adjustments::PreviewSessionManager::instance().configure(
+            cfg ? cfg->getPropertyValue<int>("media.adjustments.preview.sessions", 3) : 3,
+            static_cast<size_t>(cfg ? cfg->getPropertyValue<int>("media.adjustments.preview.cacheBytes", 402653184) : 402653184),
+            cfg ? cfg->getPropertyValue<int>("media.adjustments.preview.idleSeconds", 120) : 120,
+            cfg ? cfg->getPropertyValue<int>("media.adjustments.preview.sessionSide", 2560) : 2560,
+            [cfg, db_shared](const std::string& file_path, int max_side, MediaDedup::Adjustments::Size& base_full) -> cv::Mat {
+                base_full = {};
+                if (db_shared) {
+                    if (auto row = MediaDedup::ScannedFilesOps::getByPath(*db_shared, file_path); row && row->exif_resolution) {
+                        auto dims = MediaDedup::displayDimensionsFromExifResolution(*row->exif_resolution);
+                        base_full = {static_cast<double>(dims.width), static_cast<double>(dims.height)};
+                    }
+                }
+                if (!TranscodingPipeline::NeedsQhdPreviewCache(file_path, cfg))
+                    return MediaDedup::Adjustments::ChainEngine::decodeBgr8(file_path, max_side);
+                if (db_shared) {
+                    if (auto cached = MediaDedup::PreviewCacheOps::getPreview(*db_shared, file_path);
+                        cached && std::filesystem::exists(cached->cached_path)) {
+                        cv::Mat img = MediaDedup::Adjustments::ChainEngine::decodeBgr8(cached->cached_path, max_side);
+                        if (!img.empty()) return img;
+                    }
+                }
+                // No QHD preview yet: a 1024 px identity render stands in
+                // until the preview exists (the viewer requests it anyway).
+                Magick::Blob blob;
+                if (!ThumbnailGenerator::generateToBlob(file_path, 1024, blob, 90)) return {};
+                std::vector<uint8_t> bytes(static_cast<const uint8_t*>(blob.data()),
+                                           static_cast<const uint8_t*>(blob.data()) + blob.length());
+                return MediaDedup::Adjustments::ChainEngine::decodeBgr8(bytes);
+            },
+            [](const std::string& file_path) {
+                return MediaDedup::Adjustments::AdjustmentStore::instance().documentJsonFor(file_path);
+            });
+    }
 
     duplicate_finder_ = duplicate_finder; // CC-6: for callback teardown in stop()
     if (duplicate_finder) {
@@ -145,6 +192,7 @@ void GrpcServerCore::start(const std::string& instance_dir,
     builder.RegisterService(advanced_settings_service.get());
     builder.RegisterService(media_streaming_service.get());
     builder.RegisterService(adjustments_service.get()); // ADJ-1
+    builder.RegisterService(preview_service.get()); // CHAIN-1
     
     services_.push_back(std::move(security_service));
     services_.push_back(std::move(config_service));
@@ -153,6 +201,7 @@ void GrpcServerCore::start(const std::string& instance_dir,
     services_.push_back(std::move(advanced_settings_service));
     services_.push_back(std::move(media_streaming_service));
     services_.push_back(std::move(adjustments_service));
+    services_.push_back(std::move(preview_service));
 
     server_ = builder.BuildAndStart();
 

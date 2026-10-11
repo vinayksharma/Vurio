@@ -1,8 +1,9 @@
 #pragma once
 
-// ADJ-1 (docs §3.2): the fixed application order of the tools. The only
-// place in the server that names a concrete tool. Rotate runs before Crop:
-// a crop is expressed on the rotated canvas.
+// ADJ-1 / CHAIN-1 (docs/todo_tool_chain.md §5.6): the catalogue. The only
+// place in the server that names a concrete tool. Since format 2 the order
+// of application is the document's, not the registry's; `tools()` is the
+// catalogue order (by category, then label) the UI shows.
 
 #include "adjustments/adjustment_tool.hpp"
 #include <memory>
@@ -16,7 +17,7 @@ namespace MediaDedup::Adjustments
     public:
         static const ToolRegistry &instance();
 
-        // Tools in application order.
+        // Catalogue order.
         const std::vector<const AdjustmentTool *> &tools() const { return order_; }
 
         // Tool by id, or null for an id this build does not know.

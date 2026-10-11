@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <vector>
 #include <Magick++.h>
-#include "adjustments/render_chain.hpp"
+#include "adjustments/render_plan.hpp"
 
 namespace MediaDedup
 {
@@ -27,11 +27,14 @@ namespace MediaDedup
          * @param quality JPEG quality (0-100, default 85)
          * @param blob Output blob containing the JPEG thumbnail data
          * @param timeout_ms Hard limit on the magick subprocess; expired decodes are killed
-         * @param chain ADJ-1: the file's non-destructive edits (rotate/crop),
-         *        applied after -auto-orient and before the resize. The
-         *        in-process shortcuts (OpenCV, LibRaw demosaic) serve the
-         *        identity chain only; an edited render always goes through
-         *        the magick operator chain (docs/todo_image_adjustments.md §5.4).
+         * @param plan CHAIN-1: the file's non-destructive edits. An identity
+         *        plan takes the paths below unchanged (OpenCV fast path,
+         *        magick subprocess, LibRaw demosaic). A non-identity plan is
+         *        rendered by the engine: the base is decoded (OpenCV for
+         *        JPEG/PNG, magick to a temp file for everything else, LibRaw
+         *        for native-resolution RAW), brought to the working size for
+         *        `size`, run through the plan and encoded
+         *        (docs/todo_tool_chain.md §5.3).
          * @return true if thumbnail generated successfully, false otherwise
          */
         static bool generateToBlob(const std::string &source_path,
@@ -39,7 +42,7 @@ namespace MediaDedup
                                     Magick::Blob &blob,
                                     int quality = 85,
                                     int timeout_ms = DEFAULT_TIMEOUT_MS,
-                                    const Adjustments::RenderChain &chain = Adjustments::RenderChain::identity());
+                                    const Adjustments::RenderPlan &plan = Adjustments::RenderPlan::identity());
 
 
         /**
@@ -54,14 +57,11 @@ namespace MediaDedup
          * @param output_path Output JPEG path (written with a jpeg: prefix)
          * @param size Longest-edge target; <= 0 skips the resize (native)
          * @param quality JPEG quality
-         * @param chain ADJ-1: edit operators inserted between -auto-orient
-         *        and -colorspace, so -resize downsamples the edited result
          */
         static std::vector<std::string> buildMagickArgs(const std::string &read_path,
                                                         const std::string &output_path,
                                                         int size,
-                                                        int quality,
-                                                        const Adjustments::RenderChain &chain = Adjustments::RenderChain::identity());
+                                                        int quality);
 
         /**
          * @brief MP-3: explicit native-resolution sentinel.

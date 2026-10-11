@@ -199,19 +199,15 @@ public:
                 return grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, *reason);
             }
 
-            // ADJ-2 (docs §6.2): the viewer holds BASE pixels and applies the
-            // edit chain itself as layout, exactly as it does for the QHD
-            // preview and the locally decoded non-RAW full-res. So this render
-            // is the identity chain. Handing out an edited render here made
-            // the viewer rotate and crop an already rotated, cropped bitmap:
-            // the straighten ruler then never levelled anything, each pass
-            // compounded the angle, and the crop refit shrank against the
-            // wrong canvas. The file's revision is still echoed for keys.
-            const MediaDedup::Adjustments::RenderChain &chain =
-                MediaDedup::Adjustments::RenderChain::identity();
-            const int revision = 0;
-            response->set_render_revision(
-                MediaDedup::Adjustments::AdjustmentStore::instance().revisionFor(file_path));
+            // CHAIN-1 (docs/todo_tool_chain.md §5.5): the full-size render
+            // IS the edited image, produced by the engine at scale 1 and
+            // keyed by the file's revision. The viewer asks for it only on
+            // edited files (an un-edited non-RAW it decodes locally) and
+            // shows the upscaled preview frame until it lands.
+            const MediaDedup::Adjustments::RenderPlan plan =
+                MediaDedup::Adjustments::AdjustmentStore::instance().planFor(file_path);
+            const int revision = plan.revision();
+            response->set_render_revision(revision);
 
             int64_t full_mtime = sourceModifiedTime(file_path);
             if (auto hit = fullResCache().getFresh(file_path, full_mtime, revision)) {
@@ -224,13 +220,13 @@ public:
                 auto db_copy = db_owner_; // CC-5: owning share
                 auto config_copy = config_;
                 std::string path_copy = file_path;
-                tpm_->submit("fullres_generator", [db_copy, config_copy, path_copy, chain = chain, revision]() {
+                tpm_->submit("fullres_generator", [db_copy, config_copy, path_copy, plan = plan, revision]() {
                     int timeout_ms = config_copy
                         ? config_copy->getPropertyValue<int>("media.image.transcoding.timeoutMs", ThumbnailGenerator::DEFAULT_TIMEOUT_MS)
                         : ThumbnailGenerator::DEFAULT_TIMEOUT_MS;
                     Magick::Blob blob;
                     // size 0 = native resolution, quality 95 — matches the web endpoint
-                    if (ThumbnailGenerator::generateToBlob(path_copy, ThumbnailGenerator::kNativeResolution, blob, 95, timeout_ms, chain)) {
+                    if (ThumbnailGenerator::generateToBlob(path_copy, ThumbnailGenerator::kNativeResolution, blob, 95, timeout_ms, plan)) {
                         std::string out_path = MediaDedup::makeTempFilePath("fullres", ".jpg");
                         std::ofstream out(out_path, std::ios::binary);
                         out.write(static_cast<const char*>(blob.data()), static_cast<std::streamsize>(blob.length()));

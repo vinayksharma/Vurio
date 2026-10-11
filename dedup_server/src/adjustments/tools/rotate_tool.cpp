@@ -1,20 +1,12 @@
 #include "adjustments/tools/rotate_tool.hpp"
 #include <cmath>
-#include <iomanip>
-#include <sstream>
+#include <opencv2/imgproc.hpp>
 
 namespace MediaDedup::Adjustments
 {
     namespace
     {
         const RotateState &as(const ToolState &s) { return static_cast<const RotateState &>(s); }
-
-        std::string fixed(double v, int decimals = 4)
-        {
-            std::ostringstream os;
-            os << std::fixed << std::setprecision(decimals) << v;
-            return os.str();
-        }
     }
 
     RotateTool::RotateTool()
@@ -22,6 +14,10 @@ namespace MediaDedup::Adjustments
         descriptor_.id = kId;
         descriptor_.label = "Rotate";
         descriptor_.version = kVersion;
+        descriptor_.category = ToolCategory::Geometry;
+        descriptor_.icon = "rotate.right";
+        descriptor_.lane_allowed = false;
+        descriptor_.summary = "{total_degrees:+.1f}°";
 
         ParamSpec turns;
         turns.id = "quarter_turns";
@@ -116,21 +112,40 @@ namespace MediaDedup::Adjustments
         return true; // every in-range state is renderable
     }
 
-    void RotateTool::appendMagickOps(const ToolState &state, std::vector<std::string> &args) const
+    void RotateTool::apply(const ToolState &state, Frame &io, const RenderContext &) const
     {
         const RotateState &s = as(state);
-        if (isIdentity(s))
+        if (isIdentity(s) || io.empty())
             return;
-        if (std::fabs(s.angle) >= 1e-9)
+        // Exact quarter turns first: lossless, and they decide the canvas
+        // the fine angle expands.
+        switch (s.quarter_turns)
         {
-            // The corners -rotate exposes are cropped away by the chain's
-            // crop (docs §3.3); black keeps any sub-pixel sliver unobtrusive.
-            args.push_back("-background");
-            args.push_back("black");
+        case 1: cv::rotate(io.pixels, io.pixels, cv::ROTATE_90_CLOCKWISE); break;
+        case 2: cv::rotate(io.pixels, io.pixels, cv::ROTATE_180); break;
+        case 3: cv::rotate(io.pixels, io.pixels, cv::ROTATE_90_COUNTERCLOCKWISE); break;
+        default: break;
         }
-        args.push_back("-rotate");
-        args.push_back(fixed(totalDegrees(s)));
-        args.push_back("+repage");
+        if (std::fabs(s.angle) < 1e-9)
+            return;
+        // Fine angle about the centre into the canvas the geometry predicts
+        // (rotatedBounds: ImageMagick's rule, so display dims, the client's
+        // overlay and every stored crop agree). Our angle is clockwise;
+        // OpenCV's is counter-clockwise. Black outside the content: the
+        // chain's crop removes those corners (docs §3.3).
+        Size turned = io.size();
+        Size canvas = rotatedBounds(turned, s.angle);
+        int cw = static_cast<int>(std::lround(canvas.width));
+        int ch = static_cast<int>(std::lround(canvas.height));
+        cv::Mat m = cv::getRotationMatrix2D(cv::Point2f(static_cast<float>(turned.width / 2.0),
+                                                        static_cast<float>(turned.height / 2.0)),
+                                            -s.angle, 1.0);
+        m.at<double>(0, 2) += cw / 2.0 - turned.width / 2.0;
+        m.at<double>(1, 2) += ch / 2.0 - turned.height / 2.0;
+        cv::Mat out;
+        cv::warpAffine(io.pixels, out, m, cv::Size(cw, ch), cv::INTER_CUBIC, cv::BORDER_CONSTANT,
+                       cv::Scalar(0, 0, 0));
+        io.pixels = out;
     }
 
     Size RotateTool::transformSize(const ToolState &state, Size input) const

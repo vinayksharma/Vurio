@@ -58,6 +58,37 @@ namespace MediaDedup::Adjustments
 
         Size toSize(const DisplayDims &d) { return {static_cast<double>(d.width), static_cast<double>(d.height)}; }
 
+        // The row's `document` column holds the chain document WITHOUT its
+        // history; `history` holds the history. The sidecar carries both.
+        bool parseRow(const ImageAdjustmentRow &row, AdjustmentDocument &doc, std::string &error)
+        {
+            if (!AdjustmentDocument::parse(row.document, doc, error))
+                return false;
+            if (!row.history.empty())
+            {
+                try
+                {
+                    nlohmann::json h = nlohmann::json::parse(row.history);
+                    if (h.is_object())
+                        doc.history = h;
+                }
+                catch (...)
+                {
+                }
+            }
+            return true;
+        }
+
+        void splitDocument(const AdjustmentDocument &doc, std::string &document_column, std::string &history_column,
+                           std::string &sidecar_text)
+        {
+            sidecar_text = doc.serialize();
+            AdjustmentDocument without = doc;
+            without.history = nlohmann::json();
+            document_column = without.serialize();
+            history_column = doc.hasHistory() ? doc.history.dump() : std::string();
+        }
+
         int64_t sizeBytesOf(const ScannedFileRow &row, const std::string &path)
         {
             try
@@ -97,17 +128,31 @@ namespace MediaDedup::Adjustments
             return;
 
         AdjustmentsOps::ensureTable(*db_);
-        int loaded = 0, unreadable = 0;
+        int loaded = 0, unreadable = 0, rekeyed = 0;
+        std::vector<std::string> invalidate;
         for (ImageAdjustmentRow &row : AdjustmentsOps::listAll(*db_))
         {
             Entry e;
             e.row = row;
             AdjustmentDocument doc;
             std::string error;
-            if (AdjustmentDocument::parse(row.document, doc, error) &&
-                doc.compile(ToolRegistry::instance(), e.chain, error))
+            if (parseRow(row, doc, error) && doc.compile(ToolRegistry::instance(), e.plan, error))
             {
                 ++loaded;
+                // CHAIN-1: a format-1 row hashes differently under the
+                // format-2 canonical form. Re-key it once (document column
+                // rewritten as format 2, tiles regenerate on demand); the
+                // sidecar is rewritten on the next commit.
+                if (e.plan.revision() != row.render_revision)
+                {
+                    e.row.render_revision = e.plan.revision();
+                    std::string history_column, sidecar_text;
+                    splitDocument(doc, e.row.document, history_column, sidecar_text);
+                    e.row.history = history_column;
+                    AdjustmentsOps::upsert(*db_, e.row);
+                    invalidate.push_back(row.file_path);
+                    ++rekeyed;
+                }
             }
             else
             {
@@ -115,13 +160,16 @@ namespace MediaDedup::Adjustments
                 // but render the base image: this build cannot apply it.
                 ++unreadable;
                 log().warning("Adjustments for %s cannot be applied by this build: %s", row.file_path, error);
-                e.chain = RenderChain();
-                e.chain.setRevision(row.render_revision);
+                e.plan = RenderPlan();
+                e.plan.setRevision(row.render_revision);
             }
             entries_[row.file_path] = std::move(e);
         }
-        log().information("Adjustment store loaded: %d edited files (%d not applicable), spool at %s",
-                          loaded, unreadable, spool_root_);
+        lock.unlock();
+        for (const std::string &path : invalidate)
+            invalidateRenders(path);
+        log().information("Adjustment store loaded: %d edited files (%d not applicable, %d re-keyed), spool at %s",
+                          loaded, unreadable, rekeyed, spool_root_);
     }
 
     bool AdjustmentStore::isInitialized() const
@@ -176,15 +224,29 @@ namespace MediaDedup::Adjustments
 
     // ------------------------------------------------------------ reads
 
-    RenderChain AdjustmentStore::chainFor(const std::string &file_path) const
+    RenderPlan AdjustmentStore::planFor(const std::string &file_path) const
     {
         if (!enabled())
-            return RenderChain();
+            return RenderPlan();
         std::shared_lock<std::shared_mutex> lock(mutex_);
         auto it = entries_.find(file_path);
         if (it == entries_.end())
-            return RenderChain();
-        return it->second.chain;
+            return RenderPlan();
+        return it->second.plan;
+    }
+
+    std::string AdjustmentStore::documentJsonFor(const std::string &file_path) const
+    {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        auto it = entries_.find(file_path);
+        return it == entries_.end() ? std::string() : it->second.row.document;
+    }
+
+    int AdjustmentStore::historyMaxEntries() const
+    {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        int n = config_ ? config_->getPropertyValue<int>("media.adjustments.history.maxEntries", 100) : 100;
+        return n < 2 ? 2 : n;
     }
 
     int AdjustmentStore::revisionFor(const std::string &file_path) const
@@ -193,7 +255,7 @@ namespace MediaDedup::Adjustments
             return 0;
         std::shared_lock<std::shared_mutex> lock(mutex_);
         auto it = entries_.find(file_path);
-        return it == entries_.end() ? 0 : it->second.chain.revision();
+        return it == entries_.end() ? 0 : it->second.plan.revision();
     }
 
     DisplayDims AdjustmentStore::displayDimsFor(const std::string &file_path, int base_width, int base_height) const
@@ -204,7 +266,7 @@ namespace MediaDedup::Adjustments
         auto it = entries_.find(file_path);
         if (it == entries_.end())
             return computeDisplayDimensions(base_width, base_height);
-        return it->second.chain.displayDims(base_width, base_height);
+        return it->second.plan.displayDims(base_width, base_height);
     }
 
     std::optional<ImageAdjustmentRow> AdjustmentStore::rowFor(const std::string &file_path) const
@@ -369,7 +431,7 @@ namespace MediaDedup::Adjustments
         MediaReadyBus::instance().publish(ev);
     }
 
-    void AdjustmentStore::storeEntry(const ImageAdjustmentRow &row, const RenderChain &chain, const DisplayDims &dims)
+    void AdjustmentStore::storeEntry(const ImageAdjustmentRow &row, const RenderPlan &plan, const DisplayDims &dims)
     {
         std::shared_ptr<DatabaseManager> db;
         {
@@ -381,11 +443,11 @@ namespace MediaDedup::Adjustments
         {
             std::unique_lock<std::shared_mutex> lock(mutex_);
             Entry &e = entries_[row.file_path];
-            e.chain = chain;
+            e.plan = plan;
             e.row = row;
         }
         invalidateRenders(row.file_path);
-        publish(row.file_path, chain.revision(), dims);
+        publish(row.file_path, plan.revision(), dims);
     }
 
     void AdjustmentStore::dropEntry(const std::string &file_path, const DisplayDims &base_dims)
@@ -466,7 +528,8 @@ namespace MediaDedup::Adjustments
     }
 
     AdjustmentStore::CommitResult AdjustmentStore::setDocument(const std::string &file_path,
-                                                               const std::string &document_json)
+                                                               const std::string &document_json,
+                                                               const std::string &step_label)
     {
         CommitResult result;
         std::shared_ptr<DatabaseManager> db;
@@ -502,13 +565,12 @@ namespace MediaDedup::Adjustments
             result.error = "the file's location is not registered";
             return result;
         }
-        Location loc{scanned->location_key, SidecarLayout::normalize(root)};
 
         AdjustmentDocument doc;
-        RenderChain chain;
+        RenderPlan plan;
         std::string error;
         if (!AdjustmentDocument::parse(document_json, doc, error) ||
-            !doc.compile(ToolRegistry::instance(), chain, error))
+            !doc.compile(ToolRegistry::instance(), plan, error))
         {
             result.outcome = Outcome::Invalid;
             result.error = error;
@@ -516,17 +578,126 @@ namespace MediaDedup::Adjustments
         }
         DisplayDims base = scanned->exif_resolution ? displayDimensionsFromExifResolution(*scanned->exif_resolution)
                                                     : DisplayDims{};
-        if (!chain.validate(toSize(base), error))
+        if (!plan.validate(toSize(base), error))
         {
             result.outcome = Outcome::Invalid;
             result.error = error;
             return result;
         }
 
-        SidecarLayout layout = layoutFor(loc.root);
-        std::string relative = layout.relativePath(file_path).value_or(scanned->relative_path);
+        // The server owns the history: the client sends the chain, the
+        // stored history is carried over and the step appended (docs §9.2).
+        std::optional<ImageAdjustmentRow> existing = rowFor(file_path);
+        doc.history = nlohmann::json();
+        if (existing && !existing->history.empty())
+        {
+            try
+            {
+                nlohmann::json h = nlohmann::json::parse(existing->history);
+                if (h.is_object())
+                    doc.history = h;
+            }
+            catch (...)
+            {
+            }
+        }
+        if (!existing && doc.isIdentity(ToolRegistry::instance()))
+        {
+            // Nothing was edited and nothing is stored: not an edit at all.
+            result.outcome = Outcome::Ok;
+            result.render_revision = 0;
+            result.display_dims = base;
+            return result;
+        }
+        doc.appendHistoryStep(step_label, historyMaxEntries());
+        return commitDocument(file_path, doc, plan, *scanned, base);
+    }
 
-        if (doc.isIdentity(ToolRegistry::instance()))
+    AdjustmentStore::CommitResult AdjustmentStore::stepHistory(const std::string &file_path, int delta,
+                                                               bool use_index, int index)
+    {
+        CommitResult result;
+        std::shared_ptr<DatabaseManager> db;
+        {
+            std::shared_lock<std::shared_mutex> lock(mutex_);
+            if (!initialized_)
+            {
+                result.error = "adjustment store is not initialized";
+                return result;
+            }
+            db = db_;
+        }
+        if (!enabled())
+        {
+            result.outcome = Outcome::Disabled;
+            result.error = "adjustments are disabled (media.adjustments.enabled)";
+            return result;
+        }
+        std::lock_guard<std::mutex> write_lock(writeMutex());
+
+        auto scanned = ScannedFilesOps::getByPath(*db, file_path);
+        std::optional<ImageAdjustmentRow> existing = rowFor(file_path);
+        if (!scanned || !existing)
+        {
+            result.outcome = Outcome::NotFound;
+            result.error = existing ? "file is not registered: " + file_path : "the file has no edit history";
+            return result;
+        }
+        AdjustmentDocument doc;
+        std::string error;
+        if (!parseRow(*existing, doc, error))
+        {
+            result.outcome = Outcome::Invalid;
+            result.error = error;
+            return result;
+        }
+        int target = use_index ? index : doc.historyIndex() + delta;
+        if (!doc.jumpHistory(target))
+        {
+            result.outcome = Outcome::OutOfRange;
+            result.error = "no history step " + std::to_string(target);
+            return result;
+        }
+        RenderPlan plan;
+        if (!doc.compile(ToolRegistry::instance(), plan, error))
+        {
+            result.outcome = Outcome::Invalid;
+            result.error = error;
+            return result;
+        }
+        DisplayDims base = scanned->exif_resolution ? displayDimensionsFromExifResolution(*scanned->exif_resolution)
+                                                    : DisplayDims{};
+        if (!plan.validate(toSize(base), error))
+        {
+            result.outcome = Outcome::Invalid;
+            result.error = error;
+            return result;
+        }
+        return commitDocument(file_path, doc, plan, *scanned, base);
+    }
+
+    AdjustmentStore::CommitResult AdjustmentStore::commitDocument(const std::string &file_path, AdjustmentDocument &doc,
+                                                                  const RenderPlan &plan, const ScannedFileRow &scanned,
+                                                                  const DisplayDims &base)
+    {
+        CommitResult result;
+        std::shared_ptr<DatabaseManager> db;
+        {
+            std::shared_lock<std::shared_mutex> lock(mutex_);
+            db = db_;
+        }
+        std::string root;
+        if (!db || !UserSettingsOps::get(*db, scanned.location_key, root))
+        {
+            result.outcome = Outcome::NotFound;
+            result.error = "the file's location is not registered";
+            return result;
+        }
+        Location loc{scanned.location_key, SidecarLayout::normalize(root)};
+        SidecarLayout layout = layoutFor(loc.root);
+        std::string relative = layout.relativePath(file_path).value_or(scanned.relative_path);
+
+        if (doc.isEmpty())
         {
             dropEntry(file_path, base);
             log().information("Adjustments removed for %s", file_path);
@@ -538,21 +709,23 @@ namespace MediaDedup::Adjustments
 
         doc.asset_name = fs::path(file_path).filename().string();
         doc.asset_relative_path = relative;
-        doc.asset_size_bytes = sizeBytesOf(*scanned, file_path);
+        doc.asset_size_bytes = sizeBytesOf(scanned, file_path);
         doc.updated_at = AdjustmentDocument::nowIso8601();
 
         ImageAdjustmentRow row;
         row.file_path = file_path;
         row.location_key = loc.key;
-        row.render_revision = chain.revision();
-        row.document = doc.serialize();
+        row.render_revision = plan.revision();
+        std::string sidecar_text;
+        splitDocument(doc, row.document, row.history, sidecar_text);
         row.updated_at = nowSeconds();
-        writeSidecar(row, row.document, loc, relative);
+        writeSidecar(row, sidecar_text, loc, relative);
 
-        DisplayDims dims = chain.displayDims(base.width, base.height);
-        storeEntry(row, chain, dims);
-        log().information("Adjustments committed for %s: revision %d, %dx%d, sidecar %s%s", file_path,
-                          row.render_revision, dims.width, dims.height, row.sidecar_path,
+        DisplayDims dims = plan.displayDims(base.width, base.height);
+        storeEntry(row, plan, dims);
+        log().information("Adjustments committed for %s: revision %d, %dx%d, %d nodes, history %d/%d, sidecar %s%s",
+                          file_path, row.render_revision, dims.width, dims.height, static_cast<int>(plan.size()),
+                          doc.historyIndex() + 1, doc.historyCount(), row.sidecar_path,
                           std::string(row.sidecar_mtime == 0 ? " (spooled)" : ""));
 
         result.outcome = Outcome::Ok;
@@ -560,6 +733,9 @@ namespace MediaDedup::Adjustments
         result.display_dims = dims;
         result.sidecar_spooled = row.sidecar_mtime == 0;
         result.sidecar_path = row.sidecar_path;
+        result.document_json = row.document;
+        result.history_index = doc.historyIndex();
+        result.history_steps = doc.historySteps();
         return result;
     }
 
@@ -592,33 +768,33 @@ namespace MediaDedup::Adjustments
             return false;
         }
         AdjustmentDocument doc;
-        RenderChain chain;
-        if (!AdjustmentDocument::parse(text, doc, error) || !doc.compile(ToolRegistry::instance(), chain, error))
+        RenderPlan plan;
+        if (!AdjustmentDocument::parse(text, doc, error) || !doc.compile(ToolRegistry::instance(), plan, error))
         {
             log().warning("Ignoring sidecar %s: %s", sidecar_path, error);
             return false;
         }
         DisplayDims base = baseDimsFor(asset_path);
-        if (!chain.validate(toSize(base), error))
+        if (!plan.validate(toSize(base), error))
         {
             log().warning("Ignoring sidecar %s: %s", sidecar_path, error);
             return false;
         }
 
-        if (doc.isIdentity(ToolRegistry::instance()))
+        if (doc.isEmpty())
         {
             if (existing)
                 dropEntry(asset_path, base);
             return existing.has_value();
         }
 
-        int revision = chain.revision();
+        int revision = plan.revision();
         std::shared_ptr<DatabaseManager> db;
         {
             std::shared_lock<std::shared_mutex> lock(mutex_);
             db = db_;
         }
-        if (existing && existing->render_revision == revision)
+        if (existing && existing->render_revision == revision && doc.historyCount() <= 0)
         {
             // Same content, different file identity (touched, moved, or
             // re-saved elsewhere): just remember where it is now.
@@ -638,11 +814,12 @@ namespace MediaDedup::Adjustments
         row.file_path = asset_path;
         row.location_key = loc.key;
         row.render_revision = revision;
-        row.document = doc.serialize();
+        std::string sidecar_text;
+        splitDocument(doc, row.document, row.history, sidecar_text);
         row.sidecar_path = sidecar_path;
         row.sidecar_mtime = mtime;
         row.updated_at = nowSeconds();
-        storeEntry(row, chain, chain.displayDims(base.width, base.height));
+        storeEntry(row, plan, plan.displayDims(base.width, base.height));
         log().information("Imported adjustments for %s from %s (revision %d)", asset_path, sidecar_path, revision);
         return true;
     }
@@ -732,7 +909,11 @@ namespace MediaDedup::Adjustments
 
             std::string text, error;
             if (spool.empty() || !SidecarStore::readText(spool, text, error))
-                text = row.document; // re-spool from the database document
+            {
+                // Re-spool from the database: chain and history together.
+                AdjustmentDocument doc;
+                text = parseRow(row, doc, error) ? doc.serialize() : row.document;
+            }
             if (!SidecarStore::writeAtomic(*dest, text, error))
             {
                 log().warning("Could not deliver sidecar for %s to %s: %s", row.file_path, *dest, error);
@@ -831,7 +1012,9 @@ namespace MediaDedup::Adjustments
                 }
                 else if (row.sidecar_mtime > 0)
                 {
-                    ok = SidecarStore::writeAtomic(*dest, row.document, error);
+                    AdjustmentDocument doc;
+                    std::string text = parseRow(row, doc, error) ? doc.serialize() : row.document;
+                    ok = SidecarStore::writeAtomic(*dest, text, error);
                 }
                 else
                 {

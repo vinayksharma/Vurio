@@ -1,9 +1,9 @@
 #pragma once
 
-// ADJ-1: Crop — a rectangle normalized to the rotated canvas, plus the UI's
-// aspect lock (stored so the panel restores it; it does not affect the
-// render).
-// Section: {"version":1,"left","top","width","height" in [0,1],
+// ADJ-1 / CHAIN-1: Crop — a rectangle normalized to the canvas the node
+// receives, plus the UI's aspect lock (stored so the panel restores it; it
+// does not affect the render).
+// Params: {"version":1,"left","top","width","height" in [0,1],
 //           "aspect": free|original|1:1|3:2|4:3|5:4|16:9|custom,
 //           "custom_aspect": w/h when aspect == custom}
 
@@ -35,11 +35,14 @@ namespace MediaDedup::Adjustments
         std::unique_ptr<ToolState> parse(const nlohmann::json &section, std::string &error) const override;
         nlohmann::json serialize(const ToolState &state) const override;
         bool isIdentity(const ToolState &state) const override;
-        // `input` here is the rotated canvas; the chain validates the
+        // `input` is the canvas the node receives; the plan validates the
         // crop-inside-content rule, which needs the rotation too (see
-        // RenderChain::validate).
+        // RenderPlan::validate).
         bool validate(const ToolState &state, Size input, std::string &error) const override;
-        void appendMagickOps(const ToolState &state, std::vector<std::string> &args) const override;
+        void apply(const ToolState &state, Frame &io, const RenderContext &ctx) const override;
+        // Pixel rectangle of the crop on a canvas: the same rounding the
+        // engine cuts with and displaySize() predicts.
+        static cv::Rect pixelRect(const NormRect &rect, int width, int height);
         Size transformSize(const ToolState &state, Size input) const override;
 
     private:

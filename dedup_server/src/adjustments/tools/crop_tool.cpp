@@ -1,8 +1,6 @@
 #include "adjustments/tools/crop_tool.hpp"
 #include <algorithm>
 #include <cmath>
-#include <iomanip>
-#include <sstream>
 
 namespace MediaDedup::Adjustments
 {
@@ -12,13 +10,6 @@ namespace MediaDedup::Adjustments
     namespace
     {
         const CropState &as(const ToolState &s) { return static_cast<const CropState &>(s); }
-
-        std::string fixed(double v, int decimals = 6)
-        {
-            std::ostringstream os;
-            os << std::fixed << std::setprecision(decimals) << v;
-            return os.str();
-        }
 
         bool readUnit(const nlohmann::json &section, const char *key, double &out, std::string &error)
         {
@@ -44,6 +35,10 @@ namespace MediaDedup::Adjustments
         descriptor_.id = kId;
         descriptor_.label = "Crop";
         descriptor_.version = kVersion;
+        descriptor_.category = ToolCategory::Geometry;
+        descriptor_.icon = "crop";
+        descriptor_.lane_allowed = false;
+        descriptor_.summary = "{aspect}";
 
         for (const char *id : {"left", "top", "width", "height"})
         {
@@ -181,19 +176,29 @@ namespace MediaDedup::Adjustments
         return true;
     }
 
-    void CropTool::appendMagickOps(const ToolState &state, std::vector<std::string> &args) const
+    cv::Rect CropTool::pixelRect(const NormRect &rect, int width, int height)
+    {
+        Size px = cropPixels({static_cast<double>(width), static_cast<double>(height)}, rect);
+        int w = static_cast<int>(px.width);
+        int h = static_cast<int>(px.height);
+        int x = static_cast<int>(std::lround(rect.left * width));
+        int y = static_cast<int>(std::lround(rect.top * height));
+        x = std::clamp(x, 0, std::max(0, width - 1));
+        y = std::clamp(y, 0, std::max(0, height - 1));
+        w = std::clamp(w, 1, width - x);
+        h = std::clamp(h, 1, height - y);
+        return cv::Rect(x, y, w, h);
+    }
+
+    void CropTool::apply(const ToolState &state, Frame &io, const RenderContext &) const
     {
         const CropState &s = as(state);
-        if (isIdentity(s))
+        if (isIdentity(s) || io.empty())
             return;
-        // Percent escapes keep the crop normalized: the same document renders
-        // the same from the original, a preview, or an embedded JPEG
-        // (ImageMagick 7.1 evaluates %[fx:] inside geometry arguments —
-        // measured 2026-10-03).
-        args.push_back("-crop");
-        args.push_back("%[fx:w*" + fixed(s.rect.width) + "]x%[fx:h*" + fixed(s.rect.height) + "]+%[fx:w*" +
-                       fixed(s.rect.left) + "]+%[fx:h*" + fixed(s.rect.top) + "]");
-        args.push_back("+repage");
+        cv::Rect roi = pixelRect(s.rect, io.width(), io.height());
+        // A copy, not a view: later nodes and the node cache expect a
+        // contiguous frame that owns its pixels.
+        io.pixels = io.pixels(roi).clone();
     }
 
     Size CropTool::transformSize(const ToolState &state, Size input) const

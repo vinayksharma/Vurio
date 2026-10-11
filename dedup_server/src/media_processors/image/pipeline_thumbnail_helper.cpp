@@ -64,8 +64,8 @@ namespace MediaDedup
 
             // ADJ-1: the file's edits; the pre-warm renders from the base
             // QHD preview when one exists, which is why crops are normalized.
-            const Adjustments::RenderChain chain = Adjustments::AdjustmentStore::instance().chainFor(file_path);
-            const int revision = chain.revision();
+            const Adjustments::RenderPlan plan = Adjustments::AdjustmentStore::instance().planFor(file_path);
+            const int revision = plan.revision();
 
             // Check if thumbnail already exists (if configured to skip existing)
             if (only_if_missing && thumbnailExists(file_path, size, db, revision))
@@ -89,7 +89,7 @@ namespace MediaDedup
             Magick::Blob blob;
             std::string source_for_generation = transcoded_path.empty() ? file_path : transcoded_path;
             int timeout_ms = config_manager.getPropertyValue<int>("media.image.transcoding.timeoutMs", ThumbnailGenerator::DEFAULT_TIMEOUT_MS);
-            if (!ThumbnailGenerator::generateToBlob(source_for_generation, size, blob, quality, timeout_ms, chain))
+            if (!ThumbnailGenerator::generateToBlob(source_for_generation, size, blob, quality, timeout_ms, plan))
             {
                 logger.warning("Failed to generate thumbnail for: %s", file_path);
                 return false;

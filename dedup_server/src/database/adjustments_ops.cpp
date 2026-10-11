@@ -24,6 +24,16 @@ namespace MediaDedup
     {
         if (!db.ensureTableExists("image_adjustments", SQL::kCreateImageAdjustmentsTable))
             return false;
+        // CHAIN-1 migration: the history column (the expected failure is
+        // "duplicate column" on every boot after the first).
+        try
+        {
+            auto lease = db.acquireSessionLease();
+            lease.get() << std::string(SQL::kAlterImageAdjustmentsAddHistory), now;
+        }
+        catch (const std::exception &)
+        {
+        }
         try
         {
             auto lease = db.acquireSessionLease();
@@ -45,10 +55,11 @@ namespace MediaDedup
             Session &sess = lease.get();
             Statement stmt(sess);
             std::string path = row.file_path, key = row.location_key, doc = row.document, sidecar = row.sidecar_path;
+            std::string history = row.history;
             int rev = row.render_revision;
             int64_t smtime = row.sidecar_mtime, updated = row.updated_at;
             stmt << std::string(SQL::kUpsertImageAdjustment),
-                use(path), use(key), use(rev), use(doc), use(sidecar), use(smtime), use(updated), now;
+                use(path), use(key), use(rev), use(doc), use(sidecar), use(smtime), use(updated), use(history), now;
             return true;
         }
         catch (const std::exception &e)
@@ -79,6 +90,7 @@ namespace MediaDedup
             row.sidecar_path = rs[4].convert<std::string>();
             row.sidecar_mtime = rs[5].convert<int64_t>();
             row.updated_at = rs[6].convert<int64_t>();
+            row.history = rs[7].isEmpty() ? std::string() : rs[7].convert<std::string>();
             return row;
         }
         catch (const std::exception &e)
@@ -106,6 +118,7 @@ namespace MediaDedup
                 row.sidecar_path = rs[4].convert<std::string>();
                 row.sidecar_mtime = rs[5].convert<int64_t>();
                 row.updated_at = rs[6].convert<int64_t>();
+                row.history = rs[7].isEmpty() ? std::string() : rs[7].convert<std::string>();
                 out.push_back(std::move(row));
                 more = rs.moveNext();
             }

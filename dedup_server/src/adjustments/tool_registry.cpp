@@ -12,6 +12,8 @@ namespace MediaDedup::Adjustments
 
     ToolRegistry::ToolRegistry()
     {
+        // Catalogue order: geometry first. CHAIN-2 appends the layer and
+        // raster tools here.
         owned_.push_back(std::make_unique<RotateTool>());
         owned_.push_back(std::make_unique<CropTool>());
         for (const auto &t : owned_)

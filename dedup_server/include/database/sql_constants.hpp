@@ -640,22 +640,28 @@ namespace MediaDedup
             "    document TEXT NOT NULL,\n"
             "    sidecar_path TEXT NOT NULL,\n"
             "    sidecar_mtime INTEGER NOT NULL DEFAULT 0,\n"
-            "    updated_at INTEGER NOT NULL\n"
+            "    updated_at INTEGER NOT NULL,\n"
+            "    history TEXT NOT NULL DEFAULT ''\n"
             ");";
+        // CHAIN-1: the photo's persisted undo history, kept out of `document`
+        // so the render hot path never parses it (docs/todo_tool_chain.md §4).
+        // Added by ALTER on databases created before CHAIN-1.
+        inline constexpr std::string_view kAlterImageAdjustmentsAddHistory =
+            "ALTER TABLE image_adjustments ADD COLUMN history TEXT NOT NULL DEFAULT ''";
         inline constexpr std::string_view kCreateImageAdjustmentsIndexLocation =
             "CREATE INDEX IF NOT EXISTS idx_image_adjustments_location ON image_adjustments(location_key);";
         inline constexpr std::string_view kUpsertImageAdjustment =
-            "INSERT INTO image_adjustments(file_path, location_key, render_revision, document, sidecar_path, sidecar_mtime, updated_at) "
-            "VALUES(?, ?, ?, ?, ?, ?, ?) "
+            "INSERT INTO image_adjustments(file_path, location_key, render_revision, document, sidecar_path, sidecar_mtime, updated_at, history) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(file_path) DO UPDATE SET location_key=excluded.location_key, render_revision=excluded.render_revision, "
             "document=excluded.document, sidecar_path=excluded.sidecar_path, sidecar_mtime=excluded.sidecar_mtime, "
-            "updated_at=excluded.updated_at";
+            "updated_at=excluded.updated_at, history=excluded.history";
         inline constexpr std::string_view kSelectImageAdjustmentColumns =
-            "SELECT file_path, location_key, render_revision, document, sidecar_path, sidecar_mtime, updated_at FROM image_adjustments";
+            "SELECT file_path, location_key, render_revision, document, sidecar_path, sidecar_mtime, updated_at, history FROM image_adjustments";
         inline constexpr std::string_view kSelectImageAdjustmentByPath =
-            "SELECT file_path, location_key, render_revision, document, sidecar_path, sidecar_mtime, updated_at FROM image_adjustments WHERE file_path=?";
+            "SELECT file_path, location_key, render_revision, document, sidecar_path, sidecar_mtime, updated_at, history FROM image_adjustments WHERE file_path=?";
         inline constexpr std::string_view kSelectImageAdjustmentsByLocation =
-            "SELECT file_path, location_key, render_revision, document, sidecar_path, sidecar_mtime, updated_at FROM image_adjustments WHERE location_key=? ORDER BY file_path";
+            "SELECT file_path, location_key, render_revision, document, sidecar_path, sidecar_mtime, updated_at, history FROM image_adjustments WHERE location_key=? ORDER BY file_path";
         // ADJ-1: every cached bucket and revision of one file, for the
         // invalidation that follows an edit (rows AND files go).
         inline constexpr std::string_view kSelectThumbnailsForPath =

@@ -1,55 +1,87 @@
 #pragma once
 
-// ADJ-1 (docs §4): the per-file adjustment document — the sidecar's body and
-// the `image_adjustments.document` column. Known tool sections are parsed by
-// their tools; unknown ones are preserved verbatim so a newer build's edits
-// survive an older build's save.
+// CHAIN-1 (docs/todo_tool_chain.md §4): the per-file adjustment document —
+// the sidecar's body and the `image_adjustments.document` column. Format 2:
+// an ordered `chain` of nodes (id, tool, version, enabled, params, and for
+// layer/raster nodes blend + strength), plus the photo's persisted undo
+// history. Known tools are parsed by their tools; unknown nodes and unknown
+// keys are preserved verbatim so a newer build's edits survive an older
+// build's save. Format-1 documents (a `tools` map) load as the fixed
+// [rotate, crop] order they rendered in and are rewritten as format 2 on the
+// next commit.
 
-#include "adjustments/render_chain.hpp"
+#include "adjustments/render_plan.hpp"
 #include "adjustments/tool_registry.hpp"
 #include <cstdint>
 #include <nlohmann/json.hpp>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace MediaDedup::Adjustments
 {
     struct AdjustmentDocument
     {
         static constexpr const char *kFormat = "vurio-adjustments";
-        static constexpr int kVersion = 1;
+        static constexpr int kVersion = 2;
+        static constexpr const char *kSplitTool = "split";
 
         int version = kVersion;
         std::string asset_name;           // "DSC04624.JPG"
         std::string asset_relative_path;  // under the registered location
         int64_t asset_size_bytes = 0;
         std::string updated_at;           // ISO-8601 UTC, informational
-        nlohmann::json tools = nlohmann::json::object(); // id -> section
+        nlohmann::json chain = nlohmann::json::array();   // nodes, the user's order
+        nlohmann::json history = nlohmann::json();        // {"index": n, "steps": [{at, label, chain}]} or null
 
-        // Parse the sidecar/column text. Refuses a newer format version.
+        // Parse the sidecar/column text (format 1 or 2). Refuses a newer
+        // format version, a malformed chain, and duplicate node ids. Nodes
+        // without an id get one.
         static bool parse(const std::string &text, AdjustmentDocument &out, std::string &error);
 
         // Full document text as written to the sidecar (pretty, sorted keys).
         std::string serialize() const;
+        // The chain alone, as the client sends and receives it.
+        std::string serializeChain() const;
 
-        // The canonical form of the tools map: sorted keys, numbers rounded
-        // to 6 decimals, no whitespace. Identical documents on any machine
-        // hash the same (docs §3.4).
-        std::string canonicalTools() const;
+        // The canonical form of the EFFECTIVE chain (disabled nodes dropped;
+        // ids, names and defaults omitted; sorted keys; numbers rounded to 6
+        // decimals; no whitespace). Identical documents on any machine hash
+        // the same (docs §3.5).
+        std::string canonicalChain() const;
+        static std::string canonicalOf(const nlohmann::json &chain);
 
-        // Derived render revision: FNV-1a of canonicalTools() folded to a
-        // positive int31; 0 iff the document is identity.
+        // Derived render revision: FNV-1a of canonicalChain() folded to a
+        // positive int31; 0 iff the effective chain renders nothing.
         int revision() const;
 
-        // Compile the known, non-identity tool sections into a chain in
-        // registry order. Fails on a malformed or out-of-range section.
-        bool compile(const ToolRegistry &registry, RenderChain &out, std::string &error) const;
+        // Compile the enabled, known, non-identity nodes into a plan in
+        // document order. Fails on a malformed or out-of-range node, a
+        // blend/strength on a geometry node, or a split (CHAIN-4).
+        bool compile(const ToolRegistry &registry, RenderPlan &out, std::string &error) const;
 
-        // Identity: no unknown sections and every known section is identity.
+        // Identity: every enabled node is a known tool at its identity.
         bool isIdentity(const ToolRegistry &registry) const;
+        bool hasNodes() const { return chain.is_array() && !chain.empty(); }
+        bool hasHistory() const;
+        // Nothing to keep: no nodes and no history → the row and sidecar go.
+        bool isEmpty() const { return !hasNodes() && !hasHistory(); }
 
-        // Replace one tool's section from a state (re-serialized by the tool).
-        void setTool(const AdjustmentTool &tool, const ToolState &state);
-        void removeTool(const std::string &tool_id);
+        // Node ids: 8 base32 characters, unique within the document.
+        static std::string newNodeId();
+        void ensureNodeIds();
+
+        // ---- history (docs §4, §9.2) -------------------------------------
+        int historyIndex() const;
+        int historyCount() const;
+        std::vector<std::pair<std::string, std::string>> historySteps() const; // (label, at)
+        // Snapshot the current chain as a new step after the current index
+        // (the redo tail is dropped), capped at `max_entries` (oldest go).
+        // A document without history first records an "Original" step with
+        // an empty chain so the pristine state can be returned to.
+        void appendHistoryStep(const std::string &label, int max_entries);
+        // Make step `index` the current chain. False when out of range.
+        bool jumpHistory(int index);
 
         static uint32_t fnv1a32(const std::string &text);
         static std::string nowIso8601();

@@ -81,8 +81,8 @@ namespace MediaDedup
 
         // ADJ-1: the file's edits, resolved once; the revision keys the row,
         // the filename and the lookup, the chain shapes the pixels.
-        const Adjustments::RenderChain chain = Adjustments::AdjustmentStore::instance().chainFor(source_path);
-        const int revision = chain.revision();
+        const Adjustments::RenderPlan plan = Adjustments::AdjustmentStore::instance().planFor(source_path);
+        const int revision = plan.revision();
 
         try
         {
@@ -114,7 +114,7 @@ namespace MediaDedup
 
             Magick::Blob blob;
             if (!ThumbnailGenerator::generateToBlob(source_path, size, blob, quality,
-                                                    ThumbnailGenerator::DEFAULT_TIMEOUT_MS, chain))
+                                                    ThumbnailGenerator::DEFAULT_TIMEOUT_MS, plan))
             {
                 logger.error("ThumbnailGenerator::generateToBlob failed for: %s (check ThumbnailGenerator logs for details)", source_path);
                 return fail(GenerationFailure::Decode);

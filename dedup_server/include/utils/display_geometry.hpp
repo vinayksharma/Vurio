@@ -67,7 +67,7 @@ namespace MediaDedup
     // this is where the op list is folded in — and ThumbnailGenerator must
     // apply the same chain, or the client reserves a tile the render does not
     // fill (docs §3.1). Unknown base (either <= 0) stays unknown.
-    inline DisplayDims computeDisplayDimensions(int base_width, int base_height /*, later: const RenderChain& */)
+    inline DisplayDims computeDisplayDimensions(int base_width, int base_height /* the identity plan; AdjustmentStore::displayDimsFor folds a file's RenderPlan in */)
     {
         if (base_width <= 0 || base_height <= 0)
             return {};

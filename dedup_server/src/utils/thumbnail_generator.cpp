@@ -1,4 +1,5 @@
 #include "utils/thumbnail_generator.hpp"
+#include "adjustments/chain_engine.hpp"
 #include "media_processors/image/backends/tiff_validator.hpp"
 #include "media_processors/image/backends/raw_file_detector.hpp"
 #include "media_processors/image/backends/raw_demosaic_renderer.hpp"
@@ -12,9 +13,8 @@
 #include <fstream>
 #include <vector>
 #include <Magick++.h>
-#if defined(HAVE_OPENCV)
-#include <opencv2/opencv.hpp>
-#endif
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 
 namespace MediaDedup
 {
@@ -215,6 +215,38 @@ namespace MediaDedup
         }
 #endif
 
+        /// CHAIN-1: decode a JPEG/PNG base no larger than the engine needs.
+        /// libjpeg's scaled decode (1/8, 1/4, 1/2) is tried coarse to fine;
+        /// the geometry is normalised, so the ratio of rendered size to base
+        /// size is the same at every level and tells whether a level still
+        /// reaches `target` on the output's longest side. `target` <= 0 is
+        /// native: the full decode.
+        cv::Mat decodeBaseForTarget(const std::string &path, const Adjustments::RenderPlan &plan, int target)
+        {
+            if (target > 0)
+            {
+                for (int flag : {cv::IMREAD_REDUCED_COLOR_8, cv::IMREAD_REDUCED_COLOR_4, cv::IMREAD_REDUCED_COLOR_2})
+                {
+                    cv::Mat img;
+                    try
+                    {
+                        img = cv::imread(path, flag);
+                    }
+                    catch (...)
+                    {
+                        img = cv::Mat();
+                    }
+                    if (img.empty())
+                        break;
+                    Adjustments::Size base{static_cast<double>(img.cols), static_cast<double>(img.rows)};
+                    Adjustments::Size out = plan.displaySize(base);
+                    if (std::max(out.width, out.height) >= target)
+                        return img;
+                }
+            }
+            return Adjustments::ChainEngine::decodeBgr8(path, 0);
+        }
+
         /// Shared back half: run magick with a hard timeout to produce the
         /// output JPEG.
         bool runMagick(const std::string &read_path,
@@ -223,11 +255,10 @@ namespace MediaDedup
                        int quality,
                        int timeout_ms,
                        const std::string &source_for_log,
-                       Poco::Logger &logger,
-                       const Adjustments::RenderChain &chain)
+                       Poco::Logger &logger)
         {
             std::vector<std::string> args =
-                ThumbnailGenerator::buildMagickArgs(read_path, output_path, size, quality, chain);
+                ThumbnailGenerator::buildMagickArgs(read_path, output_path, size, quality);
 
             SubprocessResult result = runProcessWithTimeout(ToolPaths::magickPath(), args, timeout_ms,
                                                             ToolPaths::magickResourceEnv());
@@ -253,8 +284,7 @@ namespace MediaDedup
     std::vector<std::string> ThumbnailGenerator::buildMagickArgs(const std::string &read_path,
                                                                  const std::string &output_path,
                                                                  int size,
-                                                                 int quality,
-                                                                 const Adjustments::RenderChain &chain)
+                                                                 int quality)
     {
         std::vector<std::string> args;
         args.push_back(read_path);
@@ -266,9 +296,6 @@ namespace MediaDedup
         args.push_back("-depth");
         args.push_back("8");
         args.push_back("-auto-orient");
-        // ADJ-1: the user's edits compose on the auto-oriented base and run
-        // before the resize (THUMB-1 §4.4). Empty for an un-edited file.
-        chain.appendMagickOps(args);
         args.push_back("-colorspace");
         args.push_back("sRGB");
         if (size > 0)
@@ -290,7 +317,7 @@ namespace MediaDedup
                                              Magick::Blob &blob,
                                              int quality,
                                              int timeout_ms,
-                                             const Adjustments::RenderChain &chain)
+                                             const Adjustments::RenderPlan &plan)
     {
         try
         {
@@ -317,23 +344,20 @@ namespace MediaDedup
             {
                 if (RawDemosaicRenderer::renderToBlob(input.demosaic_source, quality, timeout_ms, blob))
                 {
-                    if (chain.isIdentity())
+                    if (plan.isIdentity())
                         return true;
-                    // ADJ-1: the demosaic bypasses the magick operator chain,
-                    // so an edited RAW at native resolution takes one more
-                    // pass: developed JPEG in, edited JPEG out (docs §5.3).
-                    demosaic_cleanup.path = makeTempFilePath("adj_raw", ".jpg");
-                    std::ofstream developed(demosaic_cleanup.path, std::ios::binary);
-                    developed.write(static_cast<const char *>(blob.data()), static_cast<std::streamsize>(blob.length()));
-                    developed.close();
-                    if (developed.fail())
+                    // CHAIN-1: the developed RAW is the engine's base.
+                    std::vector<uint8_t> developed(static_cast<const uint8_t *>(blob.data()),
+                                                   static_cast<const uint8_t *>(blob.data()) + blob.length());
+                    cv::Mat base = Adjustments::ChainEngine::decodeBgr8(developed);
+                    std::vector<uint8_t> jpeg;
+                    if (!Adjustments::ChainEngine::renderToJpeg(base, plan, size, quality, jpeg))
                     {
-                        logger.error("Failed to stage the developed RAW for the edit chain: %s", source_path);
+                        logger.error("Edit chain failed on the developed RAW: %s", source_path);
                         return false;
                     }
-                    input.read_path = "jpeg:" + demosaic_cleanup.path;
-                    input.demosaic_source.clear();
-                    blob = Magick::Blob();
+                    blob.update(jpeg.data(), jpeg.size());
+                    return true;
                 }
                 else
                 {
@@ -348,13 +372,64 @@ namespace MediaDedup
 
             const std::string &read_path = input.read_path;
 
+            // CHAIN-1 (docs/todo_tool_chain.md §5.3): an edited file is
+            // rendered by the engine on a decoded base. JPEG/PNG decode
+            // in-process (with libjpeg's scaled decode when the working size
+            // allows); everything else is decoded once by magick to a temp
+            // PNG at native resolution, which is the one subprocess the
+            // exotic formats always cost.
+            if (!plan.isIdentity())
+            {
+                cv::Mat base;
+                std::string plain_path = read_path;
+                bool opencv_ok_format = false;
+                if (plain_path.rfind("jpeg:", 0) == 0)
+                {
+                    plain_path = plain_path.substr(5);
+                    opencv_ok_format = true;
+                }
+                else if (plain_path.rfind("png:", 0) == 0)
+                {
+                    plain_path = plain_path.substr(4);
+                    opencv_ok_format = true;
+                }
+                if (opencv_ok_format)
+                    base = decodeBaseForTarget(plain_path, plan, size);
+                if (base.empty())
+                {
+                    TempFileCleanup base_cleanup;
+                    base_cleanup.path = makeTempFilePath("adj_base", ".png");
+                    std::vector<std::string> args = {read_path, "-strip", "-depth", "8", "-auto-orient",
+                                                     "-colorspace", "sRGB", "png:" + base_cleanup.path};
+                    SubprocessResult result = runProcessWithTimeout(ToolPaths::magickPath(), args, timeout_ms,
+                                                                    ToolPaths::magickResourceEnv());
+                    if (result.timed_out || result.exit_code != 0)
+                    {
+                        logger.error("magick base decode failed for the edit chain: %s", source_path);
+                        return false;
+                    }
+                    base = Adjustments::ChainEngine::decodeBgr8(base_cleanup.path);
+                }
+                if (base.empty())
+                {
+                    logger.error("Base image could not be decoded for the edit chain: %s", source_path);
+                    return false;
+                }
+                std::vector<uint8_t> jpeg;
+                if (!Adjustments::ChainEngine::renderToJpeg(base, plan, size, quality, jpeg))
+                {
+                    logger.error("Edit chain render failed for: %s", source_path);
+                    return false;
+                }
+                blob.update(jpeg.data(), jpeg.size());
+                logger.debug("Generated edited render in-process: %s (%zu bytes)", source_path, jpeg.size());
+                return true;
+            }
+
 #if defined(HAVE_OPENCV)
             // MP-1: JPEG/PNG inputs (previews, RAW-embedded JPEGs, ordinary
             // photos — the overwhelming majority) encode in-process; magick
             // remains the fallback and the path for TIFF/HEIC/exotics.
-            // ADJ-1: the shortcut knows no edit operators, so an edited file
-            // always takes the magick path below (docs §5.4).
-            if (chain.isIdentity())
             {
                 std::string plain_path = read_path;
                 bool opencv_ok_format = false;
@@ -376,7 +451,7 @@ namespace MediaDedup
             TempFileCleanup out_cleanup;
             out_cleanup.path = makeTempFilePath("thumb_out", ".jpg");
 
-            if (!runMagick(read_path, out_cleanup.path, size, quality, timeout_ms, source_path, logger, chain))
+            if (!runMagick(read_path, out_cleanup.path, size, quality, timeout_ms, source_path, logger))
                 return false;
 
             std::ifstream file(out_cleanup.path, std::ios::binary | std::ios::ate);
