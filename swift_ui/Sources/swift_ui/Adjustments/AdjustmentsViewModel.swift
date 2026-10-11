@@ -34,6 +34,12 @@ final class AdjustmentsViewModel: ObservableObject {
 
     @Published private(set) var descriptors: [ToolDescriptor] = []
     @Published private(set) var blendModes: [String] = []
+    /// CHAIN-4: the lane mask sources the server describes.
+    @Published private(set) var maskSources: [ToolDescriptor] = []
+    /// CHAIN-4 view modes (docs §9.2): a lane alone over grey, a lane's
+    /// coverage tinted red. View-only, never committed.
+    @Published private(set) var soloLaneID: String?
+    @Published private(set) var overlayLaneID: String?
     @Published private(set) var document = ChainDocument()
     @Published var selectedNodeID: String?
     @Published private(set) var filePath: String?
@@ -77,8 +83,10 @@ final class AdjustmentsViewModel: ObservableObject {
     static let maxWidth: CGFloat = 440
     static let railWidth: CGFloat = 28
 
-    /// Node id → its tool UI (known tools only).
+    /// Node id → its tool UI (known tools only), trunk and lane steps alike.
     private var tools: [String: any AdjustmentToolUI] = [:]
+    /// Lane id → the generic editor of its primary mask component.
+    private var maskTools: [String: GenericToolUI] = [:]
     private var commitTask: Task<Void, Never>?
     private var loadGeneration = 0
     private var descriptorsLoaded = false
@@ -112,10 +120,20 @@ final class AdjustmentsViewModel: ObservableObject {
     var canUndo: Bool { historyIndex > 0 }
     var canRedo: Bool { historyIndex >= 0 && historyIndex < historySteps.count - 1 }
 
-    /// The chain renders nothing: every enabled known node is identity and
-    /// there is no unknown node.
+    /// The chain renders nothing: every enabled known node is identity,
+    /// every lane is quiet, and there is no unknown node.
     var isIdentityChain: Bool {
         for node in document.nodes where node.enabled {
+            if node.isSplit {
+                for lane in node.lanes ?? [] where lane.enabled && lane.strength > 0 {
+                    if lane.blend != "normal" { return false }
+                    for step in lane.steps where step.enabled {
+                        guard let tool = tools[step.id] else { return false }
+                        if !tool.isIdentity { return false }
+                    }
+                }
+                continue
+            }
             guard let tool = tools[node.id] else { return false }
             if !tool.isIdentity { return false }
         }
@@ -123,13 +141,35 @@ final class AdjustmentsViewModel: ObservableObject {
     }
 
     /// The viewer draws the server's frame instead of the base bitmap.
-    var usesServerFrame: Bool { filePath != nil && (!isIdentityChain || isCropEditing || showBefore) }
+    var usesServerFrame: Bool {
+        filePath != nil && (!isIdentityChain || isCropEditing || showBefore || soloLaneID != nil || overlayLaneID != nil)
+    }
 
     func tool(for nodeID: String) -> (any AdjustmentToolUI)? { tools[nodeID] }
     func rotateTool(for nodeID: String) -> RotateToolUI? { tools[nodeID] as? RotateToolUI }
     func cropTool(for nodeID: String) -> CropToolUI? { tools[nodeID] as? CropToolUI }
     func descriptor(for toolID: String) -> ToolDescriptor? { descriptors.first { $0.id == toolID } }
-    var selectedNode: ChainNode? { selectedNodeID.flatMap { id in document.nodes.first { $0.id == id } } }
+    func maskSource(_ id: String) -> ToolDescriptor? { maskSources.first { $0.id == id } }
+    var selectedNode: ChainNode? { selectedNodeID.flatMap(document.node) }
+    var selectedLane: Lane? { selectedNodeID.flatMap(document.lane)?.lane }
+    func maskTool(for laneID: String) -> GenericToolUI? { maskTools[laneID] }
+
+    /// The lane an "add" lands in: the selected lane, or the lane that
+    /// holds the selected step.
+    var targetLaneID: String? {
+        guard let sel = selectedNodeID else { return nil }
+        switch document.locate(sel) {
+        case .lane: return sel
+        case .laneStep(let splitID, let li, _): return document.node(splitID)?.lanes?[li].id
+        default: return nil
+        }
+    }
+
+    static let lanePalette: [Color] = [
+        Color(hex: "#5AA9E6"), Color(hex: "#F4A261"), Color(hex: "#8AC926"), Color(hex: "#C77DFF"),
+        Color(hex: "#FFCA3A"), Color(hex: "#FF6B6B"),
+    ]
+    static func laneColor(_ index: Int) -> Color { lanePalette[((index % lanePalette.count) + lanePalette.count) % lanePalette.count] }
 
     /// The Rotate node the control bar and the ruler act on: the selected
     /// one, else the first in the chain (docs §9.2).
@@ -183,7 +223,7 @@ final class AdjustmentsViewModel: ObservableObject {
         guard size.width > 0, size.height > 0 else { return size }
         for node in document.nodes {
             if node.id == nodeID { break }
-            guard node.enabled, let tool = tools[node.id] else { continue }
+            guard node.enabled, !node.isSplit, let tool = tools[node.id] else { continue }
             if let r = tool as? RotateToolUI {
                 size = AdjustmentGeometry.rotatedCanvas(size, quarterTurns: r.quarterTurns, angle: r.angle)
             } else if let c = tool as? CropToolUI, !c.rect.isFull {
@@ -218,6 +258,7 @@ final class AdjustmentsViewModel: ObservableObject {
             let response = try await client.describeTools(Vurio_Dedup_Empty())
             descriptors = response.tools.map(ToolDescriptor.init)
             blendModes = response.blendModes
+            maskSources = response.maskSources.map(ToolDescriptor.init)
             descriptorsLoaded = true
             rebuildTools()
         } catch {
@@ -244,7 +285,10 @@ final class AdjustmentsViewModel: ObservableObject {
         historyIndex = -1
         historySteps = []
         tools = [:]
+        maskTools = [:]
         toolSubscriptions = [:]
+        soloLaneID = nil
+        overlayLaneID = nil
         renderRevision = 0
         isSpooled = false
         sidecarPath = ""
@@ -276,7 +320,9 @@ final class AdjustmentsViewModel: ObservableObject {
             document = ChainDocument()
         }
         rebuildTools()
-        if let sel = selectedNodeID, document.index(of: sel) == nil { selectedNodeID = nil }
+        if let sel = selectedNodeID, document.locate(sel) == nil { selectedNodeID = nil }
+        if let solo = soloLaneID, document.lane(solo) == nil { soloLaneID = nil }
+        if let ov = overlayLaneID, document.lane(ov) == nil { overlayLaneID = nil }
         requestPreview()
     }
 
@@ -297,7 +343,25 @@ final class AdjustmentsViewModel: ObservableObject {
         guard descriptorsLoaded else { return }
         var next: [String: any AdjustmentToolUI] = [:]
         var subs: [String: AnyCancellable] = [:]
+        // Lane masks: one generic editor per lane for its primary component.
+        var nextMasks: [String: GenericToolUI] = [:]
         for node in document.nodes {
+            for lane in node.lanes ?? [] {
+                guard let source = maskSource(lane.mask.primary.source) else { continue }
+                let editor: GenericToolUI
+                if let existing = maskTools[lane.id], existing.descriptor.id == source.id {
+                    editor = existing
+                } else {
+                    editor = GenericToolUI(descriptor: source)
+                }
+                editor.load(params: lane.mask.primary.params)
+                nextMasks[lane.id] = editor
+                subs["mask:" + lane.id] = toolSubscriptions["mask:" + lane.id] ?? editor.changes
+                    .sink { [weak self] _ in self?.objectWillChange.send() }
+            }
+        }
+        maskTools = nextMasks
+        for node in document.allNodes where !node.isSplit {
             guard let descriptor = descriptor(for: node.tool) else { continue }
             let tool: any AdjustmentToolUI
             if let existing = tools[node.id] {
@@ -322,12 +386,22 @@ final class AdjustmentsViewModel: ObservableObject {
         }
     }
 
-    /// The document with every known node's params refreshed from its tool.
+    /// The document with every known node's params (and every lane's mask
+    /// params) refreshed from its editor.
     func currentDocument() -> ChainDocument {
         var doc = document
-        for i in doc.nodes.indices {
-            if let tool = tools[doc.nodes[i].id], let params = tool.encode() {
-                doc.nodes[i].params = params
+        for node in doc.allNodes where !node.isSplit {
+            if let tool = tools[node.id], let params = tool.encode() {
+                doc.update(node.id) { $0.params = params }
+            }
+        }
+        for (laneID, editor) in maskTools {
+            if let params = editor.encode() {
+                doc.updateLane(laneID) { lane in
+                    var primary = lane.mask.primary
+                    primary.params = params
+                    lane.mask.primary = primary
+                }
             }
         }
         return doc
@@ -335,24 +409,172 @@ final class AdjustmentsViewModel: ObservableObject {
 
     // MARK: - Chain structure (each operation commits as one history step)
 
-    /// Add a tool after the selection (or at the end) and select it.
+    /// Add a tool after the selection (or at the end) and select it. With a
+    /// lane or a lane step selected the tool goes into that lane; geometry
+    /// is refused there (docs §3.2).
     @discardableResult
     func addTool(_ toolID: String) -> ChainNode? {
+        if let laneID = targetLaneID {
+            guard let descriptor = descriptor(for: toolID) else { return nil }
+            if descriptor.category == .geometry {
+                MessageCenter.shared.post("\(descriptor.label) changes the canvas and cannot go in a lane")
+                return nil
+            }
+            let index: Int
+            if let sel = selectedNodeID, case .laneStep(_, _, let si) = document.locate(sel) {
+                index = si + 1
+            } else {
+                index = document.lane(laneID)?.lane.steps.count ?? 0
+            }
+            return insertTool(toolID, inLane: laneID, at: index)
+        }
         let index = selectedNodeID.flatMap(document.index(of:)).map { $0 + 1 } ?? document.nodes.count
         return insertTool(toolID, at: index)
+    }
+
+    private func freshNode(_ descriptor: ToolDescriptor) -> ChainNode {
+        if descriptor.id == ChainNode.splitTool { return ChainNode.split() }
+        var node = ChainNode(tool: descriptor.id, version: descriptor.version)
+        node.params = Self.makeTool(descriptor).encode() ?? [:]
+        return node
     }
 
     @discardableResult
     func insertTool(_ toolID: String, at index: Int) -> ChainNode? {
         guard let descriptor = descriptor(for: toolID) else { return nil }
         document = currentDocument()
-        var node = ChainNode(tool: toolID, version: descriptor.version)
-        node.params = Self.makeTool(descriptor).encode() ?? [:]
+        let node = freshNode(descriptor)
         document.insert(node, at: index)
         rebuildTools()
         selectedNodeID = node.id
         chainChanged(label: "Add \(descriptor.label)")
         return node
+    }
+
+    @discardableResult
+    func insertTool(_ toolID: String, inLane laneID: String, at index: Int) -> ChainNode? {
+        guard let descriptor = descriptor(for: toolID), descriptor.category != .geometry else { return nil }
+        document = currentDocument()
+        let node = freshNode(descriptor)
+        document.insert(node, inLane: laneID, at: index)
+        rebuildTools()
+        selectedNodeID = node.id
+        chainChanged(label: "Add \(descriptor.label)")
+        return node
+    }
+
+    // MARK: - Lanes (CHAIN-4, docs §9.2)
+
+    func addLane(toSplit splitID: String) {
+        document = currentDocument()
+        guard let split = document.node(splitID), split.isSplit else { return }
+        let lane = Lane(name: "Lane \((split.lanes?.count ?? 0) + 1)")
+        document.update(splitID) { $0.lanes?.append(lane) }
+        rebuildTools()
+        selectedNodeID = lane.id
+        chainChanged(label: "Add lane")
+    }
+
+    func removeLane(_ laneID: String) {
+        guard document.lane(laneID) != nil else { return }
+        document = currentDocument()
+        document.removeAny(id: laneID)
+        if soloLaneID == laneID { soloLaneID = nil }
+        if overlayLaneID == laneID { overlayLaneID = nil }
+        if selectedNodeID == laneID { selectedNodeID = nil }
+        rebuildTools()
+        chainChanged(label: "Remove lane")
+    }
+
+    func renameLane(_ laneID: String, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, document.lane(laneID)?.lane.name != trimmed else { return }
+        document.updateLane(laneID) { $0.name = trimmed }
+        chainChanged(label: "Rename lane")
+    }
+
+    func setLaneEnabled(_ laneID: String, _ enabled: Bool) {
+        guard let found = document.lane(laneID), found.lane.enabled != enabled else { return }
+        document.updateLane(laneID) { $0.enabled = enabled }
+        chainChanged(label: enabled ? "Enable lane" : "Bypass lane")
+    }
+
+    func setLaneMaskSource(_ laneID: String, _ sourceID: String) {
+        guard let source = maskSource(sourceID), document.lane(laneID)?.lane.mask.primary.source != sourceID else { return }
+        document = currentDocument()
+        let defaults = GenericToolUI(descriptor: source).encode() ?? [:]
+        document.updateLane(laneID) { $0.mask.primary = MaskComponent(source: sourceID, params: defaults) }
+        rebuildTools()
+        chainChanged(label: "Mask: \(source.label)")
+    }
+
+    /// The lane's mask editor changed (a slider or a pin on the image).
+    func laneMaskChanged(_ laneID: String, label: String, interactive: Bool) {
+        paramChanged(nodeID: laneID, label: label, interactive: interactive)
+    }
+
+    func setLaneInvert(_ laneID: String, _ invert: Bool) {
+        document.updateLane(laneID) { $0.mask.invert = invert }
+        chainChanged(label: invert ? "Invert mask" : "Mask not inverted")
+    }
+
+    func setLaneFeather(_ laneID: String, _ value: Double, interactive: Bool) {
+        document.updateLane(laneID) { $0.mask.feather = min(max(value, 0), 0.5) }
+        paramChanged(nodeID: laneID, label: String(format: "Feather %.0f%%", value * 100), interactive: interactive)
+    }
+
+    func setLaneBlend(_ laneID: String, _ mode: String) {
+        guard document.lane(laneID)?.lane.blend != mode else { return }
+        document.updateLane(laneID) { $0.blend = mode }
+        chainChanged(label: "Merge \(GenericToolUI.readable(mode))")
+    }
+
+    func setLaneStrength(_ laneID: String, _ value: Double, interactive: Bool) {
+        document.updateLane(laneID) { $0.strength = min(max(value, 0), 1) }
+        paramChanged(nodeID: laneID, label: String(format: "Merge strength %.0f%%", value * 100), interactive: interactive)
+    }
+
+    func setSolo(_ laneID: String?) {
+        guard soloLaneID != laneID else { return }
+        soloLaneID = laneID
+        requestPreview()
+    }
+
+    func setOverlay(_ laneID: String?) {
+        guard overlayLaneID != laneID else { return }
+        overlayLaneID = laneID
+        requestPreview()
+    }
+
+    /// Rows of the chain list reordered by drag: only a move inside one
+    /// container (the trunk, a split's lanes, a lane's steps) is honoured.
+    func moveRows(fromOffsets source: IndexSet, toOffset destination: Int) {
+        let rows = document.rows
+        guard let from = source.first, from < rows.count else { return }
+        let movedID = rows[from].id
+        let container: ChainLocation? = document.locate(movedID)
+        // The row that will follow the moved one after the move.
+        let targetIndex = destination > from ? destination - 1 : destination
+        var delta = 0
+        var i = from
+        while i != targetIndex {
+            let step = targetIndex > i ? 1 : -1
+            i += step
+            guard i >= 0, i < rows.count else { break }
+            if sameContainer(container, document.locate(rows[i].id)) { delta += step }
+        }
+        guard delta != 0 else { return }
+        document.moveAny(id: movedID, by: delta)
+        chainChanged(label: "Reorder")
+    }
+
+    private func sameContainer(_ a: ChainLocation?, _ b: ChainLocation?) -> Bool {
+        switch (a, b) {
+        case (.trunk, .trunk): return true
+        case (.lane(let s1, _), .lane(let s2, _)): return s1 == s2
+        case (.laneStep(let s1, let l1, _), .laneStep(let s2, let l2, _)): return s1 == s2 && l1 == l2
+        default: return false
+        }
     }
 
     // MARK: - Generic parameters, blend and strength (CHAIN-2)
@@ -373,15 +595,15 @@ final class AdjustmentsViewModel: ObservableObject {
     }
 
     func setBlend(_ mode: String, nodeID: String) {
-        guard let i = document.index(of: nodeID), document.nodes[i].blend ?? "normal" != mode else { return }
-        document.nodes[i].blend = mode == "normal" ? nil : mode
+        guard let node = document.node(nodeID), node.blend ?? "normal" != mode else { return }
+        document.update(nodeID) { $0.blend = mode == "normal" ? nil : mode }
         chainChanged(label: "Blend \(GenericToolUI.readable(mode))")
     }
 
     func setStrength(_ value: Double, nodeID: String, interactive: Bool) {
-        guard let i = document.index(of: nodeID) else { return }
+        guard document.node(nodeID) != nil else { return }
         let clamped = min(max(value, 0), 1)
-        document.nodes[i].strength = abs(clamped - 1) < 1e-9 ? nil : clamped
+        document.update(nodeID) { $0.strength = abs(clamped - 1) < 1e-9 ? nil : clamped }
         paramChanged(nodeID: nodeID, label: String(format: "Strength %.0f%%", clamped * 100), interactive: interactive)
     }
 
@@ -392,10 +614,11 @@ final class AdjustmentsViewModel: ObservableObject {
     }
 
     func removeNode(_ id: String) {
-        guard let node = document.nodes.first(where: { $0.id == id }) else { return }
+        if document.lane(id) != nil { removeLane(id); return }
+        guard let node = document.node(id) else { return }
         if editingCropID == id { exitCropEditing() }
         document = currentDocument()
-        document.remove(id: id)
+        document.removeAny(id: id)
         rebuildTools()
         if selectedNodeID == id { selectedNodeID = nil }
         chainChanged(label: "Remove \(descriptor(for: node.tool)?.label ?? node.tool)")
@@ -403,10 +626,22 @@ final class AdjustmentsViewModel: ObservableObject {
 
     func duplicateNode(_ id: String) {
         document = currentDocument()
-        guard let copy = document.duplicate(id: id) else { return }
-        // The copy carries the original's live params.
-        if let tool = tools[id], let params = tool.encode(), let i = document.index(of: copy.id) {
-            document.nodes[i].params = params
+        guard let original = document.node(id) else { return }
+        var copy = original
+        copy.id = ChainNode.newID()
+        if var lanes = copy.lanes {
+            for li in lanes.indices {
+                lanes[li].id = ChainNode.newID()
+                for si in lanes[li].steps.indices { lanes[li].steps[si].id = ChainNode.newID() }
+            }
+            copy.lanes = lanes
+        }
+        switch document.locate(id) {
+        case .trunk(let i): document.insert(copy, at: i + 1)
+        case .laneStep(let splitID, let li, let si):
+            guard let laneID = document.node(splitID)?.lanes?[li].id else { return }
+            document.insert(copy, inLane: laneID, at: si + 1)
+        default: return
         }
         rebuildTools()
         selectedNodeID = copy.id
@@ -419,28 +654,30 @@ final class AdjustmentsViewModel: ObservableObject {
     }
 
     func moveNode(_ id: String, by delta: Int) {
-        guard let from = document.index(of: id) else { return }
-        document.move(id: id, by: delta)
-        guard document.index(of: id) != from else { return }
+        let before = document.rows.map(\.id)
+        document.moveAny(id: id, by: delta)
+        guard document.rows.map(\.id) != before else { return }
         chainChanged(label: "Reorder")
     }
 
     func setNodeEnabled(_ id: String, _ enabled: Bool) {
-        guard let node = document.nodes.first(where: { $0.id == id }), node.enabled != enabled else { return }
-        document.setEnabled(enabled, id: id)
+        if document.lane(id) != nil { setLaneEnabled(id, enabled); return }
+        guard let node = document.node(id), node.enabled != enabled else { return }
+        document.update(id) { $0.enabled = enabled }
         if !enabled, editingCropID == id { exitCropEditing() }
         let label = descriptor(for: node.tool)?.label ?? node.tool
         chainChanged(label: enabled ? "Enable \(label)" : "Bypass \(label)")
     }
 
     func toggleNodeEnabled(_ id: String) {
-        guard let node = document.nodes.first(where: { $0.id == id }) else { return }
+        if let found = document.lane(id) { setLaneEnabled(id, !found.lane.enabled); return }
+        guard let node = document.node(id) else { return }
         setNodeEnabled(id, !node.enabled)
     }
 
     /// Reset a node's parameters to their defaults (the node stays).
     func resetNode(_ id: String) {
-        guard let node = document.nodes.first(where: { $0.id == id }), let tool = tools[id] else { return }
+        guard let node = document.node(id), let tool = tools[id] else { return }
         if tool is RotateToolUI {
             resetRotate(id)
         } else if let c = tool as? CropToolUI {
@@ -844,6 +1081,8 @@ final class AdjustmentsViewModel: ObservableObject {
                                       maxSide: isInteracting ? PreviewRenderer.dragMaxSide : PreviewRenderer.restMaxSide)
         if isCropEditing, let id = editingCropID { req.truncateAtNodeID = id }
         req.before = showBefore
+        req.soloLaneID = soloLaneID ?? ""
+        req.overlayLaneID = overlayLaneID ?? ""
         preview.request(req)
     }
 

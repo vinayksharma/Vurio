@@ -20,6 +20,7 @@ final class GenericToolUI: AdjustmentToolUI {
     }
 
     var isIdentity: Bool {
+        if descriptor.activeAtDefaults { return false }
         for p in descriptor.params {
             switch p.kind {
             case .enum, .text:

@@ -110,7 +110,11 @@ struct AdjustmentsPanel: View {
                 ChainListView(model: model, hasImage: hasImage)
                     .frame(maxHeight: .infinity)
                 Divider().background(Theme.border)
-                inspector
+                // The inspector scrolls when a tool has more controls than
+                // the panel has height (Monochrome, a lane).
+                ScrollView(.vertical) { inspector }
+                    .frame(maxHeight: 420)
+                    .fixedSize(horizontal: false, vertical: true)
                 Divider().background(Theme.border)
                 CatalogueView(model: model, hasImage: hasImage)
             }
@@ -295,7 +299,11 @@ struct AdjustmentsPanel: View {
     @ViewBuilder
     private var inspector: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let node = model.selectedNode {
+            if let lane = model.selectedLane {
+                LaneInspector(model: model, lane: lane, hasImage: hasImage)
+            } else if let node = model.selectedNode, node.isSplit {
+                SplitInspector(model: model, node: node, hasImage: hasImage)
+            } else if let node = model.selectedNode {
                 let descriptor = model.descriptor(for: node.tool)
                 HStack(spacing: 8) {
                     Image(systemName: descriptor?.icon ?? "questionmark")
@@ -391,35 +399,81 @@ private struct ChainListView: View {
                 insertDropped(providers, at: 0)
             }
         } else {
+            // CHAIN-4 (docs §9.2): the tree flattened — a split's lanes
+            // indented under it, a lane's steps under the lane, each lane
+            // with its own rail colour.
+            let rows = model.document.rows
             List(selection: Binding(get: { model.selectedNodeID },
                                     set: { model.selectedNodeID = $0 })) {
-                ForEach(model.document.nodes) { node in
-                    ChainRow(model: model, node: node)
-                        .tag(node.id)
-                        .listRowInsets(EdgeInsets(top: 2, leading: 6, bottom: 2, trailing: 6))
-                        .listRowBackground(Color.clear)
-                        .contextMenu {
-                            Button(node.enabled ? "Bypass" : "Enable") { model.toggleNodeEnabled(node.id) }
-                            Button("Duplicate") { model.duplicateNode(node.id) }
-                            Button("Reset") { model.resetNode(node.id) }
-                            Divider()
-                            Button("Move up") { model.moveNode(node.id, by: -1) }
-                                .disabled(model.document.index(of: node.id) == 0)
-                            Button("Move down") { model.moveNode(node.id, by: 1) }
-                                .disabled(model.document.index(of: node.id) == model.document.nodes.count - 1)
-                            Divider()
-                            Button("Remove", role: .destructive) { model.removeNode(node.id) }
+                ForEach(rows) { row in
+                    Group {
+                        switch row.kind {
+                        case .node(let node):
+                            ChainRow(model: model, node: node, depth: row.depth, rail: rail(for: row))
+                                .contextMenu { nodeMenu(node) }
+                        case .lane(let lane, let splitID, let laneIndex):
+                            LaneRow(model: model, lane: lane, splitID: splitID, laneIndex: laneIndex)
+                                .contextMenu { laneMenu(lane, splitID: splitID) }
                         }
+                    }
+                    .tag(row.id)
+                    .listRowInsets(EdgeInsets(top: 2, leading: 6, bottom: 2, trailing: 6))
+                    .listRowBackground(Color.clear)
                 }
-                .onMove { source, destination in model.moveNodes(fromOffsets: source, toOffset: destination) }
+                .onMove { source, destination in model.moveRows(fromOffsets: source, toOffset: destination) }
                 .onInsert(of: [.plainText]) { index, providers in
-                    _ = insertDropped(providers, at: index)
+                    _ = insertDropped(providers, at: trunkIndex(forRow: index, rows: rows))
                 }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .environment(\.defaultMinListRowHeight, 28)
         }
+    }
+
+    @ViewBuilder
+    private func nodeMenu(_ node: ChainNode) -> some View {
+        Button(node.enabled ? "Bypass" : "Enable") { model.toggleNodeEnabled(node.id) }
+        Button("Duplicate") { model.duplicateNode(node.id) }
+        if !node.isSplit { Button("Reset") { model.resetNode(node.id) } }
+        if node.isSplit { Button("Add lane") { model.addLane(toSplit: node.id) } }
+        Divider()
+        Button("Move up") { model.moveNode(node.id, by: -1) }
+        Button("Move down") { model.moveNode(node.id, by: 1) }
+        Divider()
+        Button("Remove", role: .destructive) { model.removeNode(node.id) }
+    }
+
+    @ViewBuilder
+    private func laneMenu(_ lane: Lane, splitID: String) -> some View {
+        Button(lane.enabled ? "Bypass lane" : "Enable lane") { model.setLaneEnabled(lane.id, !lane.enabled) }
+        Button(model.soloLaneID == lane.id ? "Unsolo" : "Solo") {
+            model.setSolo(model.soloLaneID == lane.id ? nil : lane.id)
+        }
+        Button(model.overlayLaneID == lane.id ? "Hide mask" : "Show mask") {
+            model.setOverlay(model.overlayLaneID == lane.id ? nil : lane.id)
+        }
+        Divider()
+        Button("Move up") { model.moveNode(lane.id, by: -1) }
+        Button("Move down") { model.moveNode(lane.id, by: 1) }
+        Divider()
+        Button("Remove lane", role: .destructive) { model.removeLane(lane.id) }
+    }
+
+    /// The lane a trunk-level row belongs to (its colour), nil on the trunk.
+    private func rail(for row: ChainRowItem) -> Color? {
+        guard case .laneStep(_, let li, _) = model.document.locate(row.id) else { return nil }
+        return AdjustmentsViewModel.laneColor(li)
+    }
+
+    /// A drop at a row index lands on the trunk, before the trunk node that
+    /// row belongs to (or at the end).
+    private func trunkIndex(forRow index: Int, rows: [ChainRowItem]) -> Int {
+        guard index < rows.count else { return model.document.nodes.count }
+        var i = index
+        while i < rows.count, rows[i].depth > 0 { i += 1 }
+        guard i < rows.count else { return model.document.nodes.count }
+        return model.document.index(of: rows[i].id) ?? model.document.nodes.count
     }
 
     /// A catalogue chip is dragged as "vurio-tool:<id>"; a recipe as
@@ -443,12 +497,20 @@ private struct ChainListView: View {
 private struct ChainRow: View {
     @ObservedObject var model: AdjustmentsViewModel
     let node: ChainNode
+    var depth: Int = 0
+    var rail: Color? = nil
 
     var body: some View {
         let descriptor = model.descriptor(for: node.tool)
         let tool = model.tool(for: node.id)
         let selected = model.selectedNodeID == node.id
         HStack(spacing: 6) {
+            if depth > 0 {
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(rail ?? Theme.border)
+                    .frame(width: 2)
+                    .padding(.leading, CGFloat(depth - 1) * 10)
+            }
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 9))
                 .foregroundColor(Theme.textSecondary.opacity(0.6))
@@ -467,7 +529,7 @@ private struct ChainRow: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(node.enabled ? Theme.textPrimary : Theme.textSecondary)
             Spacer(minLength: 4)
-            Text(tool?.summary() ?? (descriptor == nil ? "unknown tool" : ""))
+            Text(node.isSplit ? splitSummary : (tool?.summary() ?? (descriptor == nil ? "unknown tool" : "")))
                 .font(.custom("Menlo", size: 9))
                 .foregroundColor(Theme.textSecondary)
                 .lineLimit(1)
@@ -498,6 +560,297 @@ private struct ChainRow: View {
         if let blend = node.blend, blend != "normal" { parts.append(GenericToolUI.readable(blend)) }
         if let s = node.strength { parts.append(String(format: "%.0f%%", s * 100)) }
         return parts.joined(separator: " · ")
+    }
+
+    private var splitSummary: String {
+        let n = node.lanes?.count ?? 0
+        return n == 1 ? "1 lane" : "\(n) lanes"
+    }
+}
+
+/// CHAIN-4 (docs §9.2): a lane under its split — rail colour, name, mask
+/// summary, merge summary, solo and mask-overlay toggles.
+private struct LaneRow: View {
+    @ObservedObject var model: AdjustmentsViewModel
+    let lane: Lane
+    let splitID: String
+    let laneIndex: Int
+
+    var body: some View {
+        let selected = model.selectedNodeID == lane.id
+        let colour = AdjustmentsViewModel.laneColor(laneIndex)
+        let solo = model.soloLaneID == lane.id
+        let overlay = model.overlayLaneID == lane.id
+        HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 1).fill(colour).frame(width: 3)
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 9))
+                .foregroundColor(Theme.textSecondary.opacity(0.6))
+            Button(action: { model.setLaneEnabled(lane.id, !lane.enabled) }) {
+                Image(systemName: lane.enabled ? "circle.fill" : "circle")
+                    .font(.system(size: 8))
+                    .foregroundColor(lane.enabled ? colour : Theme.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .help(lane.enabled ? "Bypass lane" : "Enable lane")
+            Image(systemName: model.maskSource(lane.mask.primary.source)?.icon ?? "square.dashed")
+                .font(.system(size: 11))
+                .foregroundColor(lane.enabled ? Theme.textPrimary : Theme.textSecondary)
+                .frame(width: 16)
+            Text(lane.name)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(lane.enabled ? Theme.textPrimary : Theme.textSecondary)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Text(summary)
+                .font(.custom("Menlo", size: 9))
+                .foregroundColor(Theme.textSecondary)
+                .lineLimit(1)
+            Button(action: { model.setSolo(solo ? nil : lane.id) }) {
+                Text("S")
+                    .font(.system(size: 9, weight: .bold))
+                    .frame(width: 14, height: 14)
+                    .background(RoundedRectangle(cornerRadius: 3).fill(solo ? Theme.warning : Color.clear))
+                    .foregroundColor(solo ? Theme.background : Theme.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .help("Solo: this lane alone over grey")
+            Button(action: { model.setOverlay(overlay ? nil : lane.id) }) {
+                Text("M")
+                    .font(.system(size: 9, weight: .bold))
+                    .frame(width: 14, height: 14)
+                    .background(RoundedRectangle(cornerRadius: 3).fill(overlay ? Color(hex: "#E05A5A") : Color.clear))
+                    .foregroundColor(overlay ? Color.white : Theme.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .help("Show the mask as a red tint")
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Theme.surfaceElevated : Theme.surface))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(selected ? Theme.borderActive : Theme.border, lineWidth: 1))
+        .opacity(lane.enabled ? 1 : 0.6)
+        .contentShape(Rectangle())
+        .onTapGesture { model.selectedNodeID = lane.id }
+    }
+
+    private var summary: String {
+        var parts: [String] = []
+        let source = model.maskSource(lane.mask.primary.source)?.summary ?? lane.mask.primary.source
+        parts.append(lane.mask.invert ? "¬" + source : source)
+        if lane.blend != "normal" { parts.append(GenericToolUI.readable(lane.blend)) }
+        if lane.strength < 0.9999 { parts.append(String(format: "%.0f%%", lane.strength * 100)) }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// CHAIN-4: a split node selected — its lanes and an "add lane" button.
+private struct SplitInspector: View {
+    @ObservedObject var model: AdjustmentsViewModel
+    let node: ChainNode
+    let hasImage: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: model.descriptor(for: node.tool)?.icon ?? "arrow.triangle.branch")
+                    .foregroundColor(node.enabled ? Theme.textAccent : Theme.textSecondary)
+                Text("Split")
+                    .font(.system(size: 11, weight: .semibold))
+                    .textCase(.uppercase)
+                    .foregroundColor(Theme.textPrimary)
+                Spacer()
+                Button(action: { model.toggleNodeEnabled(node.id) }) {
+                    Image(systemName: node.enabled ? "eye" : "eye.slash")
+                }
+                .buttonStyle(.vurioIcon)
+                .help(node.enabled ? "Bypass (⌘E)" : "Enable (⌘E)")
+                Button(action: { model.removeNode(node.id) }) {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.vurioIcon)
+                .help("Remove the split and its lanes (⌘⌫)")
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            Text("Each lane takes the picture as it enters the split, applies its steps under its mask, and merges back in order. Tools added while a lane is selected go into that lane.")
+                .font(.caption)
+                .foregroundColor(Theme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 12)
+            Button(action: { model.addLane(toSplit: node.id) }) {
+                Label("Add lane", systemImage: "plus")
+            }
+            .vurioButtonStyle()
+            .disabled(!hasImage)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
+        }
+    }
+}
+
+/// CHAIN-4 (docs §9.2): a lane selected — name, mask source and its
+/// parameters, invert, feather, merge blend and strength, solo and
+/// mask-overlay toggles.
+private struct LaneInspector: View {
+    @ObservedObject var model: AdjustmentsViewModel
+    let lane: Lane
+    let hasImage: Bool
+    @State private var nameDraft = ""
+    @State private var editingName = false
+
+    var body: some View {
+        let colour = model.document.lane(lane.id).map { AdjustmentsViewModel.laneColor($0.laneIndex) } ?? Theme.textAccent
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                RoundedRectangle(cornerRadius: 2).fill(colour).frame(width: 4, height: 14)
+                if editingName {
+                    TextField("Lane name", text: $nameDraft, onCommit: {
+                        model.renameLane(lane.id, to: nameDraft)
+                        editingName = false
+                    })
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11))
+                    .frame(maxWidth: 160)
+                } else {
+                    Text(lane.name)
+                        .font(.system(size: 11, weight: .semibold))
+                        .textCase(.uppercase)
+                        .foregroundColor(Theme.textPrimary)
+                        .lineLimit(1)
+                        .onTapGesture(count: 2) { nameDraft = lane.name; editingName = true }
+                        .help("Double-click to rename")
+                }
+                Spacer()
+                Button(action: { model.setLaneEnabled(lane.id, !lane.enabled) }) {
+                    Image(systemName: lane.enabled ? "eye" : "eye.slash")
+                }
+                .buttonStyle(.vurioIcon)
+                .help(lane.enabled ? "Bypass lane (⌘E)" : "Enable lane (⌘E)")
+                Button(action: { model.removeLane(lane.id) }) {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.vurioIcon)
+                .help("Remove the lane (⌘⌫)")
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Mask").font(.system(size: 11)).foregroundColor(Theme.textSecondary)
+                    Spacer()
+                    Picker("", selection: Binding(get: { lane.mask.primary.source },
+                                                  set: { model.setLaneMaskSource(lane.id, $0) })) {
+                        ForEach(model.maskSources, id: \.id) { source in
+                            Label(source.label, systemImage: source.icon).tag(source.id)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: 170)
+                    .disabled(!hasImage)
+                }
+                if let editor = model.maskTool(for: lane.id) {
+                    LaneMaskInspector(model: model, tool: editor, laneID: lane.id, hasImage: hasImage)
+                }
+                HStack {
+                    Toggle("Invert", isOn: Binding(get: { lane.mask.invert },
+                                                    set: { model.setLaneInvert(lane.id, $0) }))
+                        .toggleStyle(.checkbox)
+                        .font(.system(size: 11))
+                        .disabled(!hasImage)
+                    Spacer()
+                    Button(action: { model.setOverlay(model.overlayLaneID == lane.id ? nil : lane.id) }) {
+                        Label("Mask", systemImage: "eye.circle")
+                    }
+                    .vurioButtonStyle()
+                    .background(RoundedRectangle(cornerRadius: 4)
+                        .fill(model.overlayLaneID == lane.id ? Color(hex: "#E05A5A").opacity(0.35) : Color.clear))
+                    .help("Tint the lane's coverage red on the picture")
+                    Button(action: { model.setSolo(model.soloLaneID == lane.id ? nil : lane.id) }) {
+                        Label("Solo", systemImage: "headphones")
+                    }
+                    .vurioButtonStyle()
+                    .background(RoundedRectangle(cornerRadius: 4)
+                        .fill(model.soloLaneID == lane.id ? Theme.warning.opacity(0.35) : Color.clear))
+                    .help("Show this lane alone over grey")
+                }
+                ParamSlider(label: "Feather",
+                            value: Binding(get: { lane.mask.feather },
+                                           set: { model.setLaneFeather(lane.id, $0, interactive: true) }),
+                            range: 0...0.5, step: 0.005,
+                            onEditing: { editing in
+                                if !editing { model.setLaneFeather(lane.id, lane.mask.feather, interactive: false) }
+                            })
+                    .disabled(!hasImage)
+            }
+            .padding(8)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Theme.background.opacity(0.5)))
+            .padding(.horizontal, 12)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Merge").font(.system(size: 11)).foregroundColor(Theme.textSecondary)
+                    Spacer()
+                    Picker("", selection: Binding(get: { lane.blend },
+                                                  set: { model.setLaneBlend(lane.id, $0) })) {
+                        ForEach(model.blendModes, id: \.self) { mode in
+                            Text(GenericToolUI.readable(mode)).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: 150)
+                    .disabled(!hasImage)
+                }
+                ParamSlider(label: "Strength",
+                            value: Binding(get: { lane.strength },
+                                           set: { model.setLaneStrength(lane.id, $0, interactive: true) }),
+                            range: 0...1, step: 0.01,
+                            onEditing: { editing in
+                                if !editing { model.setLaneStrength(lane.id, lane.strength, interactive: false) }
+                            })
+                    .disabled(!hasImage)
+            }
+            .padding(8)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Theme.background.opacity(0.5)))
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
+        }
+        .disabled(!lane.enabled)
+        .opacity(lane.enabled ? 1 : 0.6)
+    }
+}
+
+/// The lane mask's parameters, built from the mask source's schema the
+/// way GenericInspector builds a tool's. Linear and radial masks also
+/// have pins on the picture (ViewerView).
+private struct LaneMaskInspector: View {
+    @ObservedObject var model: AdjustmentsViewModel
+    @ObservedObject var tool: GenericToolUI
+    let laneID: String
+    let hasImage: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(tool.descriptor.params, id: \.id) { p in
+                if p.kind == .number {
+                    ParamSlider(label: p.label, value: Binding(get: { tool.numbers[p.id] ?? p.defaultValue },
+                                                               set: { tool.numbers[p.id] = $0 }),
+                                range: p.min...p.max, step: p.step,
+                                onEditing: { editing in
+                                    model.laneMaskChanged(laneID, label: "Mask \(p.label)", interactive: editing)
+                                })
+                        .disabled(!hasImage)
+                }
+            }
+            if tool.descriptor.id == "linear" || tool.descriptor.id == "radial" {
+                Text("Drag the pins on the picture to place the gradient.")
+                    .font(.caption2)
+                    .foregroundColor(Theme.textSecondary)
+            }
+        }
     }
 }
 
@@ -585,7 +938,7 @@ private struct CatalogueView: View {
                                 .foregroundColor(Theme.textSecondary)
                                 .frame(width: 56, alignment: .leading)
                                 .padding(.top, 4)
-                            WrappingChips(tools: tools, hasImage: hasImage) { tool in model.addTool(tool.id) }
+                            WrappingChips(tools: tools, hasImage: hasImage, intoLane: model.targetLaneID != nil) { tool in model.addTool(tool.id) }
                         }
                     }
                     // CHAIN-3: recipes sit in the catalogue like tools —
@@ -629,11 +982,15 @@ private struct CatalogueView: View {
 private struct WrappingChips: View {
     let tools: [ToolDescriptor]
     let hasImage: Bool
+    /// CHAIN-4: a lane is the add target, so tools the server does not
+    /// allow in lanes (geometry) are greyed out.
+    var intoLane: Bool = false
     let onAdd: (ToolDescriptor) -> Void
 
     var body: some View {
         FlowLayout(spacing: 4) {
             ForEach(tools, id: \.id) { tool in
+                let refused = intoLane && !tool.laneAllowed
                 Button(action: { onAdd(tool) }) {
                     HStack(spacing: 4) {
                         Image(systemName: tool.icon)
@@ -644,8 +1001,10 @@ private struct WrappingChips: View {
                     .padding(.vertical, 3)
                 }
                 .vurioButtonStyle(tint: Theme.textPrimary)
-                .disabled(!hasImage)
-                .help("Add \(tool.label) after the selection (drag to place it)")
+                .disabled(!hasImage || refused)
+                .help(refused ? "\(tool.label) changes the canvas and cannot go in a lane"
+                              : intoLane ? "Add \(tool.label) to the selected lane (drag to place it on the trunk)"
+                                         : "Add \(tool.label) after the selection (drag to place it)")
                 .onDrag { NSItemProvider(object: NSString(string: CatalogueView.dragPrefix + tool.id)) }
             }
         }

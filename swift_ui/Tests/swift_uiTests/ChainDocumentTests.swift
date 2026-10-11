@@ -90,3 +90,59 @@ import Foundation
     #expect(ChainDocument.parseChainText("not json") == nil)
     #expect(ChainDocument.parseChainText("{\"other\":1}") == nil)
 }
+
+@Test func lanesRoundTripAndTreeOperations() {
+    let text = """
+    {"format":"vurio-adjustments","version":2,"chain":[
+      {"id":"exposure1","tool":"exposure","params":{"version":1,"ev":0.5}},
+      {"id":"split001","tool":"split","lanes":[
+        {"id":"lane0001","name":"Sky","mask":{"components":[{"source":"radial","params":{"cx":0.5,"cy":0.3}}],"invert":true,"feather":0.05},
+         "steps":[{"id":"step0001","tool":"saturation","params":{"version":1,"amount":-0.2}}],
+         "merge":{"blend":"multiply","strength":0.6}},
+        {"id":"lane0002","name":"Faces","steps":[]}
+      ]}
+    ]}
+    """
+    var doc = ChainDocument.parse(text)!
+    #expect(doc.nodes.count == 2)
+    let split = doc.nodes[1]
+    #expect(split.isSplit)
+    #expect(split.lanes?.count == 2)
+    let sky = split.lanes![0]
+    #expect(sky.mask.primary.source == "radial")
+    #expect(sky.mask.invert)
+    #expect(sky.mask.feather == 0.05)
+    #expect(sky.blend == "multiply" && sky.strength == 0.6)
+    #expect(sky.steps.first?.tool == "saturation")
+    #expect(split.lanes![1].mask.primary.source == "full", "a lane without a mask covers the whole image")
+
+    let back = ChainDocument.parse(doc.serialize())!
+    #expect(back == doc)
+
+    #expect(doc.rows.map(\.id) == ["exposure1", "split001", "lane0001", "step0001", "lane0002"])
+    #expect(doc.rows.map(\.depth) == [0, 0, 1, 2, 1])
+    #expect(doc.locate("step0001") == .laneStep(splitID: "split001", laneIndex: 0, index: 0))
+    #expect(doc.locate("lane0002") == .lane(splitID: "split001", laneIndex: 1))
+    #expect(doc.node("step0001")?.tool == "saturation")
+    #expect(doc.lane("lane0001")?.laneIndex == 0)
+
+    doc.insert(ChainNode(id: "gamma001", tool: "gamma"), inLane: "lane0001", at: 0)
+    #expect(doc.lane("lane0001")?.lane.steps.map(\.id) == ["gamma001", "step0001"])
+    doc.moveAny(id: "step0001", by: -1)
+    #expect(doc.lane("lane0001")?.lane.steps.map(\.id) == ["step0001", "gamma001"])
+    doc.moveAny(id: "lane0002", by: -1)
+    #expect(doc.nodes[1].lanes?.map(\.id) == ["lane0002", "lane0001"])
+    doc.update("step0001") { $0.enabled = false }
+    #expect(doc.node("step0001")?.enabled == false)
+    doc.updateLane("lane0001") { $0.name = "Heaven" }
+    #expect(doc.lane("lane0001")?.lane.name == "Heaven")
+    doc.removeAny(id: "gamma001")
+    #expect(doc.lane("lane0001")?.lane.steps.count == 1)
+    doc.removeAny(id: "lane0002")
+    #expect(doc.nodes[1].lanes?.count == 1)
+    doc.removeAny(id: "split001")
+    #expect(doc.nodes.count == 1)
+
+    let fresh = ChainNode.split()
+    #expect(fresh.isSplit && fresh.lanes?.count == 1 && fresh.lanes?.first?.mask.primary.source == "full")
+}

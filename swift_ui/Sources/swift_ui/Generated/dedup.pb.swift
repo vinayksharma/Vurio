@@ -1720,6 +1720,12 @@ struct Vurio_Dedup_RenderPreviewRequest: Sendable {
   /// before/after: render the base image
   var before: Bool = false
 
+  /// CHAIN-4: view modes for lanes — the lane alone over mid-grey, or the
+  /// lane's coverage tinted red on the normal render.
+  var soloLaneID: String = String()
+
+  var overlayLaneID: String = String()
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -1751,6 +1757,10 @@ struct Vurio_Dedup_PreviewFrame: Sendable {
   var displayWidth: Int32 = 0
 
   var displayHeight: Int32 = 0
+
+  /// CHAIN-4 (docs §3.4): normalised base coordinates → frame pixels, as a
+  /// 2×3 affine (a b c / d e f), for mask pins drawn over the frame.
+  var baseToCanvas: [Double] = []
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1852,6 +1862,9 @@ struct Vurio_Dedup_ToolDescriptor: Sendable {
   /// chain-row text template, "{param:fmt}" placeholders
   var summary: String = String()
 
+  /// the tool changes pixels even with every param at its default (Monochrome)
+  var activeAtDefaults: Bool = false
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -1870,6 +1883,9 @@ struct Vurio_Dedup_ToolDescriptors: Sendable {
 
   /// CHAIN-1: the blend names a layer node may carry
   var blendModes: [String] = []
+
+  /// CHAIN-4: the lane mask sources (category "mask")
+  var maskSources: [Vurio_Dedup_ToolDescriptor] = []
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -5483,7 +5499,7 @@ extension Vurio_Dedup_ImportRecipesResult: SwiftProtobuf.Message, SwiftProtobuf.
 
 extension Vurio_Dedup_RenderPreviewRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".RenderPreviewRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{3}document_json\0\u{3}max_side\0\u{1}quality\0\u{1}seq\0\u{3}truncate_at_node_id\0\u{1}before\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{3}document_json\0\u{3}max_side\0\u{1}quality\0\u{1}seq\0\u{3}truncate_at_node_id\0\u{1}before\0\u{3}solo_lane_id\0\u{3}overlay_lane_id\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -5498,6 +5514,8 @@ extension Vurio_Dedup_RenderPreviewRequest: SwiftProtobuf.Message, SwiftProtobuf
       case 5: try { try decoder.decodeSingularInt64Field(value: &self.seq) }()
       case 6: try { try decoder.decodeSingularStringField(value: &self.truncateAtNodeID) }()
       case 7: try { try decoder.decodeSingularBoolField(value: &self.before) }()
+      case 8: try { try decoder.decodeSingularStringField(value: &self.soloLaneID) }()
+      case 9: try { try decoder.decodeSingularStringField(value: &self.overlayLaneID) }()
       default: break
       }
     }
@@ -5525,6 +5543,12 @@ extension Vurio_Dedup_RenderPreviewRequest: SwiftProtobuf.Message, SwiftProtobuf
     if self.before != false {
       try visitor.visitSingularBoolField(value: self.before, fieldNumber: 7)
     }
+    if !self.soloLaneID.isEmpty {
+      try visitor.visitSingularStringField(value: self.soloLaneID, fieldNumber: 8)
+    }
+    if !self.overlayLaneID.isEmpty {
+      try visitor.visitSingularStringField(value: self.overlayLaneID, fieldNumber: 9)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -5536,6 +5560,8 @@ extension Vurio_Dedup_RenderPreviewRequest: SwiftProtobuf.Message, SwiftProtobuf
     if lhs.seq != rhs.seq {return false}
     if lhs.truncateAtNodeID != rhs.truncateAtNodeID {return false}
     if lhs.before != rhs.before {return false}
+    if lhs.soloLaneID != rhs.soloLaneID {return false}
+    if lhs.overlayLaneID != rhs.overlayLaneID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -5543,7 +5569,7 @@ extension Vurio_Dedup_RenderPreviewRequest: SwiftProtobuf.Message, SwiftProtobuf
 
 extension Vurio_Dedup_PreviewFrame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".PreviewFrame"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}jpeg\0\u{1}width\0\u{1}height\0\u{1}seq\0\u{3}render_ms\0\u{3}base_width\0\u{3}base_height\0\u{3}display_width\0\u{3}display_height\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}jpeg\0\u{1}width\0\u{1}height\0\u{1}seq\0\u{3}render_ms\0\u{3}base_width\0\u{3}base_height\0\u{3}display_width\0\u{3}display_height\0\u{3}base_to_canvas\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -5560,6 +5586,7 @@ extension Vurio_Dedup_PreviewFrame: SwiftProtobuf.Message, SwiftProtobuf._Messag
       case 7: try { try decoder.decodeSingularInt32Field(value: &self.baseHeight) }()
       case 8: try { try decoder.decodeSingularInt32Field(value: &self.displayWidth) }()
       case 9: try { try decoder.decodeSingularInt32Field(value: &self.displayHeight) }()
+      case 10: try { try decoder.decodeRepeatedDoubleField(value: &self.baseToCanvas) }()
       default: break
       }
     }
@@ -5593,6 +5620,9 @@ extension Vurio_Dedup_PreviewFrame: SwiftProtobuf.Message, SwiftProtobuf._Messag
     if self.displayHeight != 0 {
       try visitor.visitSingularInt32Field(value: self.displayHeight, fieldNumber: 9)
     }
+    if !self.baseToCanvas.isEmpty {
+      try visitor.visitPackedDoubleField(value: self.baseToCanvas, fieldNumber: 10)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -5606,6 +5636,7 @@ extension Vurio_Dedup_PreviewFrame: SwiftProtobuf.Message, SwiftProtobuf._Messag
     if lhs.baseHeight != rhs.baseHeight {return false}
     if lhs.displayWidth != rhs.displayWidth {return false}
     if lhs.displayHeight != rhs.displayHeight {return false}
+    if lhs.baseToCanvas != rhs.baseToCanvas {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -5763,7 +5794,7 @@ extension Vurio_Dedup_ParamSpec: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
 
 extension Vurio_Dedup_ToolDescriptor: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".ToolDescriptor"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}version\0\u{1}params\0\u{1}category\0\u{1}icon\0\u{3}lane_allowed\0\u{3}resolution_dependent\0\u{1}summary\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}version\0\u{1}params\0\u{1}category\0\u{1}icon\0\u{3}lane_allowed\0\u{3}resolution_dependent\0\u{1}summary\0\u{3}active_at_defaults\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -5780,6 +5811,7 @@ extension Vurio_Dedup_ToolDescriptor: SwiftProtobuf.Message, SwiftProtobuf._Mess
       case 7: try { try decoder.decodeSingularBoolField(value: &self.laneAllowed) }()
       case 8: try { try decoder.decodeSingularBoolField(value: &self.resolutionDependent) }()
       case 9: try { try decoder.decodeSingularStringField(value: &self.summary) }()
+      case 10: try { try decoder.decodeSingularBoolField(value: &self.activeAtDefaults) }()
       default: break
       }
     }
@@ -5813,6 +5845,9 @@ extension Vurio_Dedup_ToolDescriptor: SwiftProtobuf.Message, SwiftProtobuf._Mess
     if !self.summary.isEmpty {
       try visitor.visitSingularStringField(value: self.summary, fieldNumber: 9)
     }
+    if self.activeAtDefaults != false {
+      try visitor.visitSingularBoolField(value: self.activeAtDefaults, fieldNumber: 10)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -5826,6 +5861,7 @@ extension Vurio_Dedup_ToolDescriptor: SwiftProtobuf.Message, SwiftProtobuf._Mess
     if lhs.laneAllowed != rhs.laneAllowed {return false}
     if lhs.resolutionDependent != rhs.resolutionDependent {return false}
     if lhs.summary != rhs.summary {return false}
+    if lhs.activeAtDefaults != rhs.activeAtDefaults {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -5833,7 +5869,7 @@ extension Vurio_Dedup_ToolDescriptor: SwiftProtobuf.Message, SwiftProtobuf._Mess
 
 extension Vurio_Dedup_ToolDescriptors: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".ToolDescriptors"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}tools\0\u{3}document_version\0\u{3}blend_modes\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}tools\0\u{3}document_version\0\u{3}blend_modes\0\u{3}mask_sources\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -5844,6 +5880,7 @@ extension Vurio_Dedup_ToolDescriptors: SwiftProtobuf.Message, SwiftProtobuf._Mes
       case 1: try { try decoder.decodeRepeatedMessageField(value: &self.tools) }()
       case 2: try { try decoder.decodeSingularInt32Field(value: &self.documentVersion) }()
       case 3: try { try decoder.decodeRepeatedStringField(value: &self.blendModes) }()
+      case 4: try { try decoder.decodeRepeatedMessageField(value: &self.maskSources) }()
       default: break
       }
     }
@@ -5859,6 +5896,9 @@ extension Vurio_Dedup_ToolDescriptors: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if !self.blendModes.isEmpty {
       try visitor.visitRepeatedStringField(value: self.blendModes, fieldNumber: 3)
     }
+    if !self.maskSources.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.maskSources, fieldNumber: 4)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -5866,6 +5906,7 @@ extension Vurio_Dedup_ToolDescriptors: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if lhs.tools != rhs.tools {return false}
     if lhs.documentVersion != rhs.documentVersion {return false}
     if lhs.blendModes != rhs.blendModes {return false}
+    if lhs.maskSources != rhs.maskSources {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

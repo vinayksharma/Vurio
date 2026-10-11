@@ -13,6 +13,8 @@ struct PreviewFrameRequest: Equatable {
     var maxSide: Int
     var truncateAtNodeID: String = ""
     var before = false
+    var soloLaneID: String = ""
+    var overlayLaneID: String = ""
 }
 
 /// Pure "latest wins" bookkeeping, kept apart from the gRPC plumbing so the
@@ -59,6 +61,31 @@ struct PreviewFrame {
     let truncateAtNodeID: String
     let before: Bool
     let renderMs: Int
+    /// CHAIN-4: normalised base coordinates → frame pixels (2×3 affine).
+    let baseToCanvas: [Double]
+
+    func project(_ p: CGPoint) -> CGPoint {
+        guard baseToCanvas.count == 6 else { return CGPoint(x: p.x * size.width, y: p.y * size.height) }
+        let m = baseToCanvas
+        return CGPoint(x: m[0] * p.x + m[1] * p.y + m[2], y: m[3] * p.x + m[4] * p.y + m[5])
+    }
+
+    /// Frame pixels → normalised base coordinates (the inverse affine).
+    func unproject(_ q: CGPoint) -> CGPoint {
+        guard baseToCanvas.count == 6 else { return CGPoint(x: q.x / size.width, y: q.y / size.height) }
+        let m = baseToCanvas
+        let det = m[0] * m[4] - m[1] * m[3]
+        guard abs(det) > 1e-12 else { return .zero }
+        let x = q.x - m[2], y = q.y - m[5]
+        return CGPoint(x: (m[4] * x - m[1] * y) / det, y: (-m[3] * x + m[0] * y) / det)
+    }
+
+    /// Pixels per normalised unit of the base's shorter side.
+    var affineScale: CGFloat {
+        guard baseToCanvas.count == 6 else { return min(size.width, size.height) }
+        let m = baseToCanvas
+        return CGFloat(min(hypot(m[0], m[3]), hypot(m[1], m[4])))
+    }
 }
 
 @MainActor
@@ -80,7 +107,8 @@ final class PreviewRenderer: ObservableObject {
     func request(_ r: PreviewFrameRequest) {
         if let f = frame, task == nil, queue.inFlight == nil,
            f.filePath == r.filePath, f.truncateAtNodeID == r.truncateAtNodeID, f.before == r.before,
-           lastDocumentJSON == r.documentJSON, lastMaxSide == r.maxSide {
+           lastDocumentJSON == r.documentJSON, lastMaxSide == r.maxSide,
+           lastSolo == r.soloLaneID, lastOverlay == r.overlayLaneID {
             return
         }
         guard let next = queue.submit(r) else { return }
@@ -96,10 +124,14 @@ final class PreviewRenderer: ObservableObject {
         isRendering = false
         lastDocumentJSON = nil
         lastMaxSide = 0
+        lastSolo = ""
+        lastOverlay = ""
     }
 
     private var lastDocumentJSON: String?
     private var lastMaxSide = 0
+    private var lastSolo = ""
+    private var lastOverlay = ""
 
     private func send(_ r: PreviewFrameRequest) {
         guard let client = VurioGrpcClient.shared.preview else {
@@ -121,6 +153,8 @@ final class PreviewRenderer: ObservableObject {
                     $0.seq = mySeq
                     $0.truncateAtNodeID = r.truncateAtNodeID
                     $0.before = r.before
+                    $0.soloLaneID = r.soloLaneID
+                    $0.overlayLaneID = r.overlayLaneID
                 }
                 let response = try await client.renderPreview(request)
                 let data = response.jpeg
@@ -131,7 +165,8 @@ final class PreviewRenderer: ObservableObject {
                         size: CGSize(width: Int(response.width), height: Int(response.height)),
                         displaySize: CGSize(width: Int(response.displayWidth), height: Int(response.displayHeight)),
                         baseSize: CGSize(width: Int(response.baseWidth), height: Int(response.baseHeight)),
-                        truncateAtNodeID: r.truncateAtNodeID, before: r.before, renderMs: Int(response.renderMs))
+                        truncateAtNodeID: r.truncateAtNodeID, before: r.before, renderMs: Int(response.renderMs),
+                        baseToCanvas: response.baseToCanvas)
                 } else {
                     failure = "The preview frame could not be decoded"
                 }
@@ -145,6 +180,8 @@ final class PreviewRenderer: ObservableObject {
                 self.frame = decoded
                 self.lastDocumentJSON = r.documentJSON
                 self.lastMaxSide = r.maxSide
+                self.lastSolo = r.soloLaneID
+                self.lastOverlay = r.overlayLaneID
                 self.lastError = nil
             } else if let failure {
                 self.lastError = failure

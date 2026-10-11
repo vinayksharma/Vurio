@@ -381,6 +381,21 @@ struct ViewerView: View {
                                 onEnded: { adjustments.commitCrop() })
                         .frame(width: area.width, height: area.height)
                 }
+
+                // CHAIN-4 (docs §9.2): the selected lane's gradient pins,
+                // at fit zoom only (the frame is drawn un-zoomed there).
+                if !editing, scale == 1, let lane = adjustments.selectedLane,
+                   let maskTool = adjustments.maskTool(for: lane.id),
+                   maskTool.descriptor.id == "linear" || maskTool.descriptor.id == "radial",
+                   let found = adjustments.document.lane(lane.id) {
+                    MaskPinOverlay(tool: maskTool, frame: frame, layout: layout,
+                                   colour: AdjustmentsViewModel.laneColor(found.laneIndex),
+                                   onChange: { interactive in
+                                       adjustments.laneMaskChanged(lane.id, label: "Mask pins", interactive: interactive)
+                                   })
+                        .frame(width: area.width, height: area.height)
+                        .offset(panOffset)
+                }
             } else {
                 Image(nsImage: image)
                     .resizable()

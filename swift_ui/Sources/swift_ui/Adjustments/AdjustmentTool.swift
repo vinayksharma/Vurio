@@ -55,6 +55,8 @@ struct ToolDescriptor: Equatable {
     let laneAllowed: Bool
     let resolutionDependent: Bool
     let summary: String
+    /// The defaults already change pixels (Monochrome): never identity.
+    let activeAtDefaults: Bool
     let params: [ToolParamSpec]
 
     init(_ d: Vurio_Dedup_ToolDescriptor) {
@@ -66,6 +68,7 @@ struct ToolDescriptor: Equatable {
         laneAllowed = d.laneAllowed
         resolutionDependent = d.resolutionDependent
         summary = d.summary
+        activeAtDefaults = d.activeAtDefaults
         params = d.params.map(ToolParamSpec.init)
     }
 
