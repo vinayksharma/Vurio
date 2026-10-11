@@ -1273,6 +1273,13 @@
       "text": "Undo steps kept per photo, stored with its edits in the sidecar and the database. The oldest step is dropped when the limit is reached."
     }
   ],
+  "media.adjustments.recipes.builtin": "Starter Recipes",
+  "media.adjustments.recipes.builtin.long": [
+    {
+      "type": "paragraph",
+      "text": "Seed a few example recipes (a red-filter monochrome, a soft contrast, a warm vignette) when the recipe list is empty. They can be renamed or deleted like any other recipe."
+    }
+  ],
   "media.adjustments.sidecar.suffix": "Adjustment Sidecar Suffix",
   "media.adjustments.sidecar.suffix.long": [
     {

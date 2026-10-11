@@ -710,6 +710,117 @@ service AdjustmentsService {
 }
 
 // ---------------------------------------------------------
+// Recipes Service (CHAIN-3, docs/todo_tool_chain.md §7)
+//
+// Named chains saved from a photo, validated at save, import and apply,
+// applied to other photos, exported to and imported from
+// `.vurio-recipes.json`. The client reads and writes the files; the server
+// stays out of the user's folders.
+// ---------------------------------------------------------
+service RecipesService {
+  rpc ListRecipes(Empty) returns (RecipeList);
+  // INVALID_ARGUMENT: the chain was refused (message names the node);
+  // ALREADY_EXISTS: the name is taken; NOT_FOUND: from_file_path has no edits.
+  rpc SaveRecipe(SaveRecipeRequest) returns (RecipeResponse);
+  rpc UpdateRecipe(UpdateRecipeRequest) returns (RecipeResponse);
+  rpc DeleteRecipe(RecipeIdRequest) returns (Empty);
+  // Compile + validate a chain, against a photo's base when file_path is set.
+  rpc ValidateChain(ValidateChainRequest) returns (ValidateChainResponse);
+  // Commits the recipe onto the photo as one history step.
+  rpc ApplyRecipe(ApplyRecipeRequest) returns (SetAdjustmentsResponse);
+  rpc ExportRecipes(RecipeIdsRequest) returns (RecipesFile);
+  rpc ImportRecipes(ImportRecipesRequest) returns (ImportRecipesResult);
+}
+
+message Recipe {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string chain_json = 4;       // the node array
+  int32 node_count = 5;
+  bool includes_geometry = 6;
+  string source = 7;           // "user" | "imported" | "builtin"
+  int64 created_at = 8;        // unix seconds
+  int64 updated_at = 9;
+}
+
+message RecipeList {
+  repeated Recipe recipes = 1; // by name
+}
+
+message SaveRecipeRequest {
+  string name = 1;
+  string description = 2;
+  string chain_json = 3;       // a node array or a whole document; ignored when from_file_path is set
+  string from_file_path = 4;   // save the photo's committed chain
+  bool include_geometry = 5;   // keep crop and rotation nodes (off by default)
+}
+
+message RecipeResponse {
+  bool success = 1;
+  string error_message = 2;
+  Recipe recipe = 3;
+}
+
+message UpdateRecipeRequest {
+  string id = 1;
+  string name = 2;             // "" = keep
+  string description = 3;
+  bool set_chain = 4;
+  string chain_json = 5;
+}
+
+message RecipeIdRequest {
+  string id = 1;
+}
+
+message ValidateChainRequest {
+  string chain_json = 1;
+  string file_path = 2;        // optional
+}
+
+message ValidateChainResponse {
+  bool ok = 1;
+  string error_message = 2;
+  int32 node_count = 3;
+}
+
+message ApplyRecipeRequest {
+  string file_path = 1;
+  string recipe_id = 2;
+  string mode = 3;             // "replace" | "append" | "insert"
+  int32 index = 4;             // insert position
+}
+
+message RecipeIdsRequest {
+  repeated string ids = 1;     // empty = all
+}
+
+message RecipesFile {
+  string json = 1;
+}
+
+message ImportRecipesRequest {
+  string json = 1;
+  string conflict_policy = 2;  // "keep_both" | "replace" | "skip"
+}
+
+message ImportOutcome {
+  string name = 1;
+  string outcome = 2;          // imported | renamed | replaced | skipped | error
+  string message = 3;
+}
+
+message ImportRecipesResult {
+  bool success = 1;            // the file was readable
+  string error_message = 2;
+  int32 imported = 3;
+  int32 replaced = 4;
+  int32 skipped = 5;
+  repeated ImportOutcome outcomes = 6;
+}
+
+// ---------------------------------------------------------
 // Preview Service (CHAIN-1, docs/todo_tool_chain.md §5.4)
 //
 // The viewer's live preview. Every frame is rendered by the server's engine

@@ -16,6 +16,7 @@
 #include "core/grpc_server/media_service.hpp"
 #include "core/grpc_server/adjustments_service.hpp"
 #include "core/grpc_server/preview_service.hpp"
+#include "core/grpc_server/recipes_service.hpp"
 #include "adjustments/adjustment_store.hpp"
 #include "adjustments/chain_engine.hpp"
 #include "database/preview_cache_ops.hpp"
@@ -119,6 +120,7 @@ void GrpcServerCore::start(const std::string& instance_dir,
     // base loader reuses the existing decode paths: the QHD preview when
     // the format needs one, the original (scaled decode) otherwise.
     auto preview_service = std::make_unique<PreviewServiceImpl>();
+    auto recipes_service = std::make_unique<RecipesServiceImpl>(); // CHAIN-3
     {
         auto cfg = config_manager;
         auto db_shared = database_manager;
@@ -193,6 +195,7 @@ void GrpcServerCore::start(const std::string& instance_dir,
     builder.RegisterService(media_streaming_service.get());
     builder.RegisterService(adjustments_service.get()); // ADJ-1
     builder.RegisterService(preview_service.get()); // CHAIN-1
+    builder.RegisterService(recipes_service.get()); // CHAIN-3
     
     services_.push_back(std::move(security_service));
     services_.push_back(std::move(config_service));
@@ -202,6 +205,7 @@ void GrpcServerCore::start(const std::string& instance_dir,
     services_.push_back(std::move(media_streaming_service));
     services_.push_back(std::move(adjustments_service));
     services_.push_back(std::move(preview_service));
+    services_.push_back(std::move(recipes_service));
 
     server_ = builder.BuildAndStart();
 

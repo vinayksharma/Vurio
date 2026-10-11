@@ -1,5 +1,6 @@
 #include "core/server_initializer.hpp"
 #include "adjustments/adjustment_store.hpp"
+#include "adjustments/recipe_store.hpp"
 #include "adjustments/sidecar_store.hpp"
 #include "config/unified_observable_config.hpp"
 #include "utils/tool_paths.hpp"
@@ -211,6 +212,10 @@ namespace MediaDedup
                     database_manager_, config_manager_,
                     Adjustments::SidecarStore::defaultSpoolRoot(db_path), thumbnail_disk_cache_);
                 logger.information("Adjustment store initialized");
+                // CHAIN-3: recipes; starter recipes seed an empty table.
+                Adjustments::RecipeStore::instance().initialize(database_manager_, config_manager_);
+                int seeded = Adjustments::RecipeStore::instance().seedBuiltins();
+                logger.information("Recipe store initialized (%d starter recipes seeded)", seeded);
             }
 
             // Clear cache tables if configured to clear physical caches on startup

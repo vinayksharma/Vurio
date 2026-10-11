@@ -128,6 +128,7 @@ media.adjustments.preview.sessions: 3
 media.adjustments.preview.idleSeconds: 120
 media.adjustments.preview.sessionSide: 2560
 media.adjustments.history.maxEntries: 100
+media.adjustments.recipes.builtin: true
 scheduler.backoff.maxMs: 30000
 scheduler.maxConsecutiveFailures: 5
 media.video.mkv: false

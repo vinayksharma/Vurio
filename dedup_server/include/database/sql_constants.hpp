@@ -678,6 +678,41 @@ namespace MediaDedup
         inline constexpr std::string_view kSelectImageAdjustmentCountsByLocation =
             "SELECT COUNT(*), SUM(CASE WHEN sidecar_mtime = 0 THEN 1 ELSE 0 END) FROM image_adjustments WHERE location_key=?";
 
+        // CHAIN-3 (docs/todo_tool_chain.md §7.2): recipes — named chains
+        // the user saves and applies to other photos. The table is the
+        // store; `.vurio-recipes.json` files are only the interchange format.
+        inline constexpr std::string_view kCreateRecipesTable =
+            "CREATE TABLE IF NOT EXISTS recipes (\n"
+            "    id TEXT PRIMARY KEY,\n"
+            "    name TEXT NOT NULL UNIQUE COLLATE NOCASE,\n"
+            "    description TEXT NOT NULL DEFAULT '',\n"
+            "    chain TEXT NOT NULL,\n"
+            "    content_hash INTEGER NOT NULL,\n"
+            "    includes_geometry INTEGER NOT NULL DEFAULT 0,\n"
+            "    source TEXT NOT NULL DEFAULT 'user',\n"
+            "    created_at INTEGER NOT NULL,\n"
+            "    updated_at INTEGER NOT NULL\n"
+            ");";
+        inline constexpr std::string_view kRecipeColumns =
+            "id, name, description, chain, content_hash, includes_geometry, source, created_at, updated_at";
+        inline constexpr std::string_view kInsertRecipe =
+            "INSERT INTO recipes(id, name, description, chain, content_hash, includes_geometry, source, created_at, updated_at) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        inline constexpr std::string_view kUpdateRecipe =
+            "UPDATE recipes SET name=?, description=?, chain=?, content_hash=?, includes_geometry=?, updated_at=? WHERE id=?";
+        inline constexpr std::string_view kSelectRecipes =
+            "SELECT id, name, description, chain, content_hash, includes_geometry, source, created_at, updated_at FROM recipes ORDER BY name COLLATE NOCASE";
+        inline constexpr std::string_view kSelectRecipeById =
+            "SELECT id, name, description, chain, content_hash, includes_geometry, source, created_at, updated_at FROM recipes WHERE id=?";
+        inline constexpr std::string_view kSelectRecipeByName =
+            "SELECT id, name, description, chain, content_hash, includes_geometry, source, created_at, updated_at FROM recipes WHERE name=? COLLATE NOCASE";
+        inline constexpr std::string_view kSelectRecipeByHash =
+            "SELECT id, name, description, chain, content_hash, includes_geometry, source, created_at, updated_at FROM recipes WHERE content_hash=?";
+        inline constexpr std::string_view kDeleteRecipe =
+            "DELETE FROM recipes WHERE id=?";
+        inline constexpr std::string_view kCountRecipes =
+            "SELECT COUNT(*) FROM recipes";
+
         // Preview cache table (full resolution transcoded caches)
         inline constexpr std::string_view kCreatePreviewCacheTable =
             "CREATE TABLE IF NOT EXISTS preview_cache (\n"

@@ -659,6 +659,10 @@
     "type": "int",
     "default": 100
   },
+  "media.adjustments.recipes.builtin": {
+    "type": "bool",
+    "default": true
+  },
   "thumbnail.qhd_preview.threshold_mb": {
     "type": "double",
     "default": 5.0

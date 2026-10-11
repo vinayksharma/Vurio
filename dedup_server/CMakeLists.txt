@@ -326,7 +326,9 @@ add_executable(media_dedup_server
     src/adjustments/sidecar_layout.cpp
     src/adjustments/sidecar_store.cpp
     src/adjustments/adjustment_store.cpp
+    src/adjustments/recipe_store.cpp
     src/database/adjustments_ops.cpp
+    src/database/recipes_ops.cpp
     src/utils/orphan_sweeper.cpp
     src/utils/subprocess_runner.cpp
     src/utils/temp_paths.cpp
