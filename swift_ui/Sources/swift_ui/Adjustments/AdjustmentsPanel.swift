@@ -13,6 +13,11 @@ struct AdjustmentsPanel: View {
     @State private var customAspectText = ""
     @State private var historyShown = false
     @State private var dragStartWidth: CGFloat?
+    @ObservedObject private var recipes = RecipesModel.shared
+    @State private var saveRecipeShown = false
+    @State private var recipeName = ""
+    @State private var recipeDescription = ""
+    @State private var recipeIncludeGeometry = false
 
     var body: some View {
         Group {
@@ -125,6 +130,7 @@ struct AdjustmentsPanel: View {
             }
             if model.isSpooled { spooledGlyph }
             Spacer()
+            recipesMenu
             Button(action: { model.undo() }) { Image(systemName: "arrow.uturn.backward") }
                 .buttonStyle(.vurioIcon)
                 .disabled(!hasImage || !model.canUndo)
@@ -146,6 +152,90 @@ struct AdjustmentsPanel: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
+    }
+
+    /// CHAIN-3 (docs §9.2): save, apply, copy and paste chains.
+    private var recipesMenu: some View {
+        Menu {
+            Button("Save chain as recipe…") {
+                recipeName = ""
+                recipeDescription = ""
+                recipeIncludeGeometry = false
+                saveRecipeShown = true
+            }
+            .disabled(!hasImage || !model.hasEdits)
+            Menu("Replace with recipe") {
+                if recipes.recipes.isEmpty { Text("No recipes yet") }
+                ForEach(recipes.recipes) { recipe in
+                    Button(recipe.name) { model.applyRecipe(recipe.id, mode: "replace") }
+                }
+            }
+            .disabled(!hasImage)
+            Menu("Add recipe to chain") {
+                if recipes.recipes.isEmpty { Text("No recipes yet") }
+                ForEach(recipes.recipes) { recipe in
+                    Button(recipe.name) { model.applyRecipe(recipe.id, mode: "append") }
+                }
+            }
+            .disabled(!hasImage)
+            Divider()
+            Button("Copy chain") { model.copyChain() }
+                .keyboardShortcut("c", modifiers: [.command, .shift])
+                .disabled(!hasImage || !model.hasEdits)
+            Button("Paste chain, replacing") { model.pasteChain(append: false) }
+                .keyboardShortcut("v", modifiers: [.command, .shift])
+                .disabled(!hasImage)
+            Button("Paste chain, appending") { model.pasteChain(append: true) }
+                .keyboardShortcut("v", modifiers: [.command, .shift, .option])
+                .disabled(!hasImage)
+        } label: {
+            Image(systemName: "book.closed")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .frame(width: 22)
+        .help("Recipes")
+        .task { await recipes.ensureLoaded() }
+        .sheet(isPresented: $saveRecipeShown) { saveRecipeSheet }
+    }
+
+    private var saveRecipeSheet: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Save chain as recipe")
+                .font(.system(size: 13, weight: .semibold))
+            TextField("Name", text: $recipeName)
+                .textFieldStyle(.roundedBorder)
+            TextField("Description (optional)", text: $recipeDescription)
+                .textFieldStyle(.roundedBorder)
+            Toggle("Include crop and rotation", isOn: $recipeIncludeGeometry)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+            Text(recipeIncludeGeometry
+                 ? "The crop and rotation of this photo will be applied to every photo the recipe is used on."
+                 : "Crop and rotation are left out, so the recipe fits any photo.")
+                .font(.caption)
+                .foregroundColor(Theme.textSecondary)
+            HStack {
+                Spacer()
+                Button("Cancel") { saveRecipeShown = false }
+                    .keyboardShortcut(.cancelAction)
+                Button("Save") {
+                    let name = recipeName.trimmingCharacters(in: .whitespaces)
+                    let description = recipeDescription
+                    let geometry = recipeIncludeGeometry
+                    Task {
+                        if await model.saveChainAsRecipe(name: name, description: description, includeGeometry: geometry) {
+                            MessageCenter.shared.post("Recipe \"\(name)\" saved")
+                            saveRecipeShown = false
+                        }
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(recipeName.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(16)
+        .frame(width: 360)
     }
 
     /// CHAIN-1 (docs §9.2): the photo's persisted steps; click one to jump.
@@ -332,13 +422,19 @@ private struct ChainListView: View {
         }
     }
 
-    /// A catalogue chip is dragged as "vurio-tool:<id>".
+    /// A catalogue chip is dragged as "vurio-tool:<id>"; a recipe as
+    /// "vurio-recipe:<id>" (inserted at the drop line, docs §7.1).
     private func insertDropped(_ providers: [NSItemProvider], at index: Int) -> Bool {
         guard let provider = providers.first else { return false }
         provider.loadObject(ofClass: NSString.self) { object, _ in
-            guard let text = object as? String, text.hasPrefix(CatalogueView.dragPrefix) else { return }
-            let toolID = String(text.dropFirst(CatalogueView.dragPrefix.count))
-            Task { @MainActor in model.insertTool(toolID, at: index) }
+            guard let text = object as? String else { return }
+            if text.hasPrefix(CatalogueView.dragPrefix) {
+                let toolID = String(text.dropFirst(CatalogueView.dragPrefix.count))
+                Task { @MainActor in model.insertTool(toolID, at: index) }
+            } else if text.hasPrefix(CatalogueView.recipeDragPrefix) {
+                let recipeID = String(text.dropFirst(CatalogueView.recipeDragPrefix.count))
+                Task { @MainActor in model.applyRecipe(recipeID, mode: "insert", index: index) }
+            }
         }
         return true
     }
@@ -449,6 +545,8 @@ private struct CatalogueView: View {
     @ObservedObject var model: AdjustmentsViewModel
     let hasImage: Bool
     static let dragPrefix = "vurio-tool:"
+    static let recipeDragPrefix = "vurio-recipe:"
+    @ObservedObject private var recipes = RecipesModel.shared
 
     private var grouped: [(ToolCategory, [ToolDescriptor])] {
         let order: [ToolCategory] = [.geometry, .raster, .layer, .mask, .split]
@@ -488,6 +586,36 @@ private struct CatalogueView: View {
                                 .frame(width: 56, alignment: .leading)
                                 .padding(.top, 4)
                             WrappingChips(tools: tools, hasImage: hasImage) { tool in model.addTool(tool.id) }
+                        }
+                    }
+                    // CHAIN-3: recipes sit in the catalogue like tools —
+                    // click appends, drag inserts at the drop line.
+                    if !recipes.recipes.isEmpty {
+                        HStack(alignment: .top, spacing: 6) {
+                            Text("Recipes")
+                                .font(.system(size: 10))
+                                .foregroundColor(Theme.textSecondary)
+                                .frame(width: 56, alignment: .leading)
+                                .padding(.top, 4)
+                            FlowLayout(spacing: 4) {
+                                ForEach(recipes.recipes) { recipe in
+                                    Button(action: { model.applyRecipe(recipe.id, mode: "append") }) {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "book.closed")
+                                            Text(recipe.name)
+                                        }
+                                        .font(.system(size: 10))
+                                        .padding(.horizontal, 7)
+                                        .padding(.vertical, 3)
+                                    }
+                                    .vurioButtonStyle(tint: Theme.textAccent)
+                                    .disabled(!hasImage)
+                                    .help(recipe.description.isEmpty
+                                          ? "Add \(recipe.name) to the chain (drag to place it)"
+                                          : "\(recipe.description) — click to add, drag to place")
+                                    .onDrag { NSItemProvider(object: NSString(string: CatalogueView.recipeDragPrefix + recipe.id)) }
+                                }
+                            }
                         }
                     }
                 }

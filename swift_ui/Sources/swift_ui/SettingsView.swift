@@ -9,6 +9,9 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 20) {
                 
                 MediaLocationsView()
+
+                // CHAIN-3: recipes travel as files through here.
+                RecipesSection()
                 
                 PurityOrderSection(viewModel: viewModel)
                 

@@ -114,6 +114,18 @@ struct ChainDocument: Equatable {
         return doc
     }
 
+    /// CHAIN-3: a chain as the pasteboard or a recipe carries it — a bare
+    /// JSON array of nodes, or a whole document (either format).
+    static func parseChainText(_ text: String) -> ChainDocument? {
+        guard let data = text.data(using: .utf8), let object = try? JSONSerialization.jsonObject(with: data) else { return nil }
+        if let array = object as? [[String: Any]] {
+            var doc = ChainDocument()
+            doc.nodes = array.compactMap(ChainNode.init(json:))
+            return doc
+        }
+        return parse(text)
+    }
+
     /// The complete document the server expects on SetAdjustments: the
     /// chain only; history is the server's.
     func serialize() -> String {

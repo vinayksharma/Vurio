@@ -76,3 +76,17 @@ import Foundation
     q.reset()
     #expect(q.inFlight == nil && q.pending == nil)
 }
+
+@Test func chainTextParsesBareArraysAndDocuments() {
+    let bare = """
+    [{"tool":"exposure","params":{"version":1,"ev":0.5}},{"id":"abcdefgh","tool":"gamma","params":{"gamma":1.2}}]
+    """
+    let doc = ChainDocument.parseChainText(bare)!
+    #expect(doc.nodes.map(\.tool) == ["exposure", "gamma"])
+    #expect(doc.nodes[1].id == "abcdefgh")
+    let wrapped = ChainDocument.parseChainText(doc.serialize())!
+    #expect(wrapped == doc)
+    #expect(ChainDocument.parseChainText("{\"format\":\"vurio-adjustments\",\"version\":1,\"tools\":{\"rotate\":{\"quarter_turns\":1}}}")?.nodes.first?.tool == "rotate")
+    #expect(ChainDocument.parseChainText("not json") == nil)
+    #expect(ChainDocument.parseChainText("{\"other\":1}") == nil)
+}

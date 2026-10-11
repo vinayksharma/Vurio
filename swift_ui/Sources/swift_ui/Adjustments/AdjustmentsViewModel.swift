@@ -740,6 +740,98 @@ final class AdjustmentsViewModel: ObservableObject {
         crop.userRectResolved = true
     }
 
+    // MARK: - Recipes (CHAIN-3, docs §7)
+
+    /// Save the committed chain under a name; the server drops geometry
+    /// unless asked to keep it.
+    func saveChainAsRecipe(name: String, description: String, includeGeometry: Bool) async -> Bool {
+        await flushPendingCommit()
+        guard let path = filePath else { return false }
+        return await RecipesModel.shared.save(name: name, description: description, chainJSON: nil,
+                                             fromFilePath: path, includeGeometry: includeGeometry) != nil
+    }
+
+    /// Apply a recipe onto the photo (replace, append, or insert at
+    /// `index`), then reload the chain the server committed.
+    func applyRecipe(_ recipeID: String, mode: String, index: Int = 0) {
+        Task { await applyRecipeNow(recipeID, mode: mode, index: index) }
+    }
+
+    private func applyRecipeNow(_ recipeID: String, mode: String, index: Int) async {
+        await flushPendingCommit()
+        guard let path = filePath else { return }
+        if isCropEditing { exitCropEditing() }
+        guard let response = await RecipesModel.shared.apply(recipeID, to: path, mode: mode, index: index) else { return }
+        guard filePath == path else { return }
+        await reloadDocument()
+        NotificationCenter.default.post(name: .adjustmentsChanged, object: nil, userInfo: [
+            "filePath": path,
+            "renderRevision": Int(response.renderRevision),
+            "displayWidth": Int(response.displayWidth),
+            "displayHeight": Int(response.displayHeight),
+        ])
+    }
+
+    /// Fetch the committed document again (after a server-side change such
+    /// as a recipe apply) without dropping the panel state.
+    private func reloadDocument() async {
+        guard let path = filePath, let client = VurioGrpcClient.shared.adjustments else { return }
+        do {
+            let response = try await client.getAdjustments(Vurio_Dedup_AdjustmentsFileRequest.with { $0.filePath = path })
+            guard filePath == path else { return }
+            apply(response: response)
+        } catch {
+            if !isGrpcCancellation(error) { logDebug("GetAdjustments failed for \(path): \(error)") }
+        }
+    }
+
+    static let chainPasteboardType = NSPasteboard.PasteboardType("com.vurio.chain-json")
+
+    /// The chain to the pasteboard, as our own type and as plain text.
+    func copyChain() {
+        document = currentDocument()
+        let text = document.serialize()
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: Self.chainPasteboardType)
+        pasteboard.setString(text, forType: .string)
+        MessageCenter.shared.post("Chain copied (\(document.nodes.count) node\(document.nodes.count == 1 ? "" : "s"))")
+    }
+
+    /// A chain from the pasteboard, validated by the server first, then
+    /// committed as a replacement or appended.
+    func pasteChain(append: Bool) {
+        let pasteboard = NSPasteboard.general
+        guard let text = pasteboard.string(forType: Self.chainPasteboardType) ?? pasteboard.string(forType: .string),
+              let pasted = ChainDocument.parseChainText(text), !pasted.nodes.isEmpty else {
+            MessageCenter.shared.post("The clipboard holds no chain")
+            return
+        }
+        Task { await pasteChainNow(pasted, append: append) }
+    }
+
+    private func pasteChainNow(_ pasted: ChainDocument, append: Bool) async {
+        await flushPendingCommit()
+        guard let path = filePath else { return }
+        // Fresh ids: a pasted chain must never collide with the photo's own.
+        var incoming = pasted
+        for i in incoming.nodes.indices { incoming.nodes[i].id = ChainNode.newID() }
+        var merged = append ? currentDocument() : ChainDocument()
+        merged.nodes.append(contentsOf: incoming.nodes)
+        let (ok, error) = await RecipesModel.shared.validate(chainJSON: merged.serialize(), filePath: path)
+        guard filePath == path else { return }
+        guard ok else {
+            lastError = error
+            MessageCenter.shared.post("Paste refused: \(error)")
+            return
+        }
+        if isCropEditing { exitCropEditing() }
+        document = merged
+        rebuildTools()
+        selectedNodeID = incoming.nodes.first?.id
+        chainChanged(label: append ? "Paste chain (append)" : "Paste chain")
+    }
+
     // MARK: - Preview
 
     /// Ask the server for the frame the viewer should show now (docs §5.4).

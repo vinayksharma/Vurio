@@ -29,6 +29,7 @@ final class VurioGrpcClient {
     var mediaStreaming: Vurio_Dedup_MediaServiceAsyncClient?
     var adjustments: Vurio_Dedup_AdjustmentsServiceAsyncClient? // ADJ-2
     var preview: Vurio_Dedup_PreviewServiceAsyncClient? // CHAIN-1
+    var recipes: Vurio_Dedup_RecipesServiceAsyncClient? // CHAIN-3
 
     /// Identity of the instance we are paired with, for the log and the
     /// sidebar. Nil until paired.
@@ -309,6 +310,7 @@ final class VurioGrpcClient {
         self.mediaStreaming = Vurio_Dedup_MediaServiceAsyncClient(channel: ch, defaultCallOptions: options)
         self.adjustments = Vurio_Dedup_AdjustmentsServiceAsyncClient(channel: ch, defaultCallOptions: options)
         self.preview = Vurio_Dedup_PreviewServiceAsyncClient(channel: ch, defaultCallOptions: options)
+        self.recipes = Vurio_Dedup_RecipesServiceAsyncClient(channel: ch, defaultCallOptions: options)
         print("gRPC paired with \(Self.describe(inst)) at \(inst.endpoint)\(takeLock ? "" : " (no lock)")")
         signalPaired()
 
@@ -350,6 +352,7 @@ final class VurioGrpcClient {
         advanced = nil
         mediaStreaming = nil
         preview = nil
+        recipes = nil
         security = nil
         pairedInstance = nil
         if let ch = channel {

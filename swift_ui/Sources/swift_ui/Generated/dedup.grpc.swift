@@ -4188,6 +4188,640 @@ internal enum Vurio_Dedup_AdjustmentsServiceClientMetadata {
 }
 
 /// ---------------------------------------------------------
+/// Recipes Service (CHAIN-3, docs/todo_tool_chain.md §7)
+///
+/// Named chains saved from a photo, validated at save, import and apply,
+/// applied to other photos, exported to and imported from
+/// `.vurio-recipes.json`. The client reads and writes the files; the server
+/// stays out of the user's folders.
+/// ---------------------------------------------------------
+///
+/// Usage: instantiate `Vurio_Dedup_RecipesServiceClient`, then call methods of this protocol to make API calls.
+internal protocol Vurio_Dedup_RecipesServiceClientProtocol: GRPCClient {
+  var serviceName: String { get }
+  var interceptors: Vurio_Dedup_RecipesServiceClientInterceptorFactoryProtocol? { get }
+
+  func listRecipes(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_RecipeList>
+
+  func saveRecipe(
+    _ request: Vurio_Dedup_SaveRecipeRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_SaveRecipeRequest, Vurio_Dedup_RecipeResponse>
+
+  func updateRecipe(
+    _ request: Vurio_Dedup_UpdateRecipeRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_UpdateRecipeRequest, Vurio_Dedup_RecipeResponse>
+
+  func deleteRecipe(
+    _ request: Vurio_Dedup_RecipeIdRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_RecipeIdRequest, Vurio_Dedup_Empty>
+
+  func validateChain(
+    _ request: Vurio_Dedup_ValidateChainRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_ValidateChainRequest, Vurio_Dedup_ValidateChainResponse>
+
+  func applyRecipe(
+    _ request: Vurio_Dedup_ApplyRecipeRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_ApplyRecipeRequest, Vurio_Dedup_SetAdjustmentsResponse>
+
+  func exportRecipes(
+    _ request: Vurio_Dedup_RecipeIdsRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_RecipeIdsRequest, Vurio_Dedup_RecipesFile>
+
+  func importRecipes(
+    _ request: Vurio_Dedup_ImportRecipesRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_ImportRecipesRequest, Vurio_Dedup_ImportRecipesResult>
+}
+
+extension Vurio_Dedup_RecipesServiceClientProtocol {
+  internal var serviceName: String {
+    return "vurio.dedup.RecipesService"
+  }
+
+  /// Unary call to ListRecipes
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to ListRecipes.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func listRecipes(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_RecipeList> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.listRecipes.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeListRecipesInterceptors() ?? []
+    )
+  }
+
+  /// INVALID_ARGUMENT: the chain was refused (message names the node);
+  /// ALREADY_EXISTS: the name is taken; NOT_FOUND: from_file_path has no edits.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to SaveRecipe.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func saveRecipe(
+    _ request: Vurio_Dedup_SaveRecipeRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_SaveRecipeRequest, Vurio_Dedup_RecipeResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.saveRecipe.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSaveRecipeInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to UpdateRecipe
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to UpdateRecipe.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func updateRecipe(
+    _ request: Vurio_Dedup_UpdateRecipeRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_UpdateRecipeRequest, Vurio_Dedup_RecipeResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.updateRecipe.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeUpdateRecipeInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to DeleteRecipe
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to DeleteRecipe.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func deleteRecipe(
+    _ request: Vurio_Dedup_RecipeIdRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_RecipeIdRequest, Vurio_Dedup_Empty> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.deleteRecipe.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeDeleteRecipeInterceptors() ?? []
+    )
+  }
+
+  /// Compile + validate a chain, against a photo's base when file_path is set.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to ValidateChain.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func validateChain(
+    _ request: Vurio_Dedup_ValidateChainRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_ValidateChainRequest, Vurio_Dedup_ValidateChainResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.validateChain.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeValidateChainInterceptors() ?? []
+    )
+  }
+
+  /// Commits the recipe onto the photo as one history step.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to ApplyRecipe.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func applyRecipe(
+    _ request: Vurio_Dedup_ApplyRecipeRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_ApplyRecipeRequest, Vurio_Dedup_SetAdjustmentsResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.applyRecipe.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeApplyRecipeInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to ExportRecipes
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to ExportRecipes.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func exportRecipes(
+    _ request: Vurio_Dedup_RecipeIdsRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_RecipeIdsRequest, Vurio_Dedup_RecipesFile> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.exportRecipes.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeExportRecipesInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to ImportRecipes
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to ImportRecipes.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func importRecipes(
+    _ request: Vurio_Dedup_ImportRecipesRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_ImportRecipesRequest, Vurio_Dedup_ImportRecipesResult> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.importRecipes.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeImportRecipesInterceptors() ?? []
+    )
+  }
+}
+
+@available(*, deprecated)
+extension Vurio_Dedup_RecipesServiceClient: @unchecked Sendable {}
+
+@available(*, deprecated, renamed: "Vurio_Dedup_RecipesServiceNIOClient")
+internal final class Vurio_Dedup_RecipesServiceClient: Vurio_Dedup_RecipesServiceClientProtocol {
+  private let lock = Lock()
+  private var _defaultCallOptions: CallOptions
+  private var _interceptors: Vurio_Dedup_RecipesServiceClientInterceptorFactoryProtocol?
+  internal let channel: GRPCChannel
+  internal var defaultCallOptions: CallOptions {
+    get { self.lock.withLock { return self._defaultCallOptions } }
+    set { self.lock.withLockVoid { self._defaultCallOptions = newValue } }
+  }
+  internal var interceptors: Vurio_Dedup_RecipesServiceClientInterceptorFactoryProtocol? {
+    get { self.lock.withLock { return self._interceptors } }
+    set { self.lock.withLockVoid { self._interceptors = newValue } }
+  }
+
+  /// Creates a client for the vurio.dedup.RecipesService service.
+  ///
+  /// - Parameters:
+  ///   - channel: `GRPCChannel` to the service host.
+  ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
+  ///   - interceptors: A factory providing interceptors for each RPC.
+  internal init(
+    channel: GRPCChannel,
+    defaultCallOptions: CallOptions = CallOptions(),
+    interceptors: Vurio_Dedup_RecipesServiceClientInterceptorFactoryProtocol? = nil
+  ) {
+    self.channel = channel
+    self._defaultCallOptions = defaultCallOptions
+    self._interceptors = interceptors
+  }
+}
+
+internal struct Vurio_Dedup_RecipesServiceNIOClient: Vurio_Dedup_RecipesServiceClientProtocol {
+  internal var channel: GRPCChannel
+  internal var defaultCallOptions: CallOptions
+  internal var interceptors: Vurio_Dedup_RecipesServiceClientInterceptorFactoryProtocol?
+
+  /// Creates a client for the vurio.dedup.RecipesService service.
+  ///
+  /// - Parameters:
+  ///   - channel: `GRPCChannel` to the service host.
+  ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
+  ///   - interceptors: A factory providing interceptors for each RPC.
+  internal init(
+    channel: GRPCChannel,
+    defaultCallOptions: CallOptions = CallOptions(),
+    interceptors: Vurio_Dedup_RecipesServiceClientInterceptorFactoryProtocol? = nil
+  ) {
+    self.channel = channel
+    self.defaultCallOptions = defaultCallOptions
+    self.interceptors = interceptors
+  }
+}
+
+/// ---------------------------------------------------------
+/// Recipes Service (CHAIN-3, docs/todo_tool_chain.md §7)
+///
+/// Named chains saved from a photo, validated at save, import and apply,
+/// applied to other photos, exported to and imported from
+/// `.vurio-recipes.json`. The client reads and writes the files; the server
+/// stays out of the user's folders.
+/// ---------------------------------------------------------
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+internal protocol Vurio_Dedup_RecipesServiceAsyncClientProtocol: GRPCClient {
+  static var serviceDescriptor: GRPCServiceDescriptor { get }
+  var interceptors: Vurio_Dedup_RecipesServiceClientInterceptorFactoryProtocol? { get }
+
+  func makeListRecipesCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_RecipeList>
+
+  func makeSaveRecipeCall(
+    _ request: Vurio_Dedup_SaveRecipeRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_SaveRecipeRequest, Vurio_Dedup_RecipeResponse>
+
+  func makeUpdateRecipeCall(
+    _ request: Vurio_Dedup_UpdateRecipeRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_UpdateRecipeRequest, Vurio_Dedup_RecipeResponse>
+
+  func makeDeleteRecipeCall(
+    _ request: Vurio_Dedup_RecipeIdRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_RecipeIdRequest, Vurio_Dedup_Empty>
+
+  func makeValidateChainCall(
+    _ request: Vurio_Dedup_ValidateChainRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_ValidateChainRequest, Vurio_Dedup_ValidateChainResponse>
+
+  func makeApplyRecipeCall(
+    _ request: Vurio_Dedup_ApplyRecipeRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_ApplyRecipeRequest, Vurio_Dedup_SetAdjustmentsResponse>
+
+  func makeExportRecipesCall(
+    _ request: Vurio_Dedup_RecipeIdsRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_RecipeIdsRequest, Vurio_Dedup_RecipesFile>
+
+  func makeImportRecipesCall(
+    _ request: Vurio_Dedup_ImportRecipesRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_ImportRecipesRequest, Vurio_Dedup_ImportRecipesResult>
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+extension Vurio_Dedup_RecipesServiceAsyncClientProtocol {
+  internal static var serviceDescriptor: GRPCServiceDescriptor {
+    return Vurio_Dedup_RecipesServiceClientMetadata.serviceDescriptor
+  }
+
+  internal var interceptors: Vurio_Dedup_RecipesServiceClientInterceptorFactoryProtocol? {
+    return nil
+  }
+
+  internal func makeListRecipesCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_RecipeList> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.listRecipes.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeListRecipesInterceptors() ?? []
+    )
+  }
+
+  internal func makeSaveRecipeCall(
+    _ request: Vurio_Dedup_SaveRecipeRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_SaveRecipeRequest, Vurio_Dedup_RecipeResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.saveRecipe.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSaveRecipeInterceptors() ?? []
+    )
+  }
+
+  internal func makeUpdateRecipeCall(
+    _ request: Vurio_Dedup_UpdateRecipeRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_UpdateRecipeRequest, Vurio_Dedup_RecipeResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.updateRecipe.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeUpdateRecipeInterceptors() ?? []
+    )
+  }
+
+  internal func makeDeleteRecipeCall(
+    _ request: Vurio_Dedup_RecipeIdRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_RecipeIdRequest, Vurio_Dedup_Empty> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.deleteRecipe.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeDeleteRecipeInterceptors() ?? []
+    )
+  }
+
+  internal func makeValidateChainCall(
+    _ request: Vurio_Dedup_ValidateChainRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_ValidateChainRequest, Vurio_Dedup_ValidateChainResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.validateChain.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeValidateChainInterceptors() ?? []
+    )
+  }
+
+  internal func makeApplyRecipeCall(
+    _ request: Vurio_Dedup_ApplyRecipeRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_ApplyRecipeRequest, Vurio_Dedup_SetAdjustmentsResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.applyRecipe.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeApplyRecipeInterceptors() ?? []
+    )
+  }
+
+  internal func makeExportRecipesCall(
+    _ request: Vurio_Dedup_RecipeIdsRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_RecipeIdsRequest, Vurio_Dedup_RecipesFile> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.exportRecipes.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeExportRecipesInterceptors() ?? []
+    )
+  }
+
+  internal func makeImportRecipesCall(
+    _ request: Vurio_Dedup_ImportRecipesRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_ImportRecipesRequest, Vurio_Dedup_ImportRecipesResult> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.importRecipes.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeImportRecipesInterceptors() ?? []
+    )
+  }
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+extension Vurio_Dedup_RecipesServiceAsyncClientProtocol {
+  internal func listRecipes(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_RecipeList {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.listRecipes.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeListRecipesInterceptors() ?? []
+    )
+  }
+
+  internal func saveRecipe(
+    _ request: Vurio_Dedup_SaveRecipeRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_RecipeResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.saveRecipe.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSaveRecipeInterceptors() ?? []
+    )
+  }
+
+  internal func updateRecipe(
+    _ request: Vurio_Dedup_UpdateRecipeRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_RecipeResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.updateRecipe.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeUpdateRecipeInterceptors() ?? []
+    )
+  }
+
+  internal func deleteRecipe(
+    _ request: Vurio_Dedup_RecipeIdRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_Empty {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.deleteRecipe.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeDeleteRecipeInterceptors() ?? []
+    )
+  }
+
+  internal func validateChain(
+    _ request: Vurio_Dedup_ValidateChainRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_ValidateChainResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.validateChain.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeValidateChainInterceptors() ?? []
+    )
+  }
+
+  internal func applyRecipe(
+    _ request: Vurio_Dedup_ApplyRecipeRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_SetAdjustmentsResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.applyRecipe.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeApplyRecipeInterceptors() ?? []
+    )
+  }
+
+  internal func exportRecipes(
+    _ request: Vurio_Dedup_RecipeIdsRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_RecipesFile {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.exportRecipes.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeExportRecipesInterceptors() ?? []
+    )
+  }
+
+  internal func importRecipes(
+    _ request: Vurio_Dedup_ImportRecipesRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_ImportRecipesResult {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.importRecipes.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeImportRecipesInterceptors() ?? []
+    )
+  }
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+internal struct Vurio_Dedup_RecipesServiceAsyncClient: Vurio_Dedup_RecipesServiceAsyncClientProtocol {
+  internal var channel: GRPCChannel
+  internal var defaultCallOptions: CallOptions
+  internal var interceptors: Vurio_Dedup_RecipesServiceClientInterceptorFactoryProtocol?
+
+  internal init(
+    channel: GRPCChannel,
+    defaultCallOptions: CallOptions = CallOptions(),
+    interceptors: Vurio_Dedup_RecipesServiceClientInterceptorFactoryProtocol? = nil
+  ) {
+    self.channel = channel
+    self.defaultCallOptions = defaultCallOptions
+    self.interceptors = interceptors
+  }
+}
+
+internal protocol Vurio_Dedup_RecipesServiceClientInterceptorFactoryProtocol: Sendable {
+
+  /// - Returns: Interceptors to use when invoking 'listRecipes'.
+  func makeListRecipesInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_RecipeList>]
+
+  /// - Returns: Interceptors to use when invoking 'saveRecipe'.
+  func makeSaveRecipeInterceptors() -> [ClientInterceptor<Vurio_Dedup_SaveRecipeRequest, Vurio_Dedup_RecipeResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'updateRecipe'.
+  func makeUpdateRecipeInterceptors() -> [ClientInterceptor<Vurio_Dedup_UpdateRecipeRequest, Vurio_Dedup_RecipeResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'deleteRecipe'.
+  func makeDeleteRecipeInterceptors() -> [ClientInterceptor<Vurio_Dedup_RecipeIdRequest, Vurio_Dedup_Empty>]
+
+  /// - Returns: Interceptors to use when invoking 'validateChain'.
+  func makeValidateChainInterceptors() -> [ClientInterceptor<Vurio_Dedup_ValidateChainRequest, Vurio_Dedup_ValidateChainResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'applyRecipe'.
+  func makeApplyRecipeInterceptors() -> [ClientInterceptor<Vurio_Dedup_ApplyRecipeRequest, Vurio_Dedup_SetAdjustmentsResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'exportRecipes'.
+  func makeExportRecipesInterceptors() -> [ClientInterceptor<Vurio_Dedup_RecipeIdsRequest, Vurio_Dedup_RecipesFile>]
+
+  /// - Returns: Interceptors to use when invoking 'importRecipes'.
+  func makeImportRecipesInterceptors() -> [ClientInterceptor<Vurio_Dedup_ImportRecipesRequest, Vurio_Dedup_ImportRecipesResult>]
+}
+
+internal enum Vurio_Dedup_RecipesServiceClientMetadata {
+  internal static let serviceDescriptor = GRPCServiceDescriptor(
+    name: "RecipesService",
+    fullName: "vurio.dedup.RecipesService",
+    methods: [
+      Vurio_Dedup_RecipesServiceClientMetadata.Methods.listRecipes,
+      Vurio_Dedup_RecipesServiceClientMetadata.Methods.saveRecipe,
+      Vurio_Dedup_RecipesServiceClientMetadata.Methods.updateRecipe,
+      Vurio_Dedup_RecipesServiceClientMetadata.Methods.deleteRecipe,
+      Vurio_Dedup_RecipesServiceClientMetadata.Methods.validateChain,
+      Vurio_Dedup_RecipesServiceClientMetadata.Methods.applyRecipe,
+      Vurio_Dedup_RecipesServiceClientMetadata.Methods.exportRecipes,
+      Vurio_Dedup_RecipesServiceClientMetadata.Methods.importRecipes,
+    ]
+  )
+
+  internal enum Methods {
+    internal static let listRecipes = GRPCMethodDescriptor(
+      name: "ListRecipes",
+      path: "/vurio.dedup.RecipesService/ListRecipes",
+      type: GRPCCallType.unary
+    )
+
+    internal static let saveRecipe = GRPCMethodDescriptor(
+      name: "SaveRecipe",
+      path: "/vurio.dedup.RecipesService/SaveRecipe",
+      type: GRPCCallType.unary
+    )
+
+    internal static let updateRecipe = GRPCMethodDescriptor(
+      name: "UpdateRecipe",
+      path: "/vurio.dedup.RecipesService/UpdateRecipe",
+      type: GRPCCallType.unary
+    )
+
+    internal static let deleteRecipe = GRPCMethodDescriptor(
+      name: "DeleteRecipe",
+      path: "/vurio.dedup.RecipesService/DeleteRecipe",
+      type: GRPCCallType.unary
+    )
+
+    internal static let validateChain = GRPCMethodDescriptor(
+      name: "ValidateChain",
+      path: "/vurio.dedup.RecipesService/ValidateChain",
+      type: GRPCCallType.unary
+    )
+
+    internal static let applyRecipe = GRPCMethodDescriptor(
+      name: "ApplyRecipe",
+      path: "/vurio.dedup.RecipesService/ApplyRecipe",
+      type: GRPCCallType.unary
+    )
+
+    internal static let exportRecipes = GRPCMethodDescriptor(
+      name: "ExportRecipes",
+      path: "/vurio.dedup.RecipesService/ExportRecipes",
+      type: GRPCCallType.unary
+    )
+
+    internal static let importRecipes = GRPCMethodDescriptor(
+      name: "ImportRecipes",
+      path: "/vurio.dedup.RecipesService/ImportRecipes",
+      type: GRPCCallType.unary
+    )
+  }
+}
+
+/// ---------------------------------------------------------
 /// Preview Service (CHAIN-1, docs/todo_tool_chain.md §5.4)
 ///
 /// The viewer's live preview. Every frame is rendered by the server's engine
@@ -6950,6 +7584,388 @@ internal enum Vurio_Dedup_AdjustmentsServiceServerMetadata {
     internal static let stepHistory = GRPCMethodDescriptor(
       name: "StepHistory",
       path: "/vurio.dedup.AdjustmentsService/StepHistory",
+      type: GRPCCallType.unary
+    )
+  }
+}
+/// ---------------------------------------------------------
+/// Recipes Service (CHAIN-3, docs/todo_tool_chain.md §7)
+///
+/// Named chains saved from a photo, validated at save, import and apply,
+/// applied to other photos, exported to and imported from
+/// `.vurio-recipes.json`. The client reads and writes the files; the server
+/// stays out of the user's folders.
+/// ---------------------------------------------------------
+///
+/// To build a server, implement a class that conforms to this protocol.
+internal protocol Vurio_Dedup_RecipesServiceProvider: CallHandlerProvider {
+  var interceptors: Vurio_Dedup_RecipesServiceServerInterceptorFactoryProtocol? { get }
+
+  func listRecipes(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_RecipeList>
+
+  /// INVALID_ARGUMENT: the chain was refused (message names the node);
+  /// ALREADY_EXISTS: the name is taken; NOT_FOUND: from_file_path has no edits.
+  func saveRecipe(request: Vurio_Dedup_SaveRecipeRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_RecipeResponse>
+
+  func updateRecipe(request: Vurio_Dedup_UpdateRecipeRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_RecipeResponse>
+
+  func deleteRecipe(request: Vurio_Dedup_RecipeIdRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_Empty>
+
+  /// Compile + validate a chain, against a photo's base when file_path is set.
+  func validateChain(request: Vurio_Dedup_ValidateChainRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_ValidateChainResponse>
+
+  /// Commits the recipe onto the photo as one history step.
+  func applyRecipe(request: Vurio_Dedup_ApplyRecipeRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_SetAdjustmentsResponse>
+
+  func exportRecipes(request: Vurio_Dedup_RecipeIdsRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_RecipesFile>
+
+  func importRecipes(request: Vurio_Dedup_ImportRecipesRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_ImportRecipesResult>
+}
+
+extension Vurio_Dedup_RecipesServiceProvider {
+  internal var serviceName: Substring {
+    return Vurio_Dedup_RecipesServiceServerMetadata.serviceDescriptor.fullName[...]
+  }
+
+  /// Determines, calls and returns the appropriate request handler, depending on the request's method.
+  /// Returns nil for methods not handled by this service.
+  internal func handle(
+    method name: Substring,
+    context: CallHandlerContext
+  ) -> GRPCServerHandlerProtocol? {
+    switch name {
+    case "ListRecipes":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_RecipeList>(),
+        interceptors: self.interceptors?.makeListRecipesInterceptors() ?? [],
+        userFunction: self.listRecipes(request:context:)
+      )
+
+    case "SaveRecipe":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_SaveRecipeRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_RecipeResponse>(),
+        interceptors: self.interceptors?.makeSaveRecipeInterceptors() ?? [],
+        userFunction: self.saveRecipe(request:context:)
+      )
+
+    case "UpdateRecipe":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_UpdateRecipeRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_RecipeResponse>(),
+        interceptors: self.interceptors?.makeUpdateRecipeInterceptors() ?? [],
+        userFunction: self.updateRecipe(request:context:)
+      )
+
+    case "DeleteRecipe":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_RecipeIdRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_Empty>(),
+        interceptors: self.interceptors?.makeDeleteRecipeInterceptors() ?? [],
+        userFunction: self.deleteRecipe(request:context:)
+      )
+
+    case "ValidateChain":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_ValidateChainRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_ValidateChainResponse>(),
+        interceptors: self.interceptors?.makeValidateChainInterceptors() ?? [],
+        userFunction: self.validateChain(request:context:)
+      )
+
+    case "ApplyRecipe":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_ApplyRecipeRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_SetAdjustmentsResponse>(),
+        interceptors: self.interceptors?.makeApplyRecipeInterceptors() ?? [],
+        userFunction: self.applyRecipe(request:context:)
+      )
+
+    case "ExportRecipes":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_RecipeIdsRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_RecipesFile>(),
+        interceptors: self.interceptors?.makeExportRecipesInterceptors() ?? [],
+        userFunction: self.exportRecipes(request:context:)
+      )
+
+    case "ImportRecipes":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_ImportRecipesRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_ImportRecipesResult>(),
+        interceptors: self.interceptors?.makeImportRecipesInterceptors() ?? [],
+        userFunction: self.importRecipes(request:context:)
+      )
+
+    default:
+      return nil
+    }
+  }
+}
+
+/// ---------------------------------------------------------
+/// Recipes Service (CHAIN-3, docs/todo_tool_chain.md §7)
+///
+/// Named chains saved from a photo, validated at save, import and apply,
+/// applied to other photos, exported to and imported from
+/// `.vurio-recipes.json`. The client reads and writes the files; the server
+/// stays out of the user's folders.
+/// ---------------------------------------------------------
+///
+/// To implement a server, implement an object which conforms to this protocol.
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+internal protocol Vurio_Dedup_RecipesServiceAsyncProvider: CallHandlerProvider, Sendable {
+  static var serviceDescriptor: GRPCServiceDescriptor { get }
+  var interceptors: Vurio_Dedup_RecipesServiceServerInterceptorFactoryProtocol? { get }
+
+  func listRecipes(
+    request: Vurio_Dedup_Empty,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_RecipeList
+
+  /// INVALID_ARGUMENT: the chain was refused (message names the node);
+  /// ALREADY_EXISTS: the name is taken; NOT_FOUND: from_file_path has no edits.
+  func saveRecipe(
+    request: Vurio_Dedup_SaveRecipeRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_RecipeResponse
+
+  func updateRecipe(
+    request: Vurio_Dedup_UpdateRecipeRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_RecipeResponse
+
+  func deleteRecipe(
+    request: Vurio_Dedup_RecipeIdRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_Empty
+
+  /// Compile + validate a chain, against a photo's base when file_path is set.
+  func validateChain(
+    request: Vurio_Dedup_ValidateChainRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_ValidateChainResponse
+
+  /// Commits the recipe onto the photo as one history step.
+  func applyRecipe(
+    request: Vurio_Dedup_ApplyRecipeRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_SetAdjustmentsResponse
+
+  func exportRecipes(
+    request: Vurio_Dedup_RecipeIdsRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_RecipesFile
+
+  func importRecipes(
+    request: Vurio_Dedup_ImportRecipesRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_ImportRecipesResult
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+extension Vurio_Dedup_RecipesServiceAsyncProvider {
+  internal static var serviceDescriptor: GRPCServiceDescriptor {
+    return Vurio_Dedup_RecipesServiceServerMetadata.serviceDescriptor
+  }
+
+  internal var serviceName: Substring {
+    return Vurio_Dedup_RecipesServiceServerMetadata.serviceDescriptor.fullName[...]
+  }
+
+  internal var interceptors: Vurio_Dedup_RecipesServiceServerInterceptorFactoryProtocol? {
+    return nil
+  }
+
+  internal func handle(
+    method name: Substring,
+    context: CallHandlerContext
+  ) -> GRPCServerHandlerProtocol? {
+    switch name {
+    case "ListRecipes":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_RecipeList>(),
+        interceptors: self.interceptors?.makeListRecipesInterceptors() ?? [],
+        wrapping: { try await self.listRecipes(request: $0, context: $1) }
+      )
+
+    case "SaveRecipe":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_SaveRecipeRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_RecipeResponse>(),
+        interceptors: self.interceptors?.makeSaveRecipeInterceptors() ?? [],
+        wrapping: { try await self.saveRecipe(request: $0, context: $1) }
+      )
+
+    case "UpdateRecipe":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_UpdateRecipeRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_RecipeResponse>(),
+        interceptors: self.interceptors?.makeUpdateRecipeInterceptors() ?? [],
+        wrapping: { try await self.updateRecipe(request: $0, context: $1) }
+      )
+
+    case "DeleteRecipe":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_RecipeIdRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_Empty>(),
+        interceptors: self.interceptors?.makeDeleteRecipeInterceptors() ?? [],
+        wrapping: { try await self.deleteRecipe(request: $0, context: $1) }
+      )
+
+    case "ValidateChain":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_ValidateChainRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_ValidateChainResponse>(),
+        interceptors: self.interceptors?.makeValidateChainInterceptors() ?? [],
+        wrapping: { try await self.validateChain(request: $0, context: $1) }
+      )
+
+    case "ApplyRecipe":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_ApplyRecipeRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_SetAdjustmentsResponse>(),
+        interceptors: self.interceptors?.makeApplyRecipeInterceptors() ?? [],
+        wrapping: { try await self.applyRecipe(request: $0, context: $1) }
+      )
+
+    case "ExportRecipes":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_RecipeIdsRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_RecipesFile>(),
+        interceptors: self.interceptors?.makeExportRecipesInterceptors() ?? [],
+        wrapping: { try await self.exportRecipes(request: $0, context: $1) }
+      )
+
+    case "ImportRecipes":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_ImportRecipesRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_ImportRecipesResult>(),
+        interceptors: self.interceptors?.makeImportRecipesInterceptors() ?? [],
+        wrapping: { try await self.importRecipes(request: $0, context: $1) }
+      )
+
+    default:
+      return nil
+    }
+  }
+}
+
+internal protocol Vurio_Dedup_RecipesServiceServerInterceptorFactoryProtocol: Sendable {
+
+  /// - Returns: Interceptors to use when handling 'listRecipes'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeListRecipesInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_RecipeList>]
+
+  /// - Returns: Interceptors to use when handling 'saveRecipe'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeSaveRecipeInterceptors() -> [ServerInterceptor<Vurio_Dedup_SaveRecipeRequest, Vurio_Dedup_RecipeResponse>]
+
+  /// - Returns: Interceptors to use when handling 'updateRecipe'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeUpdateRecipeInterceptors() -> [ServerInterceptor<Vurio_Dedup_UpdateRecipeRequest, Vurio_Dedup_RecipeResponse>]
+
+  /// - Returns: Interceptors to use when handling 'deleteRecipe'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeDeleteRecipeInterceptors() -> [ServerInterceptor<Vurio_Dedup_RecipeIdRequest, Vurio_Dedup_Empty>]
+
+  /// - Returns: Interceptors to use when handling 'validateChain'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeValidateChainInterceptors() -> [ServerInterceptor<Vurio_Dedup_ValidateChainRequest, Vurio_Dedup_ValidateChainResponse>]
+
+  /// - Returns: Interceptors to use when handling 'applyRecipe'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeApplyRecipeInterceptors() -> [ServerInterceptor<Vurio_Dedup_ApplyRecipeRequest, Vurio_Dedup_SetAdjustmentsResponse>]
+
+  /// - Returns: Interceptors to use when handling 'exportRecipes'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeExportRecipesInterceptors() -> [ServerInterceptor<Vurio_Dedup_RecipeIdsRequest, Vurio_Dedup_RecipesFile>]
+
+  /// - Returns: Interceptors to use when handling 'importRecipes'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeImportRecipesInterceptors() -> [ServerInterceptor<Vurio_Dedup_ImportRecipesRequest, Vurio_Dedup_ImportRecipesResult>]
+}
+
+internal enum Vurio_Dedup_RecipesServiceServerMetadata {
+  internal static let serviceDescriptor = GRPCServiceDescriptor(
+    name: "RecipesService",
+    fullName: "vurio.dedup.RecipesService",
+    methods: [
+      Vurio_Dedup_RecipesServiceServerMetadata.Methods.listRecipes,
+      Vurio_Dedup_RecipesServiceServerMetadata.Methods.saveRecipe,
+      Vurio_Dedup_RecipesServiceServerMetadata.Methods.updateRecipe,
+      Vurio_Dedup_RecipesServiceServerMetadata.Methods.deleteRecipe,
+      Vurio_Dedup_RecipesServiceServerMetadata.Methods.validateChain,
+      Vurio_Dedup_RecipesServiceServerMetadata.Methods.applyRecipe,
+      Vurio_Dedup_RecipesServiceServerMetadata.Methods.exportRecipes,
+      Vurio_Dedup_RecipesServiceServerMetadata.Methods.importRecipes,
+    ]
+  )
+
+  internal enum Methods {
+    internal static let listRecipes = GRPCMethodDescriptor(
+      name: "ListRecipes",
+      path: "/vurio.dedup.RecipesService/ListRecipes",
+      type: GRPCCallType.unary
+    )
+
+    internal static let saveRecipe = GRPCMethodDescriptor(
+      name: "SaveRecipe",
+      path: "/vurio.dedup.RecipesService/SaveRecipe",
+      type: GRPCCallType.unary
+    )
+
+    internal static let updateRecipe = GRPCMethodDescriptor(
+      name: "UpdateRecipe",
+      path: "/vurio.dedup.RecipesService/UpdateRecipe",
+      type: GRPCCallType.unary
+    )
+
+    internal static let deleteRecipe = GRPCMethodDescriptor(
+      name: "DeleteRecipe",
+      path: "/vurio.dedup.RecipesService/DeleteRecipe",
+      type: GRPCCallType.unary
+    )
+
+    internal static let validateChain = GRPCMethodDescriptor(
+      name: "ValidateChain",
+      path: "/vurio.dedup.RecipesService/ValidateChain",
+      type: GRPCCallType.unary
+    )
+
+    internal static let applyRecipe = GRPCMethodDescriptor(
+      name: "ApplyRecipe",
+      path: "/vurio.dedup.RecipesService/ApplyRecipe",
+      type: GRPCCallType.unary
+    )
+
+    internal static let exportRecipes = GRPCMethodDescriptor(
+      name: "ExportRecipes",
+      path: "/vurio.dedup.RecipesService/ExportRecipes",
+      type: GRPCCallType.unary
+    )
+
+    internal static let importRecipes = GRPCMethodDescriptor(
+      name: "ImportRecipes",
+      path: "/vurio.dedup.RecipesService/ImportRecipes",
       type: GRPCCallType.unary
     )
   }
