@@ -78,7 +78,6 @@ struct ToolDescriptor: Equatable {
 /// never renders. The view model names the concrete types (`toolTypes`).
 @MainActor
 protocol AdjustmentToolUI: AnyObject, ObservableObject {
-    static var id: String { get }
     var descriptor: ToolDescriptor { get }
     var isIdentity: Bool { get }
     /// Load this node's params (nil = defaults).

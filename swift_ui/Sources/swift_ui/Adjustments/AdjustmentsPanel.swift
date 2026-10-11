@@ -234,11 +234,21 @@ struct AdjustmentsPanel: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
+                // CHAIN-2 (docs §9.1): blend and strength are the engine's
+                // controls, shared by every layer node; raster nodes keep
+                // the strength only.
+                if model.nodeHasStrength(node) {
+                    BlendStrengthHeader(model: model, node: node, hasImage: hasImage)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 6)
+                }
                 Group {
                     if let rotate = model.rotateTool(for: node.id) {
                         RotateSection(model: model, tool: rotate, hasImage: hasImage)
                     } else if let crop = model.cropTool(for: node.id) {
                         CropSection(model: model, tool: crop, hasImage: hasImage, customAspectText: $customAspectText)
+                    } else if let generic = model.tool(for: node.id) as? GenericToolUI {
+                        GenericInspector(model: model, tool: generic, nodeID: node.id, hasImage: hasImage)
                     } else {
                         Text("This build has no controls for \"\(node.tool)\"; the node is kept and renders unchanged.")
                             .font(.caption)
@@ -365,6 +375,12 @@ private struct ChainRow: View {
                 .font(.custom("Menlo", size: 9))
                 .foregroundColor(Theme.textSecondary)
                 .lineLimit(1)
+            if model.nodeHasStrength(node), node.blend != nil || node.strength != nil {
+                Text(compositionText)
+                    .font(.custom("Menlo", size: 8))
+                    .foregroundColor(Theme.textAccent.opacity(0.8))
+                    .lineLimit(1)
+            }
             if model.editingCropID == node.id {
                 Image(systemName: "crop")
                     .font(.system(size: 9))
@@ -379,6 +395,51 @@ private struct ChainRow: View {
         .opacity(node.enabled ? 1 : 0.6)
         .contentShape(Rectangle())
         .onTapGesture { model.selectedNodeID = node.id }
+    }
+
+    private var compositionText: String {
+        var parts: [String] = []
+        if let blend = node.blend, blend != "normal" { parts.append(GenericToolUI.readable(blend)) }
+        if let s = node.strength { parts.append(String(format: "%.0f%%", s * 100)) }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// CHAIN-2: the engine's composition controls for a layer/raster node.
+private struct BlendStrengthHeader: View {
+    @ObservedObject var model: AdjustmentsViewModel
+    let node: ChainNode
+    let hasImage: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if model.nodeHasBlend(node) {
+                HStack {
+                    Text("Blend").font(.system(size: 11)).foregroundColor(Theme.textSecondary)
+                    Spacer()
+                    Picker("", selection: Binding(get: { node.blend ?? "normal" },
+                                                  set: { model.setBlend($0, nodeID: node.id) })) {
+                        ForEach(model.blendModes, id: \.self) { mode in
+                            Text(GenericToolUI.readable(mode)).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: 150)
+                    .disabled(!hasImage)
+                }
+            }
+            ParamSlider(label: "Strength",
+                        value: Binding(get: { node.strength ?? 1 },
+                                       set: { model.setStrength($0, nodeID: node.id, interactive: true) }),
+                        range: 0...1, step: 0.01,
+                        onEditing: { editing in
+                            if !editing { model.setStrength(node.strength ?? 1, nodeID: node.id, interactive: false) }
+                        })
+                .disabled(!hasImage)
+        }
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 6).fill(Theme.background.opacity(0.5)))
     }
 }
 
@@ -443,37 +504,60 @@ private struct WrappingChips: View {
     let onAdd: (ToolDescriptor) -> Void
 
     var body: some View {
-        // Chips wrap by hand (a horizontal flow fits the narrow panel).
-        VStack(alignment: .leading, spacing: 4) {
-            ForEach(rows(), id: \.first?.id) { row in
-                HStack(spacing: 4) {
-                    ForEach(row, id: \.id) { tool in
-                        Button(action: { onAdd(tool) }) {
-                            HStack(spacing: 4) {
-                                Image(systemName: tool.icon)
-                                Text(tool.label)
-                            }
-                            .font(.system(size: 10))
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                        }
-                        .vurioButtonStyle(tint: Theme.textPrimary)
-                        .disabled(!hasImage)
-                        .help("Add \(tool.label) after the selection (drag to place it)")
-                        .onDrag { NSItemProvider(object: NSString(string: CatalogueView.dragPrefix + tool.id)) }
+        FlowLayout(spacing: 4) {
+            ForEach(tools, id: \.id) { tool in
+                Button(action: { onAdd(tool) }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: tool.icon)
+                        Text(tool.label)
                     }
+                    .font(.system(size: 10))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
                 }
+                .vurioButtonStyle(tint: Theme.textPrimary)
+                .disabled(!hasImage)
+                .help("Add \(tool.label) after the selection (drag to place it)")
+                .onDrag { NSItemProvider(object: NSString(string: CatalogueView.dragPrefix + tool.id)) }
             }
         }
     }
+}
 
-    private func rows() -> [[ToolDescriptor]] {
-        var out: [[ToolDescriptor]] = []
-        for (i, tool) in tools.enumerated() {
-            if i % 3 == 0 { out.append([]) }
-            out[out.count - 1].append(tool)
+/// Lays its children out left to right, wrapping to a new row when the
+/// width runs out; each child keeps its ideal size.
+private struct FlowLayout: Layout {
+    var spacing: CGFloat = 4
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 300
+        return arrange(width: width, subviews: subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = arrange(width: bounds.width, subviews: subviews)
+        for (index, origin) in result.origins.enumerated() {
+            subviews[index].place(at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y),
+                                  proposal: .unspecified)
         }
-        return out
+    }
+
+    private func arrange(width: CGFloat, subviews: Subviews) -> (size: CGSize, origins: [CGPoint]) {
+        var origins: [CGPoint] = []
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, maxX: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > width {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            origins.append(CGPoint(x: x, y: y))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+            maxX = max(maxX, x - spacing)
+        }
+        return (CGSize(width: maxX, height: y + rowHeight), origins)
     }
 }
 

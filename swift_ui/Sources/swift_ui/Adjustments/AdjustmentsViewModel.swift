@@ -20,13 +20,17 @@ extension Notification.Name {
 /// (decision 6: no Save button); every change asks the server for a frame.
 @MainActor
 final class AdjustmentsViewModel: ObservableObject {
-    /// The registry: the one place that names the tool-UI types. A tool the
-    /// server describes but this list does not know gets no inspector and
-    /// round-trips untouched.
+    /// The registry: the one place that names the tool-UI types with image
+    /// overlays. Every other tool the server describes gets the generic,
+    /// descriptor-driven inspector (CHAIN-2).
     static let toolTypes: [String: (ToolDescriptor) -> any AdjustmentToolUI] = [
         RotateToolUI.id: { RotateToolUI(descriptor: $0) },
         CropToolUI.id: { CropToolUI(descriptor: $0) },
     ]
+
+    static func makeTool(_ descriptor: ToolDescriptor) -> any AdjustmentToolUI {
+        (toolTypes[descriptor.id] ?? { GenericToolUI(descriptor: $0) })(descriptor)
+    }
 
     @Published private(set) var descriptors: [ToolDescriptor] = []
     @Published private(set) var blendModes: [String] = []
@@ -294,12 +298,12 @@ final class AdjustmentsViewModel: ObservableObject {
         var next: [String: any AdjustmentToolUI] = [:]
         var subs: [String: AnyCancellable] = [:]
         for node in document.nodes {
-            guard let descriptor = descriptor(for: node.tool), let make = Self.toolTypes[node.tool] else { continue }
+            guard let descriptor = descriptor(for: node.tool) else { continue }
             let tool: any AdjustmentToolUI
             if let existing = tools[node.id] {
                 tool = existing
             } else {
-                tool = make(descriptor)
+                tool = Self.makeTool(descriptor)
             }
             tool.load(params: node.params)
             next[node.id] = tool
@@ -343,15 +347,48 @@ final class AdjustmentsViewModel: ObservableObject {
         guard let descriptor = descriptor(for: toolID) else { return nil }
         document = currentDocument()
         var node = ChainNode(tool: toolID, version: descriptor.version)
-        if let make = Self.toolTypes[toolID] {
-            let fresh = make(descriptor)
-            node.params = fresh.encode() ?? [:]
-        }
+        node.params = Self.makeTool(descriptor).encode() ?? [:]
         document.insert(node, at: index)
         rebuildTools()
         selectedNodeID = node.id
         chainChanged(label: "Add \(descriptor.label)")
         return node
+    }
+
+    // MARK: - Generic parameters, blend and strength (CHAIN-2)
+
+    /// A generic inspector control changed. `interactive` is true while a
+    /// slider is being dragged (drag-size frames, no commit yet) and false
+    /// when it rests or a discrete control changed.
+    func paramChanged(nodeID: String, label: String, interactive: Bool) {
+        if interactive {
+            isInteracting = true
+            chainChanged(label: "", interactive: true)
+            return
+        }
+        let wasInteracting = isInteracting
+        isInteracting = false
+        chainChanged(label: label)
+        if wasInteracting { requestPreview() }
+    }
+
+    func setBlend(_ mode: String, nodeID: String) {
+        guard let i = document.index(of: nodeID), document.nodes[i].blend ?? "normal" != mode else { return }
+        document.nodes[i].blend = mode == "normal" ? nil : mode
+        chainChanged(label: "Blend \(GenericToolUI.readable(mode))")
+    }
+
+    func setStrength(_ value: Double, nodeID: String, interactive: Bool) {
+        guard let i = document.index(of: nodeID) else { return }
+        let clamped = min(max(value, 0), 1)
+        document.nodes[i].strength = abs(clamped - 1) < 1e-9 ? nil : clamped
+        paramChanged(nodeID: nodeID, label: String(format: "Strength %.0f%%", clamped * 100), interactive: interactive)
+    }
+
+    func nodeHasBlend(_ node: ChainNode) -> Bool { descriptor(for: node.tool)?.category == .layer }
+    func nodeHasStrength(_ node: ChainNode) -> Bool {
+        let c = descriptor(for: node.tool)?.category
+        return c == .layer || c == .raster
     }
 
     func removeNode(_ id: String) {
@@ -451,7 +488,7 @@ final class AdjustmentsViewModel: ObservableObject {
         guard let descriptor = descriptor(for: toolID) else { return nil }
         document = currentDocument()
         var node = ChainNode(tool: toolID, version: descriptor.version)
-        if let make = Self.toolTypes[toolID] { node.params = make(descriptor).encode() ?? [:] }
+        node.params = Self.makeTool(descriptor).encode() ?? [:]
         document.insert(node, at: index)
         rebuildTools()
         return node
