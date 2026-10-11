@@ -99,6 +99,7 @@ set(UNIT_TEST_SOURCES
     unit/test_adjustment_store.cpp
     unit/test_adjustment_render.cpp
     unit/test_preview_session.cpp
+    unit/test_layer_tools.cpp
 )
 
 # ADJ-1: the adjustment store and everything it links. Sources that resolve
@@ -108,6 +109,9 @@ set(UNIT_TEST_SOURCES
 set(ADJUSTMENTS_SOURCES
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/rotate_tool.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/crop_tool.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/tools/param_tool.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/tools/layer_tools.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/blend.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tool_registry.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/render_plan.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/chain_engine.cpp
@@ -212,6 +216,12 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         )
     elseif(${test_name} STREQUAL "test_adjustment_render")
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="AdjustmentRenderTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_layer_tools")
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="LayerToolTest.*:BlendModeTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -807,6 +817,9 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/utils/thumbnail_generator.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/rotate_tool.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/crop_tool.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/tools/param_tool.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/tools/layer_tools.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/blend.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tool_registry.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/render_plan.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/chain_engine.cpp
@@ -1013,7 +1026,8 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_sidecar_layout" AND
       NOT ${test_name} STREQUAL "test_adjustment_store" AND
       NOT ${test_name} STREQUAL "test_adjustment_render" AND
-      NOT ${test_name} STREQUAL "test_preview_session")
+      NOT ${test_name} STREQUAL "test_preview_session" AND
+      NOT ${test_name} STREQUAL "test_layer_tools")
         add_dependencies(${test_name} ${TEST_DATA_DEPENDENCY})
     endif()
 endforeach()

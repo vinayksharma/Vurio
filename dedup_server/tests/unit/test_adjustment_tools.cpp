@@ -258,21 +258,22 @@ TEST(CropToolTest, RoundTripKeepsCustomAspectOnlyWhenCustom)
 TEST(ToolRegistryTest, CatalogueListsGeometryFirstAndDescribesCategories)
 {
     const auto &tools = ToolRegistry::instance().tools();
-    ASSERT_EQ(tools.size(), 2u);
+    ASSERT_GE(tools.size(), 2u);
     EXPECT_EQ(tools[0]->id(), "rotate");
     EXPECT_EQ(tools[1]->id(), "crop");
-    EXPECT_EQ(ToolRegistry::instance().find("exposure"), nullptr);
+    EXPECT_EQ(ToolRegistry::instance().find("sepia_tone"), nullptr);
     auto descriptors = ToolRegistry::instance().descriptors();
-    ASSERT_EQ(descriptors.size(), 2u);
-    for (const auto &d : descriptors)
+    ASSERT_EQ(descriptors.size(), tools.size());
+    for (size_t i = 0; i < 2; ++i)
     {
-        EXPECT_EQ(d.category, ToolCategory::Geometry);
-        EXPECT_FALSE(d.lane_allowed);
-        EXPECT_FALSE(d.summary.empty());
+        EXPECT_EQ(descriptors[i].category, ToolCategory::Geometry);
+        EXPECT_FALSE(descriptors[i].lane_allowed);
+        EXPECT_FALSE(descriptors[i].summary.empty());
     }
     EXPECT_EQ(RenderPlan::blendModes().front(), "normal");
     EXPECT_TRUE(RenderPlan::isBlendMode("normal"));
-    EXPECT_FALSE(RenderPlan::isBlendMode("multiply")) << "arrives with CHAIN-2";
+    EXPECT_TRUE(RenderPlan::isBlendMode("multiply")) << "CHAIN-2";
+    EXPECT_FALSE(RenderPlan::isBlendMode("plus"));
 }
 
 // ---------------------------------------------------------------- document
@@ -353,12 +354,12 @@ TEST(AdjustmentDocumentTest, FormatOneMigratesToRotateThenCrop)
         R"({"format":"vurio-adjustments","version":1,"tools":{
               "crop":{"version":1,"left":0.1,"top":0.1,"width":0.5,"height":0.5},
               "rotate":{"version":1,"quarter_turns":1},
-              "exposure":{"version":1,"ev":0.3}}})", d, error)) << error;
+              "sepia_tone":{"version":1,"ev":0.3}}})", d, error)) << error;
     EXPECT_EQ(d.version, 2);
     ASSERT_EQ(d.chain.size(), 3u);
     EXPECT_EQ(d.chain[0]["tool"], "rotate");
     EXPECT_EQ(d.chain[1]["tool"], "crop");
-    EXPECT_EQ(d.chain[2]["tool"], "exposure") << "unknown sections follow as nodes";
+    EXPECT_EQ(d.chain[2]["tool"], "sepia_tone") << "unknown sections follow as nodes";
     EXPECT_DOUBLE_EQ(d.chain[1]["params"]["width"].get<double>(), 0.5);
     std::string text = d.serialize();
     EXPECT_NE(text.find("\"version\": 2"), std::string::npos);
@@ -370,7 +371,7 @@ TEST(AdjustmentDocumentTest, UnknownToolIsPreservedAndNotIdentity)
     AdjustmentDocument d;
     std::string error;
     ASSERT_TRUE(AdjustmentDocument::parse(
-        R"({"format":"vurio-adjustments","version":2,"chain":[{"id":"abcdefgh","tool":"exposure","params":{"version":1,"ev":0.3},"future":true}]})", d, error));
+        R"({"format":"vurio-adjustments","version":2,"chain":[{"id":"abcdefgh","tool":"sepia_tone","params":{"version":1,"ev":0.3},"future":true}]})", d, error));
     EXPECT_FALSE(d.isIdentity(ToolRegistry::instance()));
     EXPECT_NE(d.revision(), 0);
     RenderPlan plan;

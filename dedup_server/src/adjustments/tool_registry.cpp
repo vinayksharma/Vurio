@@ -1,5 +1,6 @@
 #include "adjustments/tool_registry.hpp"
 #include "adjustments/tools/crop_tool.hpp"
+#include "adjustments/tools/layer_tools.hpp"
 #include "adjustments/tools/rotate_tool.hpp"
 
 namespace MediaDedup::Adjustments
@@ -12,10 +13,20 @@ namespace MediaDedup::Adjustments
 
     ToolRegistry::ToolRegistry()
     {
-        // Catalogue order: geometry first. CHAIN-2 appends the layer and
-        // raster tools here.
+        // Catalogue order: geometry, then the layer tools, then raster.
         owned_.push_back(std::make_unique<RotateTool>());
         owned_.push_back(std::make_unique<CropTool>());
+        owned_.push_back(std::make_unique<ExposureTool>());
+        owned_.push_back(std::make_unique<BrightContrastTool>());
+        owned_.push_back(std::make_unique<WhiteBalanceTool>());
+        owned_.push_back(std::make_unique<SaturationTool>());
+        owned_.push_back(std::make_unique<HueTool>());
+        owned_.push_back(std::make_unique<MonochromeTool>());
+        owned_.push_back(std::make_unique<ColorFilterTool>());
+        owned_.push_back(std::make_unique<GammaTool>());
+        owned_.push_back(std::make_unique<VignetteTool>());
+        owned_.push_back(std::make_unique<SharpenTool>());
+        owned_.push_back(std::make_unique<DenoiseTool>());
         for (const auto &t : owned_)
             order_.push_back(t.get());
     }

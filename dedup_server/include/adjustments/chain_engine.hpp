@@ -42,6 +42,12 @@ namespace MediaDedup::Adjustments
         // Fit a frame so its longest side is <= max_side (never enlarges).
         void fitFrame(Frame &frame, int max_side);
 
+        // Gaussian blur of a float frame. Wide radii run on a downsampled
+        // pyramid level and are upsampled back (docs §5.4: the one outlier
+        // in the per-node budget), which is visually identical for soft
+        // radii and bounds the cost.
+        cv::Mat gaussianBlur(const cv::Mat &pixels, double sigma_px);
+
         // JPEG-encode a frame. Empty vector on failure.
         std::vector<uint8_t> encodeJpeg(const Frame &frame, int quality);
 

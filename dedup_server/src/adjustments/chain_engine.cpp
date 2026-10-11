@@ -112,6 +112,26 @@ namespace MediaDedup::Adjustments::ChainEngine
         scaleFrame(frame, static_cast<double>(max_side) / longest);
     }
 
+    cv::Mat gaussianBlur(const cv::Mat &pixels, double sigma_px)
+    {
+        cv::Mat out;
+        if (pixels.empty() || sigma_px <= 0)
+            return pixels.clone();
+        if (sigma_px <= 4.0)
+        {
+            cv::GaussianBlur(pixels, out, cv::Size(0, 0), sigma_px, sigma_px, cv::BORDER_REFLECT);
+            return out;
+        }
+        double factor = sigma_px / 2.0; // blur at sigma 2 on the reduced level
+        int w = std::max(1, static_cast<int>(std::lround(pixels.cols / factor)));
+        int h = std::max(1, static_cast<int>(std::lround(pixels.rows / factor)));
+        cv::Mat small, blurred;
+        cv::resize(pixels, small, cv::Size(w, h), 0, 0, cv::INTER_AREA);
+        cv::GaussianBlur(small, blurred, cv::Size(0, 0), 2.0, 2.0, cv::BORDER_REFLECT);
+        cv::resize(blurred, out, pixels.size(), 0, 0, cv::INTER_LINEAR);
+        return out;
+    }
+
     std::vector<uint8_t> encodeJpeg(const Frame &frame, int quality)
     {
         std::vector<uint8_t> out;

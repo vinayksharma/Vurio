@@ -315,6 +315,9 @@ add_executable(media_dedup_server
     src/utils/thumbnail_generator.cpp
     src/adjustments/tools/rotate_tool.cpp
     src/adjustments/tools/crop_tool.cpp
+    src/adjustments/tools/param_tool.cpp
+    src/adjustments/tools/layer_tools.cpp
+    src/adjustments/blend.cpp
     src/adjustments/tool_registry.cpp
     src/adjustments/render_plan.cpp
     src/adjustments/chain_engine.cpp

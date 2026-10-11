@@ -1,4 +1,5 @@
 #include "adjustments/render_plan.hpp"
+#include "adjustments/blend.hpp"
 #include "adjustments/tools/crop_tool.hpp"
 #include "adjustments/tools/rotate_tool.hpp"
 #include <cmath>
@@ -115,6 +116,11 @@ namespace MediaDedup::Adjustments
                 error = nodeTag(n) + n.tool->id() + ": unknown blend mode '" + n.blend + "'";
                 return false;
             }
+            if (n.tool->category() == ToolCategory::Raster && n.blend != "normal")
+            {
+                error = nodeTag(n) + n.tool->id() + ": a raster node takes a strength but no blend mode (docs §3.2)";
+                return false;
+            }
             if (n.strength < 0.0 || n.strength > 1.0)
             {
                 error = nodeTag(n) + n.tool->id() + ": strength must be within [0, 1]";
@@ -160,21 +166,9 @@ namespace MediaDedup::Adjustments
         return true;
     }
 
-    const std::vector<std::string> &RenderPlan::blendModes()
-    {
-        // CHAIN-2 adds the fifteen others (docs §5.3) together with their
-        // engine implementations; the list and the engine move together.
-        static const std::vector<std::string> modes = {"normal"};
-        return modes;
-    }
+    const std::vector<std::string> &RenderPlan::blendModes() { return Blend::modes(); }
 
-    bool RenderPlan::isBlendMode(const std::string &name)
-    {
-        for (const auto &m : blendModes())
-            if (m == name)
-                return true;
-        return false;
-    }
+    bool RenderPlan::isBlendMode(const std::string &name) { return Blend::isMode(name); }
 
     void RenderPlan::applyNode(const Node &node, Frame &frame)
     {
@@ -187,18 +181,24 @@ namespace MediaDedup::Adjustments
             node.tool->apply(*node.state, frame, ctx);
             return;
         }
-        // Derived image, then the engine's composition: blend onto the
-        // input (CHAIN-1 knows "normal" = the derived image itself), then
-        // keep `strength` of the result: in + (blended − in) × s.
+        // Derived image, then the engine's composition (docs §3.3): blend
+        // onto the input, then keep `strength` of the result:
+        // in + (blend(in, derived) − in) × s. A raster node has no blend
+        // (always "normal"), only the mix.
         Frame derived;
         derived.pixels = frame.pixels.clone();
         node.tool->apply(*node.state, derived, ctx);
+        cv::Mat blended;
+        if (node.blend == "normal")
+            blended = derived.pixels;
+        else
+            Blend::apply(node.blend, frame.pixels, derived.pixels, blended);
         if (node.strength >= 1.0 - 1e-9)
         {
-            frame.pixels = derived.pixels;
+            frame.pixels = blended;
             return;
         }
-        cv::addWeighted(frame.pixels, 1.0 - node.strength, derived.pixels, node.strength, 0.0, frame.pixels);
+        cv::addWeighted(frame.pixels, 1.0 - node.strength, blended, node.strength, 0.0, frame.pixels);
     }
 
     void RenderPlan::render(Frame &frame, size_t first, const Observer &observer) const
