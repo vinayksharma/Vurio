@@ -1,0 +1,840 @@
+# CHAIN-1..7 — Tool chain: ordered tools, layers, splits/merges, recipes, export
+
+Status: DESIGNED 2026-10-11 on `feature/image_adjustments`, revised twice
+the same day after the user's answers (§13 records all of them). **No
+questions open; ready for CHAIN-1.** Nothing implemented. Builds on ADJ-1/2/4
+(`todo_image_adjustments.md`), whose decisions 1–10 and edits-root decisions
+stand: sidecar beside the asset or under the edits root, DB authoritative
+for rendering, content-hash revision, commit on every completed adjustment,
+analysis on source pixels (ADJ-3 still deferred).
+
+Project principle applied throughout (user, 2026-10-11): **the heavy lifting
+is on the C++ server, which must stay portable; the UI stays lean.** Every
+pixel this feature produces, including the live preview in the viewer, is
+rendered by one engine in the server. The client draws frames and controls.
+
+## 1. What the user gets
+
+- The viewer's tool panel becomes a **chain**: an ordered list of processing
+  nodes the user builds, reorders, bypasses, duplicates and deletes, like a
+  DAW channel strip or a synth patch. The image flows top to bottom.
+- A **catalogue** of tools by category, dragged (or clicked) into the chain
+  at any position. Any tool may appear any number of times.
+- Every node has an **inspector**. Layer nodes carry two common controls:
+  **Blend** (the algorithm composing the node's result onto what came
+  before; Photoshop's modes) and **Strength**.
+- **Splits**: a node forking the image into **lanes** ("stems"). Each lane
+  has a **mask** (sky, subject, people, faces, a text prompt such as "the
+  red car", a gradient, a luminance or colour range), its own sub-chain,
+  and a **merge** with blend and strength. Seen from outside a split is one
+  complex layer. Lanes nest.
+- **Recipes**: a photo's chain saved under a name, validated, applied to
+  other photos (replace or append), exported and imported as files, managed
+  in Settings. Recipes sit in the catalogue like tools. The clipboard
+  carries chains.
+- **Live preview**: dragging any slider or rearranging the chain updates the
+  picture at once; the server renders every frame.
+- **Undo/redo per photo, persistent**: every edit operation on a photo is a
+  history step stored with its edits, so `⌘Z` works today and next week.
+  Before/after on `\`, node bypass, lane solo, mask overlay.
+- **Export**: a separate operation that writes a *new* image rendered
+  through the chain at full resolution to a folder the user picks. The
+  source is never touched; the export is not registered unless the folder
+  is inside a registered location, where the normal scan picks it up.
+- Old sidecars (format 1) load and are rewritten as format 2 on the next
+  commit.
+
+## 2. Facts the design rests on (verified in code or measured 2026-10-11)
+
+| Fact | Where |
+|---|---|
+| Server tool interface: `descriptor / parse / serialize / isIdentity / validate / appendMagickOps / transformSize`; only `tool_registry.cpp` names tools | `include/adjustments/adjustment_tool.hpp`, `src/adjustments/tool_registry.cpp` |
+| `RenderChain` is a flat vector in registry order; the format-1 document is a map keyed by tool id | `render_chain.hpp`, `adjustment_document.hpp` |
+| Every adjusted render today is one `magick` **subprocess** whose arg vector carries the chain between `-auto-orient` and `-colorspace sRGB [-resize]`; identity renders take an OpenCV fast path | `thumbnail_generator.cpp:230-280` |
+| `AdjustmentStore` owns commit, invalidation, publish, sidecars, spool, edits roots | `adjustment_store.hpp` |
+| The viewer draws BASE pixels and applies rotate+crop as SwiftUI layout | `ViewerView.swift:338-360`, `AdjustmentLayout.swift` |
+| The client never hashes; the server echoes the revision everywhere | ADJ spec §6.1 |
+| The QHD preview (≤ 2560 px, base pixels) is cached per path in `preview_cache`; full-res renders sit in `FullResLruCache` (32 entries / 512 MB) | `sql_constants.hpp:677`, `full_res_lru_cache.hpp:28-34` |
+| No RPC returns image bytes today; media is returned as a path (`MediaPathResponse`) the client reads from disk | `dedup.proto:628-668` |
+| OpenCV 4.13 is present and used in three server files (CLIP preprocessing, fast path) but is `find_package(OpenCV QUIET)` + `HAVE_OPENCV`, i.e. optional | `CMakeLists.txt:133-137`, grep |
+| ONNX Runtime with optional CoreML EP behind `OnnxSessionManager`; models under `models/`, verified before a rebuild | `onnx_session_manager.hpp`, commit `2a2293e2` |
+| The server already calls Apple Vision from Objective-C++ (faces) and the face plan is a Vision + ONNX hybrid | `vision_face_detector.mm`, memory FACE-1..5 |
+| Faces, clusters and persons are in the DB | `faces_ops.cpp:27-91` |
+| Swift package: macOS 14, GRPC + SwiftProtobuf only; no CoreImage/Metal/Vision in the client | `Package.swift`, grep |
+| Settings: hand-built sections; `NSOpenPanel` exists (Media Locations), no `NSSavePanel` yet | `SettingsView.swift`, `MediaLocationsView.swift` |
+| Rules: source media read-only; exception 2 lets the server own its sidecars | `CURSOR_RULES.md:203-206` |
+
+Measured, synthetic 6000×4000 (24 MP) JPEG, Apple Silicon:
+
+| Operation | Time |
+|---|---|
+| `magick` subprocess, identity 256 px thumbnail (decode dominates) | 0.73 s |
+| `magick` subprocess, one layer op + Multiply blend at full res, then resize to 2560 | 1.86 s |
+| same, resize **first** then ops | 0.98 s |
+| `magick` subprocess, masked lane merge at full res | 3.23 s |
+| OpenCV in-process, decode the 2560×1707 QHD JPEG (once per opened file) | 17 ms |
+| OpenCV in-process at 2560×1707: LUT 4.6 ms, colour matrix 3.0 ms, multiply blend 2.4 ms, strength mix 2.7 ms, masked lane merge 26 ms, unsharp 39 ms, Gaussian blur σ = 1 % of short side 258 ms, JPEG q85 encode 10 ms (679 KB), decode of that frame 11 ms | |
+| same at 1280×854: 1.2 / 0.8 / 0.4 / 0.7 / 6.5 / 10 / 34 / 2.6 ms (154 KB) / 2.5 ms | |
+
+Consequences: a subprocess per frame is out; an in-process engine on an
+already decoded working-size base renders a ten-node per-pixel chain in
+30–50 ms at QHD and under 15 ms at half size. Encode + localhost transfer +
+client decode add ~25 ms at QHD, ~6 ms at half. Wide blurs are the one
+outlier and get a pyramid implementation (§5.4). This is what makes a
+server-rendered live preview possible, and it is the design.
+
+## 3. Model
+
+### 3.1 Vocabulary
+
+- **Node**: one step. A **tool node** (tool + params) or a **split node**
+  (lanes). Stable `id` (8 base32 chars, unique in the document), `enabled`.
+- **Chain**: ordered nodes. The document's top-level chain is the **trunk**;
+  each lane holds its own chain.
+- **Tool**: a self-contained unit with a **category**.
+- **Lane**: `mask` + `steps` + `merge`. **Merge** = `blend` + `strength`,
+  the lane's closing node: always present, configurable, not deletable.
+- **Base**: the source decoded with EXIF orientation applied (ADJ §3.1).
+  **Base space**: coordinates normalised to the base canvas.
+- **Fork canvas**: the canvas a split's input has (the base transformed by
+  the geometry nodes above the split).
+- **Working size**: the pixel size a render runs at (§5.3).
+- **Effective chain**: the chain minus disabled nodes; the only thing that
+  renders or hashes.
+- **Recipe**: a named, validated trunk stored independently of any photo.
+
+### 3.2 Categories
+
+| Category | Examples | Composition | Placement | Common params |
+|---|---|---|---|---|
+| `geometry` | Rotate, Crop; later Perspective, Upscale | Replaces the image **and its canvas**; everything before is rasterised into the new canvas | **Trunk only** (a lane must keep its canvas to merge) | — |
+| `raster` | Sharpen, Denoise, Clarity, Dehaze | Replaces pixels, keeps the canvas; optional mix with its input | Trunk or lane | `strength` (mix, default 1) |
+| `layer` | Exposure, Contrast, White balance, Saturation, Hue, Monochrome, Colour filter, Vignette, Gamma; later Curves, HSL, Grain | Derived image blended onto its input | Trunk or lane | `blend` (default `normal`), `strength` (default 1) |
+| `mask` | Full, Linear, Radial, Luminance, Colour range, Subject, People, Faces, Prompt | Coverage image, never pixels | Lane mask slot only | `invert`, `feather` |
+| `split` | Split | Lanes forked from the input, merged back in order | Trunk or lane (nesting ≤ 3) | — |
+
+The user's "dimensional and attribute" tools are `geometry` + `raster`
+(both collapse the stack; only the canvas question separates them, and it
+decides lane placement). "Layer adjustment" is `layer`. "Branch/stem" is
+`split` + `mask` + merge. **Multiplicity (decision 2026-10-11): any tool,
+including Rotate and Crop, may appear any number of times**; each instance
+is normalised to the canvas it receives, so two crops in sequence are
+well-defined.
+
+### 3.3 Evaluation
+
+```
+eval(chain, img):
+  for node in chain where node.enabled: img = apply(node, img)
+  return img
+
+apply(tool node):
+  geometry:  img = tool(img)                                        # canvas may change
+  raster:    out = tool(img);  img = mix(img, out, strength)
+  layer:     out = tool(img);  img = mix(img, blend(img, out, blend), strength)
+
+apply(split node):                       # fork = the split's input, shared by all lanes
+  trunk = img
+  for lane in lanes where lane.enabled:
+    laneOut = eval(lane.steps, fork)                                 # from the fork, not the trunk
+    m       = coverage(lane.mask, fork)                              # §5.6, in fork canvas
+    trunk   = trunk + (blend(trunk, laneOut, merge.blend) − trunk) × merge.strength × m
+  img = trunk
+
+mix(a, b, s) = a + (b − a) × s
+```
+
+Lanes fork from one image and mix back in order: the second lane sees the
+first lane's merge on the trunk but not in its own input (stems to the
+master bus; git branches from one commit merged in sequence). A lane cannot
+read the trunk after the fork.
+
+Order is the user's. `[Exposure, Crop]` and `[Crop, Exposure]` render the
+same (per-pixel); `[Vignette, Crop]` and `[Crop, Vignette]` do not, and
+that is the feature.
+
+### 3.4 Coordinates
+
+Two rules, one for tools and one for masks:
+
+- **Tool parameters are normalised to the canvas the node receives.** Crop
+  rectangle, vignette radius, blur/sharpen radii, grain size: fractions of
+  the input canvas (positions as fractions of width/height, lengths as
+  fractions of the shorter side). Nothing is in pixels, so one document
+  renders identically from the original, the 2560 px preview, a RAW's
+  embedded JPEG, or any working size (§5.3). A `resolution_dependent` tool
+  receives the pixel scale.
+- **Mask parameters live in base space** (decision 2026-10-11, §13.3):
+  gradient end points, radial centre and radii, and every detected mask are
+  expressed on the base canvas, and the engine carries them to the fork
+  canvas through the geometry nodes above the split (the same rotate/crop
+  transforms applied to a coverage image, or to the gradient's control
+  points). A radial mask placed on a face stays on the face when the user
+  later inserts a crop or a rotation above the split; nothing is re-detected
+  and nothing drifts. The cost is one affine transform per mask per render,
+  and the client's pin overlay maps through the same transform, which the
+  server returns with every preview frame (§5.5).
+
+### 3.5 Revision
+
+`render_revision = fnv1a32(canonical JSON of the effective chain)` folded to
+int31, 0 iff identity (ADJ §3.4). Node ids, lane names, disabled nodes and
+`updated_at` are excluded, so bypass-and-restore returns to the same tiles.
+The row and sidecar exist whenever the **document** has any node, even all
+bypassed (that is the user's work), so `render_revision` may be 0 in a
+stored row; the `COALESCE(..., 0)` best-fit subquery already copes.
+
+## 4. Document format 2
+
+```json
+{
+  "format": "vurio-adjustments",
+  "version": 2,
+  "asset": { "name": "DSC04624.JPG", "relative_path": "2024/Tetons/DSC04624.JPG", "size_bytes": 4812331 },
+  "updated_at": "2026-10-11T18:21:07Z",
+  "chain": [
+    { "id": "k3q7m2ta", "tool": "rotate", "version": 1, "enabled": true,
+      "params": { "quarter_turns": 1, "angle": -2.5 } },
+    { "id": "p8w1zr0c", "tool": "crop", "version": 1, "enabled": true,
+      "params": { "left": 0.08, "top": 0.05, "width": 0.84, "height": 0.90, "aspect": "3:2" } },
+    { "id": "e4n9ycsb", "tool": "exposure", "version": 1, "enabled": true,
+      "blend": "normal", "strength": 1.0, "params": { "ev": 0.6 } },
+    { "id": "s2hv6dqe", "tool": "split", "version": 1, "enabled": true,
+      "lanes": [
+        { "id": "l1a0x5pn", "name": "Sky", "enabled": true,
+          "mask": { "components": [ { "source": "prompt", "version": 1, "op": "add",
+                                      "params": { "text": "the sky" } } ],
+                    "invert": false, "feather": 0.01 },
+          "steps": [ { "id": "g7u3bkwm", "tool": "saturation", "version": 1, "enabled": true,
+                       "blend": "normal", "strength": 1.0, "params": { "amount": -0.2 } } ],
+          "merge": { "blend": "multiply", "strength": 0.6 } },
+        { "id": "l9f2tc4r", "name": "Faces", "enabled": true,
+          "mask": { "components": [ { "source": "faces", "version": 1, "op": "add", "params": {} } ],
+                    "invert": false, "feather": 0.02 },
+          "steps": [ { "id": "z0d8qlhx", "tool": "exposure", "version": 1, "enabled": true,
+                       "blend": "normal", "strength": 1.0, "params": { "ev": 0.3 } } ],
+          "merge": { "blend": "normal", "strength": 1.0 } }
+      ] },
+    { "id": "m5c1ovej", "tool": "monochrome", "version": 1, "enabled": false,
+      "blend": "normal", "strength": 1.0, "params": { "preset": "red_filter" } }
+  ],
+  "history": {
+    "index": 7,
+    "steps": [
+      { "at": "2026-10-11T18:02:40Z", "label": "Rotate −2.5°", "chain": [ … ] },
+      { "at": "2026-10-11T18:03:12Z", "label": "Add Exposure", "chain": [ … ] }
+    ]
+  }
+}
+```
+
+- `history` (decision 2026-10-11, §13.14): the photo's undo/redo stack,
+  persisted with its edits. `steps[i].chain` is the full trunk after step
+  *i* (snapshots, not deltas: a chain is 1–3 KB and snapshots make redo and
+  "jump to step" trivial); `index` points at the current step. Capped at
+  `media.adjustments.history.maxEntries` (default 100, oldest dropped).
+  Excluded from the canonical hash. Stored in the sidecar beside `chain`,
+  and in its own `image_adjustments.history` column so the render hot path
+  (`document` → plan) never parses it. A chain reset to empty keeps its
+  history (the user can redo); the row and sidecar exist while either
+  `chain` or `history.steps` is non-empty.
+
+- `chain` replaces `tools`. `params` is the tool's section as today, with
+  its own `version`, so Rotate's and Crop's parsers survive. `blend` and
+  `strength` belong to the node (engine-owned); the registry refuses them on
+  a geometry node.
+- `mask.components` is an array from day one so sources can later be
+  combined (`add`, `subtract`, `intersect`, left to right) without a format
+  bump; the format-2 UI exposes one component.
+- Unknown tool ids, mask sources and node keys round-trip verbatim; an
+  unknown tool renders as a no-op and shows greyed as "unknown tool".
+- **Migration**: a format-1 document loads as `[rotate, crop]` with fresh
+  ids; the canonical form is defined so the migrated chain hashes to its
+  format-1 revision (golden test), so no cached tile is lost. Rewritten as
+  format 2 on the next commit, not on load.
+- Canonical form: the effective chain as `[{tool, params, blend?, strength?}]`
+  (split: `{tool:"split", lanes:[{mask, steps, merge}]}`), keys sorted,
+  numbers to 6 decimals, defaults omitted.
+
+## 5. Rendering: one engine, in the server
+
+### 5.1 Decision
+
+All pixels come from one C++ engine, `ChainEngine`, running in-process on
+decoded working-size frames with OpenCV. It renders thumbnails, the QHD
+and full-size viewer renders, every live preview frame, mask overlays,
+solo views and exports. The client contains no pixel code; it decodes JPEG
+frames and draws them. The ImageMagick arg-chain implementation of the
+tools (`appendMagickOps`) is retired; Rotate and Crop are re-implemented in
+the engine, and `test_adjustment_render.cpp` moves to the engine.
+
+Why in-process OpenCV rather than the magick subprocess: the measurements in
+§2 (a subprocess decodes the original every time, ≥ 0.7 s; the engine works
+on a decoded base and spends 3–5 ms per node). Why OpenCV rather than
+Magick++ in-process: integer and float per-pixel kernels are SIMD-vectorised,
+the API is a natural fit for matrices, LUTs, blends and warps, it is
+Apache-2.0 and runs on every platform the server may be ported to, and it
+is already linked. **OpenCV becomes a required dependency** (today
+`QUIET`, §14.4).
+
+Decoding stays where it is: the base is produced by the existing paths
+(QHD preview from `preview_cache`; the original through the existing
+LibRaw / magick / OpenCV decode into a temp file or memory). Fragile
+third-party decoders keep running in the subprocess; the engine only ever
+sees decoded pixels.
+
+### 5.2 Frames and the engine
+
+`Frame = { cv::Mat pixels (CV_32FC3, sRGB gamma, [0,1]), Size canvas,
+ Affine2D base_to_canvas }`. Float keeps a twenty-layer chain free of
+banding; conversion from the 8-bit decode costs 6 ms at QHD once per base
+load. `base_to_canvas` is maintained by the geometry nodes (rotate = rotation
+about centre + bbox growth, crop = translation) and is what carries masks
+from base space to the fork (§3.4) and what the client uses to place
+overlays (§5.5).
+
+```cpp
+class AdjustmentTool {            // replaces appendMagickOps
+    virtual void apply(const ToolState&, Frame& io, const RenderContext&) const = 0;   // in place
+    virtual Size transformSize(const ToolState&, Size input) const = 0;              // geometry only
+};
+struct RenderContext { double pixel_scale /* px per normalised unit */; const MaskResolver* masks; Quality q; };
+class MaskSource {
+    virtual void coverage(const MaskState&, const Frame& fork, cv::Mat1f& out, const RenderContext&) const = 0; // procedural
+    virtual bool detect(const std::string& file_path, const MaskState&, cv::Mat1f& base_coverage) const;      // detected, base space
+};
+```
+
+`RenderPlan` (replaces `RenderChain`) is the compiled tree:
+`ToolNode{tool, state, blend, strength}`, `SplitNode{lanes}`,
+`Lane{mask, steps, merge}`; `revision()`, `isIdentity()`,
+`displaySize(Size)`, `validate(Size)`, `render(Frame&, RenderContext&,
+NodeCache*)`. The engine owns blend and strength (the tool produces its
+derived frame; the engine mixes), the fork copy, mask transport and the
+merge, so a tool is only ever `apply` + `transformSize`.
+
+### 5.3 Working size
+
+Every render first brings the base to the smallest size whose output
+still meets the target: `out = plan.displaySize(input)`, `s = min(1,
+target / max(out))`, resize the base by `s` (INTER_AREA), then run the
+chain with `pixel_scale = s × shorter side`. Because every parameter is
+normalised, geometry and per-pixel results are the same picture at any `s`.
+Spatial tools (blur, sharpen, grain) are **approximately** the same: a blur
+of radius 1 % of the short side computed at 256 px and the same blur
+computed at 24 MP then shrunk to 256 px differ by resampling noise, a few
+levels out of 255, invisible at tile size. This is the trade the §2 numbers
+justify (half the time at QHD, far more at tile size), and it matches the
+viewer, whose preview is rendered at ≤ 2560 anyway (§14.1 asks for the
+user's acceptance in plain terms).
+
+Thumbnail path: `generateToBlob` keeps its decode and identity fast path;
+for a non-identity plan it decodes to a frame (from the QHD preview when
+one exists, which already is a resize-first base), resizes to working size,
+runs the engine, encodes JPEG. The two thumbnail helpers, `GetThumbnail`,
+`computeDisplayDimensions(base, plan)` and the best-fit subquery are
+unchanged in role (ADJ §5.3).
+
+### 5.4 Live preview: a render session per open file
+
+```proto
+service PreviewService {
+  rpc RenderPreview(RenderPreviewRequest) returns (PreviewFrame);
+  rpc ReleasePreview(AdjustmentsFileRequest) returns (Empty);
+}
+message RenderPreviewRequest {
+  string file_path = 1;
+  string document_json = 2;      // the chain being edited, not necessarily committed
+  int32  max_side = 3;           // 1280 while dragging, 2560 at rest
+  int32  quality = 4;            // JPEG quality, default 85
+  int64  seq = 5;                // client sequence; echoed, lets the client drop stale frames
+  // view modes — all rendered by the server, the client only asks
+  string bypass_node_id = 6;     // crop editing: render with this node skipped
+  string solo_lane_id = 7;       // lane solo: eval(lane.steps, fork) masked over mid-grey
+  string overlay_lane_id = 8;    // mask overlay: 50 % red where coverage > 0
+  bool   before = 9;             // before/after: identity
+}
+message PreviewFrame {
+  bytes  jpeg = 1;               // first bytes payload in the proto; localhost; 150–700 KB
+  int32  width = 2; int32 height = 3;
+  int64  seq = 4;
+  repeated double base_to_canvas = 5;   // 2×3 affine, base space → frame pixels, for overlays
+  repeated double selected_input_to_canvas = 6; // same for the bypassed/selected node's input canvas
+  int32  render_ms = 7;          // for the debug overlay and the budget test
+}
+```
+
+Server: `PreviewSessionManager` holds up to three sessions (the open file
+and its strip neighbours), each with the decoded QHD base frame (one
+`cv::Mat`, ~52 MB float) and a **node-output cache**: a map from "prefix
+hash" (canonical hash of the effective chain up to and including node *n*,
+plus the working size) to the frame after node *n*, LRU-bounded by
+`media.adjustments.preview.cacheBytes` (default 384 MB). A slider on the
+last node re-runs one node; inserting a node re-runs from its position;
+reordering invalidates from the first changed prefix. Lanes cache their
+fork frame and each lane's output the same way. Sessions expire after
+`preview.idleSeconds` (120) or on `ReleasePreview`.
+
+Client: one request in flight, latest-wins (a slider at 120 Hz produces
+120 documents a second; the client sends the newest when the previous
+frame returns), `max_side = 1280` during a gesture and `2560` on gesture
+end, then commit. Frames arrive as JPEG; `NSImage(data:)` on a background
+queue, published to the viewer, drawn through the existing fit/zoom/pan
+layout. Budget (from §2): ~15–25 ms per half-size frame, ~60–80 ms per QHD
+frame, i.e. gesture at 40+ fps, resting frame within a tenth of a second.
+`render_ms` is shown in the debug overlay and asserted in a test on the
+synthetic image. The Gaussian outlier is solved in the engine: blurs with
+σ above 4 px run on a downsampled pyramid level and are upsampled
+(standard, visually identical for soft radii).
+
+What disappears from the client: `AdjustmentLayout`'s rotate+crop
+compositing (the frame already is the rendered result; the layout only
+fits a bitmap), the planned CoreImage renderer, any mask handling. The
+crop overlay keeps its handle math: the server renders the canvas with the
+crop node bypassed and returns `selected_input_to_canvas`, which maps the
+crop rectangle (normalised to that canvas) to frame pixels.
+
+### 5.5 Full resolution and the viewer's zoom
+
+Today the client decodes non-RAW originals itself for zoom (ADJ §6.2).
+That remains correct **only for identity chains**. For an edited file the
+viewer asks `GetPreview(size="full")`, which now renders the chain through
+the engine at `s = 1` in the background into `FullResLruCache` keyed by
+`(path, revision)` (today: path + mtime) and pushes `MediaReadyEvent
+{"full"}`; meanwhile the viewer shows the QHD frame scaled up, as the
+fade-in does today. A 24 MP ten-node chain at `s = 1` is roughly 0.4–0.8 s
+of engine time plus the original's decode. Cached across zooms until the
+revision changes.
+
+### 5.6 Masks
+
+| Kind | Sources | Computed | Cost |
+|---|---|---|---|
+| **Procedural** | `full`, `linear`, `radial`, `luminance`, `color_range` | by the engine on every render, from base-space parameters carried to the fork (geometry) or from the fork pixels (luminance, colour) | per render, ≤ 7 ms at QHD |
+| **Detected** | `subject`, `people`, `faces` (DB boxes → feathered ellipses, optional `person_ids`), `prompt` (free text) | by `MaskService`, once per `(file, canonical component)`, **on the base**, cached as 8-bit PNG under `<thumbnail cache dir>/masks/<fnv(key)>_<long side>.png` (long side `masks.size`, default 1024), carried to the fork by the engine like a procedural mask | seconds once, then one warp per render |
+
+Detected masks run on the base and are transported through geometry
+(§3.4) so that **no edit anywhere in the chain re-runs a detector**; the
+live preview stays live while the user crops, rotates, reorders or tunes.
+A lane whose detected mask is still computing renders as a no-op and its
+row shows a progress glyph; `MediaReadyEvent{"mask"}` triggers the next
+frame. Thumbnail renders needing a missing mask compute it inline (they are
+off the UI thread already). The mask cache is regenerable and goes with
+`ClearAllCaches`.
+
+Detector backends (all open source, user's condition §13.4), behind one
+`MaskSource` each, selectable per platform so the server stays portable:
+
+| Source | macOS backend | Portable backend |
+|---|---|---|
+| `subject` | Vision `VNGenerateForegroundInstanceMaskRequest` (Objective-C++, beside `vision_face_detector.mm`): Apple's salient-subject lifting is the one place where an automatic open-source pipeline has no equal, because "which object is the subject" needs no prompt there | CLIPSeg prompt "the main subject" → SAM refinement |
+| `people` | portable path only (no Vision): a person-segmentation ONNX model (candidates with permissive licences to be verified at CHAIN-5: MediaPipe selfie/multiclass segmentation, MODNet; Robust Video Matting is GPL and excluded), refined by SAM when present | same |
+| `faces` | DB boxes (already Vision + ONNX hybrid) | same |
+| `prompt` | — | **CLIPSeg** (`CIDAS/clipseg-rd64-refined`, Apache-2.0, ~150 MB fp16 ONNX): text → coarse 352 px coverage; then **SAM refinement** (Apache-2.0): the coarse mask's bounding box and peak points prompt SAM for a sharp mask. CHAIN-5 ships CLIPSeg with an edge-aware upsample; CHAIN-5b adds SAM. |
+
+Backend rule (decision 2026-10-11, §13.17): an Apple backend is used only
+where it is significantly better than the portable one, and always with the
+portable backend behind it; otherwise the portable implementation is the
+only one. Today that admits Vision for `subject` alone. CHAIN-5 measures
+both on twenty library photos (IoU against hand-checked masks); if the
+portable `subject` path comes within 5 IoU points, the Vision backend is
+removed rather than kept as a second code path.
+
+"Select the sky", "the red car", "the person on the left", "water",
+"buildings": the Prompt source is the semantic tool. A class-picker model
+(SegFormer ADE20K) was considered and dropped: its weights are under
+NVIDIA's non-commercial licence, which fails the open-source condition,
+and a text field covers every class and more. Prompt text is part of the
+mask's canonical form, so "sky" and "the sky" are two cache entries; the
+UI offers the last twenty prompts and a few starters. Model files are
+downloaded and verified like CLIP's (`2a2293e2`); a missing model hides
+the source in the catalogue and logs once.
+
+### 5.7 Determinism
+
+One engine means thumbnails, previews, full renders and exports agree by
+construction. Golden-render regression tests (§12) pin the engine's output
+on a committed synthetic image per tool and per blend mode; OpenCV's
+integer paths are bit-stable across platforms and the float paths are
+within 1/255, so a library moved between machines regenerates identical
+tiles for practical purposes (tile caches are per machine anyway).
+
+## 6. Catalogue for format 2
+
+Formulas on gamma sRGB in [0,1]; `L = 0.2126 R + 0.7152 G + 0.0722 B`.
+Each tool's header comment carries its formula; the golden test pins it.
+
+| Tool (id) | Cat. | Params (normalised) | Formula / engine op |
+|---|---|---|---|
+| Rotate `rotate` | geometry | as today | `cv::warpAffine` about centre into the rotated bbox, bicubic; quarter turns via `cv::rotate` |
+| Crop `crop` | geometry | as today | ROI copy; validation unchanged (inside rotated content) |
+| Exposure `exposure` | layer | `ev` [−3, 3] | `out = in × 2^ev` |
+| Brightness/Contrast `bright_contrast` | layer | `brightness` [−0.5, 0.5], `contrast` [−1, 1] → `c = 1 + contrast` | `out = (in − 0.5)·c + 0.5 + brightness` |
+| White balance `white_balance` | layer | `temperature`, `tint` ∈ [−1, 1] | channel gains `R·(1+0.3t)`, `B·(1−0.3t)`, `G·(1−0.2·tint)`, renormalised so mid-grey `L` is unchanged (3×3 matrix) |
+| Saturation `saturation` | layer | `amount` [−1, 1] → `s = 1 + amount` | `out = L + (in − L)·s` (matrix) |
+| Hue `hue` | layer | `degrees` [−180, 180] | YIQ rotation (matrix) |
+| Monochrome `monochrome` | layer | `preset` {neutral, red_filter, orange, yellow, green, blue, custom}, `r g b` weights, `tint_hue`, `tint_amount` | `g = r·R + g·G + b·B`, tint mixes toward a low-saturation hue |
+| Colour filter `color_filter` | layer | `hue`, `saturation`, `density` | `out = in·(1−d) + (in ⊗ C)·d`, luminance-preserving scale |
+| Gamma `gamma` | layer | `gamma` [0.3, 3] | `out = in^(1/γ)` (LUT) |
+| Vignette `vignette` | layer | `amount` [−1, 1], `midpoint`, `roundness`, `feather` | `out = in × (1 − amount·f(r))`, `f` smoothstep on the normalised elliptical radius |
+| Sharpen `sharpen` | raster | `amount` [0, 2], `radius` [0.0005, 0.01] of short side, `threshold` | unsharp mask (`GaussianBlur` + `addWeighted`) |
+| Denoise `denoise` | raster | `luminance`, `color` ∈ [0, 1] | `fastNlMeansDenoisingColored` (classic); AI model later |
+| Split `split` | split | lanes | §3.3 |
+| Masks `full`, `linear` (p0, p1, feather), `radial` (centre, rx, ry, rotation, feather), `luminance` (lo, hi, knee), `color_range` (hue, range, sat_min, feather) | mask | base space (geometric) / fork pixels (tonal) | coverage formulas in the header; smoothstep edges |
+| Masks `subject`, `people`, `faces` (`person_ids`), `prompt` (`text`) | mask | — | §5.6 |
+
+Later (CHAIN-7): Curves (1-D LUT), HSL per hue, Levels, Grain (seeded),
+Clarity/Dehaze, AI denoise, Perspective, Upscale, Brush mask, SAM
+refinement, mask component combination UI.
+
+## 7. Recipes
+
+### 7.1 Model and validation
+
+A recipe is `{ id, name, description, chain, includes_geometry, content_hash,
+source, created_at, updated_at }`; `chain` is a format-2 trunk. The
+registry **validates** a recipe at every boundary (user's requirement
+2026-10-11): on save (from a photo or from pasted JSON), on import, and on
+apply against the target photo's base size (crop inside rotated content,
+limits, lane rules). An invalid recipe is refused with the node id and the
+tool's message; it is never stored half-valid.
+
+- Geometry nodes are **excluded by default** on save; the save sheet's
+  "Include crop and rotation" toggle keeps them (decision 2026-10-11: a
+  user working a set of similar frames wants it).
+- Detected masks are kept as specs and re-detected per photo; `faces.
+  person_ids` is stripped (recipe = all faces).
+- `enabled` flags and lane names are kept.
+
+Apply: **Replace** or **Append** (or insert at the drop index from the
+catalogue). One commit either way.
+
+### 7.2 Storage (decision 2026-10-11): table authoritative, files for interchange
+
+Recipes belong to the user, not to a photo or a location; nothing scans
+for them; they are listed, renamed, validated and applied from the UI many
+times a session. Table `recipes` in the main database (user data, untouched
+by `ClearAllCaches`); `.vurio-recipes.json` files for export/import, from
+Settings and from the viewer; "Export all" gives one-click file backup.
+
+```sql
+CREATE TABLE IF NOT EXISTS recipes (
+    id            TEXT PRIMARY KEY,
+    name          TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    description   TEXT NOT NULL DEFAULT '',
+    chain         TEXT NOT NULL,
+    content_hash  INTEGER NOT NULL,
+    includes_geometry INTEGER NOT NULL DEFAULT 0,
+    source        TEXT NOT NULL DEFAULT 'user',   -- user | imported | builtin
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL
+);
+```
+
+### 7.3 File format
+
+```json
+{ "format": "vurio-recipes", "version": 1, "exported_at": "2026-10-11T19:02:11Z",
+  "recipes": [ { "name": "Darken sky", "description": "", "includes_geometry": false,
+                 "created_at": "…", "chain": [ … ] } ] }
+```
+
+One file holds one or many recipes. Import validates through the registry;
+unknown tools are kept and shown as such; a newer `version` is refused by
+name. Name conflicts: Keep both (" 2"), Replace, Skip, chosen per import; a
+`content_hash` already present is reported and skipped unless Keep both.
+
+### 7.4 API
+
+```proto
+service RecipesService {
+  rpc ListRecipes(Empty) returns (RecipeList);
+  rpc SaveRecipe(SaveRecipeRequest) returns (RecipeResponse);        // name, description, chain_json | from_file_path, include_geometry
+  rpc UpdateRecipe(UpdateRecipeRequest) returns (RecipeResponse);
+  rpc DeleteRecipe(RecipeIdRequest) returns (Empty);
+  rpc ValidateChain(ValidateChainRequest) returns (ValidateChainResponse); // chain_json [, file_path]; per-node errors; used by paste and import previews
+  rpc ApplyRecipe(ApplyRecipeRequest) returns (SetAdjustmentsResponse); // file_path, recipe_id, mode REPLACE | APPEND | INSERT(index)
+  rpc ExportRecipes(RecipeIdsRequest) returns (RecipesFile);
+  rpc ImportRecipes(ImportRecipesRequest) returns (ImportRecipesResult);
+}
+```
+
+The client writes the export text via `NSSavePanel` and reads imports via
+`NSOpenPanel`; the server stays out of the user's folders. Built-in starter
+recipes (three or four, `source = builtin`, deletable) seed an empty table
+when `recipes.builtin` is true.
+
+## 8. Export (CHAIN-6; decision 2026-10-11)
+
+Export is a **separate operation** that renders the chain at full
+resolution through the engine and writes a **new** file. Rules:
+
+- Destination is a folder the user picks (`NSOpenPanel`); the server
+  writes only there. The source file is never opened for writing; the
+  read-only rule is not touched, and `CURSOR_RULES.md` gets a clarifying
+  sentence (export creates new files in a user-chosen folder; it never
+  replaces or modifies an existing file).
+- The file name is `<source stem>-<recipe or "edit">.<ext>`; an existing
+  name gets ` (2)`, ` (3)`…; **nothing is ever overwritten**.
+- Formats: JPEG (quality 92 default), PNG, TIFF 16-bit. Optional long-side
+  limit. EXIF is copied from the source minus orientation (the export is
+  upright) and minus thumbnail; a `Software: Vurio` tag is written.
+- **An export is the application of the recipe and nothing more** (decision
+  2026-10-11, §13.18): no sidecar is written beside it and no chain is
+  embedded in it. Recipes travel only through the recipes file (§7.3).
+- The export is **not** inserted into the database. If the folder lies
+  inside a registered location, the normal scan sees a new file and
+  ingests it like any other; the design does nothing special for that.
+- RPC: `ExportRendered(ExportRequest{file_path, folder, format, quality,
+  max_side, name_suffix}) returns (ExportResponse{written_path})`,
+  long-running with progress through `MediaReadyEvent{"export"}`. Batch
+  export over a strip selection follows when strips have multi-select.
+
+## 9. Client UI
+
+### 9.1 Panel
+
+Right panel, drag-resizable 280–440 pt (`StripResizeGrip`, persisted),
+three stacked regions:
+
+```
+┌ Adjustments ───────────────────────────── ⌥⌘A ┐
+│ CHAIN                       [+]  [Recipes ▾]  ⋯│
+│ ≡ ◉ Rotate               −2.5°                  │
+│ ≡ ◉ Crop                 3:2                    │
+│ ≡ ◉ Exposure             +0.60 EV      · 100 %  │
+│ ≡ ◉ Split                                       │
+│   ┃ ◉ Sky      Prompt: "the sky"  Multiply 60 % │
+│   ┃   ≡ ◉ Saturation      −20                   │
+│   ┃ ◉ Faces    Faces             Normal  100 %  │
+│   ┃   ≡ ◉ Exposure        +0.30 EV              │
+│   ┗ (+ lane)                                    │
+│ ≡ ○ Monochrome           Red filter   (bypassed)│
+├ INSPECTOR · Exposure ──────────────────────────┤
+│ Blend  [Normal ▾]        Strength ━━━━━━●  100 %│
+│ EV     ━━━━━━━━━━●━━━━━━━━━━━━━━━━━  +0.60      │
+├ CATALOGUE ─────────────────────────────────── ⌄ ┤
+│ Geometry  ⟲ Rotate   ⌗ Crop                     │
+│ Layers    ☀ Exposure  ◐ Contrast  ◑ WB  … 9 more │
+│ Masks     ⬚ Split  ◭ Linear  ◉ Radial  ✎ Prompt │
+│ Recipes   ★ Darken sky  ★ Mono film             │
+└─────────────────────────────────────────────────┘
+```
+
+- **Chain**: one row per node, processing order top to bottom: drag
+  handle, enable dot, icon + label, `summary` text (from the descriptor's
+  template), blend/strength in small type for layer/raster nodes. A split
+  shows its lanes indented with a coloured rail (the colour tints that
+  lane's mask overlay); lane rows show name, mask source and merge; steps
+  indent once more. Selection drives the inspector.
+- **Inspector**: the node's controls under a common header (Blend popup +
+  Strength slider for layer/raster; Mask section: source, prompt text or
+  pins, invert, feather, show-mask toggle; Merge section for a lane; lane
+  list + add for a split). Rotate and Crop keep their existing sections
+  (readout control, ruler, aspect menu, auto-straighten).
+- **Catalogue**: chips by category plus Recipes; click appends after the
+  selection, drag inserts at the drop line; `[+]` opens the same content as
+  a popover. Chips the drop target refuses (geometry into a lane) are
+  disabled during the drag with a tooltip.
+- **`GenericToolUI`** builds inspectors from `ParamSpec` (slider / stepper /
+  popup / toggle / text field / colour well / point pins), so a new
+  layer tool needs no Swift beyond registering its id; only tools with
+  image overlays (Crop, Rotate ruler, Linear/Radial pins) have custom UI.
+  Pins are placed through `base_to_canvas` from the frame (§5.4).
+
+### 9.2 Interactions
+
+- **Reorder** by drag within a chain, or between trunk and lane when the
+  category allows; `⌥↑`/`⌥↓`. **Bypass** by dot or `⌘E`. **Delete** `⌫`
+  (split: sheet with lane count). **Duplicate** `⌘D`. **Lane solo** `S`
+  (view-only). **Before/after** hold `\`. **Mask overlay** `O`.
+- **Undo/redo (decision 2026-10-11, §13.14): per photo, persistent.** Every
+  edit operation on the open photo is a history step: parameter changes (a
+  drag is one step), structural edits, bypass, recipe apply, paste, lane
+  operations, control-bar rotations. The history is part of the photo's
+  edit document (§4) and is written by the server on every commit: the
+  client sends the new chain, the server appends the step (truncating any
+  redo tail, as every editor does), persists chain + history, and returns
+  the history index. `⌘Z`/`⇧⌘Z` ask the server for the neighbouring step
+  (`StepHistory(file_path, delta)`), which commits that step's chain and
+  renders; a **History** disclosure in the panel lists the steps by label
+  and time and jumps to any of them. Switching photos switches stacks;
+  closing the app loses nothing. View state (zoom, pan, navigation, panel
+  layout) is not an edit and is not in the history.
+- **Recipes menu**: Save chain as recipe… (name, description, include
+  geometry), Apply ▸ (⌥ = append), Copy chain `⇧⌘C`, Paste chain `⇧⌘V`
+  (validated through `ValidateChain` before commit; ⌥ = append).
+- **Export…** (`⇧⌘E`) in the viewer's control bar and the chain menu: sheet
+  with folder, format, quality, size limit, embed-chain toggle.
+- **Commit model** unchanged: completed adjustment → commit; structural
+  edits commit immediately; the preview request precedes the commit so the
+  frame is already on screen.
+- **Control-bar rotate buttons** act on the selected Rotate node; else the
+  first Rotate in the trunk; else they insert one at the head.
+- **Crop mode** as today, with the rest of the chain rendered live around
+  it (`bypass_node_id`).
+
+### 9.3 Settings
+
+- **Settings › Recipes**: list (name, nodes, source, updated), inline rename,
+  Delete, Export selected…, Export all…, Import… with conflict policy and
+  result sheet, "Include built-in recipes".
+- **Settings › Advanced**: mask models status (CLIPSeg, SAM: path, loaded /
+  missing), mask cache size + Clear masks, preview session cache size,
+  default export folder/format.
+
+## 10. API changes (dedup.proto)
+
+- `ToolDescriptor` gains `category`, `icon`, `lane_allowed`,
+  `resolution_dependent`, `summary`; `ParamSpec.kind` gains `bool`, `point`,
+  `color`, `text`; `ToolDescriptors` gains `blend_modes` and `mask_sources`.
+- `SetAdjustments` / `GetAdjustments` unchanged in shape (document JSON as
+  text; the document now carries `history`); `SetAdjustmentsRequest` gains
+  `string step_label` and the response `int32 history_index`,
+  `int32 history_count`. New `StepHistory(StepHistoryRequest{file_path,
+  delta | index}) returns (SetAdjustmentsResponse)`. `INVALID_ARGUMENT`
+  messages carry `node=<id>`.
+- New `PreviewService` (§5.4), `RecipesService` (§7.4), `ExportRendered`
+  (§8). `MediaReadyEvent.media_type` gains `"mask"`, `"full"`, `"export"`.
+- `GetPreview(size="full")` renders the chain for non-identity files (§5.5).
+
+## 11. Config (`config.yaml` §8, factory, schema, descriptions, guide)
+
+| Key | Default | Meaning |
+|---|---|---|
+| `media.adjustments.preview.cacheBytes` | 402653184 | node-output cache per preview session |
+| `media.adjustments.preview.sessions` | 3 | concurrent render sessions (open file + neighbours) |
+| `media.adjustments.preview.idleSeconds` | 120 | session expiry |
+| `media.adjustments.preview.dragMaxSide` | 1280 | frame size while a gesture is active |
+| `media.adjustments.masks.enabled` | true | detected masks on/off |
+| `media.adjustments.masks.size` | 1024 | long side of cached detected masks |
+| `media.adjustments.masks.promptModelPath` | `models/clipseg-rd64-refined.onnx` | CLIPSeg |
+| `media.adjustments.masks.refineModelPath` | `models/mobile_sam.onnx` | SAM refinement (CHAIN-5b) |
+| `media.adjustments.masks.useCoreML` | true | CoreML EP where available |
+| `media.adjustments.recipes.builtin` | true | seed starter recipes |
+| `media.adjustments.history.maxEntries` | 100 | persisted undo steps per photo |
+| `media.adjustments.export.defaultFormat` / `defaultQuality` | jpeg / 92 | export sheet defaults |
+
+## 12. Phasing and progress tracking
+
+Tick the boxes here as commits land; move a task to TODO.md Done when all
+its boxes are ticked. CHAIN-1 ships first and alone (it is the engine and
+the protocol everything else stands on, and it is user-visible: reorder,
+bypass, undo, live server frames). CHAIN-2 and CHAIN-3 can run in parallel
+after it; CHAIN-4 needs CHAIN-2; CHAIN-5 needs CHAIN-4; CHAIN-6 needs only
+CHAIN-1.
+
+### CHAIN-1 — Engine, document format 2, preview session, chain UI (Rotate + Crop)
+
+Server
+- [ ] OpenCV required in CMake; `Frame`, `RenderContext`, `ChainEngine`; Rotate and Crop as `apply` + `transformSize`; `appendMagickOps` removed; `test_adjustment_render.cpp` ported to engine goldens
+- [ ] `AdjustmentDocument` format 2 (chain array, ids, `enabled`, `blend`/`strength`), format-1 reader + migration with the revision-preserving canonical form (golden)
+- [ ] `RenderPlan` tree with `validate` (geometry trunk-only, blend refused on geometry, nesting depth), `displaySize`, `render` with node cache hooks; split rendering may land in CHAIN-4 but the types exist
+- [ ] Working-size rendering in `generateToBlob` and the two helpers; identity fast path kept
+- [ ] `PreviewService` + `PreviewSessionManager` + node-output cache; `GetPreview(full)` through the engine keyed by revision; `"full"` event
+- [ ] `ToolDescriptor` additions and `DescribeTools`; registry without order
+- [ ] Rows/sidecars persist while the document has nodes or history; `history` column; `StepHistory`; step labels; cap and truncation of the redo tail
+- [ ] Tests: document round trip incl. unknown nodes and history; migration goldens; history append/undo/redo/jump/cap; plan validation table; engine goldens for rotate/crop at two working sizes; session cache hit/miss on slider, insert, reorder; frame budget on the synthetic image (QHD ≤ 80 ms, half ≤ 25 ms on the dev machine, logged not asserted in CI)
+
+Client
+- [ ] `ChainDocument` model (nodes, ids, move/insert/delete/duplicate/bypass) replacing `rotate`/`crop` properties; one tool-UI instance per node
+- [ ] Preview client: request coalescing, drag/rest sizes, frame decode off-main, stale-frame drop; viewer draws frames (layout reduced to fit); crop mode via `bypass_node_id` + `selected_input_to_canvas`; identity files keep the local full-res path
+- [ ] Chain list (rows, drag reorder, drop validation, selection), inspector region, catalogue with the two tools, panel resize grip
+- [ ] Per-photo undo/redo through `StepHistory`, History disclosure, before/after, bypass, keyboard moves; control-bar rotate buttons per §9.2
+- [ ] Tests: `ChainDocument` operations; format-2 round trip; migration; history index handling; coalescing (newest wins) with a fake client
+
+### CHAIN-2 — Layer and raster tools
+
+- [ ] Engine tools: exposure, bright_contrast, white_balance, saturation, hue, monochrome, color_filter, gamma, vignette, sharpen (pyramid blur), denoise; formulas in headers; goldens each
+- [ ] Blend table (16 modes) and strength mixing in the engine; goldens per mode on the patch image
+- [ ] Client `GenericToolUI` from `ParamSpec`; summaries; inspector header (blend + strength); catalogue groups
+
+### CHAIN-3 — Recipes
+
+- [ ] `recipes` table + ops, `RecipesService` incl. `ValidateChain`, content-hash dedup, builtin seed, config
+- [ ] Viewer Recipes menu (save sheet with include-geometry toggle, apply replace/append, copy/paste with validation), recipes in the catalogue with drag insert
+- [ ] Settings › Recipes (list, rename, delete, export selected/all via `NSSavePanel`, import with conflict policy + result sheet)
+- [ ] Tests: validation at save/import/apply; replace/append/insert; geometry exclusion; export/import round trip; conflict policies; newer-version refusal; hash dedup
+
+### CHAIN-4 — Splits, lanes, procedural masks, merge
+
+- [ ] Engine: `SplitNode` rendering (fork frame cache, per-lane eval, mask transport through `base_to_canvas`, feather/invert, merge), procedural sources (`full`, `linear`, `radial`, `luminance`, `color_range`), lane validation
+- [ ] Preview flags `solo_lane_id`, `overlay_lane_id`
+- [ ] Client: lane rows + rails, add/remove/rename lane, lane inspector (mask + merge), gradient pin overlays via `base_to_canvas`, solo, overlay toggle
+- [ ] Tests: evaluation order (second lane sees first's merge on the trunk, not in its input); lane canvas rules; mask transport alignment with a crop and a rotation above the split (synthetic rectangle); goldens per merge mode
+
+### CHAIN-5 — Detected masks
+
+- [ ] `MaskService` + cache layout + per-file detection lock + inline detection for thumbnails + `"mask"` event
+- [ ] Sources: `subject` (Vision on macOS + portable fallback), `people` (portable ONNX model, licence verified), `faces` (DB boxes, `person_ids`), `prompt` (CLIPSeg ONNX via `OnnxSessionManager`, edge-aware upsample); model download/verify; config
+- [ ] Backend measurement on twenty library photos (IoU); drop the Vision `subject` backend if the portable path is within 5 points
+- [ ] Client: prompt text field with recent prompts, person picker, pending state; Settings › Advanced mask status
+- [ ] CHAIN-5b: SAM refinement of prompt masks (MobileSAM ONNX)
+- [ ] Tests: cache key stability under unrelated edits; transport alignment; detection smoke tests behind the model gate used by CLIP tests
+
+### CHAIN-6 — Export
+
+- [ ] `ExportRendered` RPC: full-res engine render, format encoders (JPEG/PNG/TIFF-16), unique naming, EXIF copy minus orientation, progress event; `CURSOR_RULES.md` clarification
+- [ ] Client export sheet + `⇧⌘E`; Settings defaults
+- [ ] Tests: never overwrites; name sequence; EXIF orientation stripped; no sidecar beside the export; export into a registered location is picked up by the scan as a new asset and nothing else
+
+### CHAIN-7 — Second wave (small addenda here as they come)
+
+Curves, HSL, Levels, Grain, Clarity/Dehaze, AI denoise, Perspective, Upscale,
+Brush mask, mask component combination UI, batch apply/export over a strip
+selection, history snapshots beyond the session stack.
+
+## 13. Decisions recorded 2026-10-11 (user's answers to the first round)
+
+1. **Heavy lifting on the C++ server, portable; UI lean.** Hence one engine
+   in the server, server-rendered live preview, no client pixel code (§5).
+2. Live update of the viewer on every adjustment **and** rearrangement is a
+   requirement; the session node cache (§5.4) is how reordering stays live.
+3. Mask coordinates follow the picture, not the canvas (base space with
+   geometry transport, §3.4). (Taken by the design after the user asked for
+   the term "geometry" to be explained; see §14.3 to confirm.)
+4. New components must be open source. Text-prompted masks ("select the
+   sky") are wanted; the Prompt source replaces the class-picker idea.
+5. Recipes exclude crop/rotation by default with an opt-in toggle.
+6. Recipes in the DB, validated before application, exportable/importable
+   via file and Settings.
+7. The sixteen blend modes stand.
+8. Export is in scope as a separate operation producing a new file, never
+   breaking read-only, not auto-registered (§8).
+9. Undo **and redo**, over every edit operation in the viewer (§9.2).
+10. Panel 280–440 pt, collapsible catalogue plus `[+]` popover.
+11. Any tool may appear any number of times, Rotate and Crop included.
+12. Working-size rendering: explanation requested; given in §5.3 and
+    accepted in the second round (13).
+
+Second round (same day):
+
+13. The performance envelope of §5.4/§5.5 is accepted: ~40 fps drag frames
+    at 1280 px, resting 2560 px frame within 0.1 s, sub-second full-res on
+    deep zoom with the upscaled preview shown meanwhile; thumbnails at
+    working size.
+14. **Undo/redo is per photo and persisted with the photo's edits** ("stored
+    with the recipes" read as: with the photo's recipe, i.e. its edit
+    document; recipes in the `recipes` table have no history of their own).
+    Implemented as `history` in the document (§4, §9.2).
+15. Masks follow the picture through crop and rotation (base space, §3.4).
+16. OpenCV becomes a required server dependency.
+17. Apple algorithms only where significantly better, with the portable
+    backend behind them; otherwise portable only. Applied in §5.6: Vision
+    for `subject` with a measured exit clause, portable-only for `people`.
+18. An exported image is the recipe applied, nothing else: no sidecar beside
+    it, no embedded chain; recipe export is the independent recipes file.
+
+## 14. Questions open
+
+None. Residual choices the design took on its own and that the user can
+overturn at review time: history snapshots rather than deltas and the cap
+of 100; the 5-IoU-point exit clause for the Vision backend; JPEG q92 and
+the `<stem>-<recipe>` export name.
+
+## 15. Deliberately out of scope
+
+Video; analysis on edited pixels (ADJ-3); XMP/Lightroom interop; a general
+node-graph editor (trunk + splits + lanes covers the described features
+with a list UI); masks reading another lane or image (DAW side-chains);
+collaborative recipe merge (the file format carries recipes).

@@ -13,6 +13,22 @@ Completed tasks move to Done as one-liners; their spec documents are deleted
 
 ## Open
 
+- **CHAIN-1..7 — tool chain: user-ordered processing nodes with bypass and
+  per-photo persisted undo/redo, layer tools with blend + strength, splits into
+  masked lanes (gradients, luminance/colour range, subject, people, faces,
+  text prompt) merged back with blend + strength, recipes validated and
+  stored in the DB with file export/import, export of a new rendered file,
+  and one in-process OpenCV engine in the server that renders thumbnails,
+  full-size views and every live preview frame (the client has no pixel
+  code).**
+  *Designed 2026-10-11, revised twice the same day after the user's answers;
+  all questions resolved (spec §13); ready for CHAIN-1; not started.* CHAIN-1 (engine, document
+  format 2, preview session, chain UI) first; CHAIN-2 (tools) and CHAIN-3
+  (recipes) in parallel; CHAIN-4 (splits, procedural masks); CHAIN-5
+  (detected masks); CHAIN-6 (export); CHAIN-7 (second wave). Progress
+  checkboxes live in the spec §12.
+  Spec: [todo_tool_chain.md](todo_tool_chain.md).
+
 - **PLACE-4 — setting facts: "waterfront", "beach", "lake", "mountain" as
   geo filters with at/near distance semantics, backed by GeoNames feature
   codes plus Natural Earth shoreline distance.**
