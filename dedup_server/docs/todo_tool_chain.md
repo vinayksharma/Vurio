@@ -765,9 +765,16 @@ Client
 
 ### CHAIN-2 — Layer and raster tools
 
-- [ ] Engine tools: exposure, bright_contrast, white_balance, saturation, hue, monochrome, color_filter, gamma, vignette, sharpen (pyramid blur), denoise; formulas in headers; goldens each
-- [ ] Blend table (16 modes) and strength mixing in the engine; goldens per mode on the patch image
-- [ ] Client `GenericToolUI` from `ParamSpec`; summaries; inspector header (blend + strength); catalogue groups
+Implemented 2026-10-11. Tools whose state is just their parameters share a
+`ParamTool` base (parse, serialize, limits, identity from the descriptor),
+so a new tool is its constructor plus `apply`; the client renders any such
+tool with the descriptor-driven `GenericToolUI` and needs no Swift. The
+blend formulas are the W3C compositing ones (`Blend::blendPixel` is the
+reference the tests pin). A raster node takes a strength but no blend.
+
+- [x] Engine tools: exposure, bright_contrast, white_balance, saturation, hue, monochrome, color_filter, gamma, vignette, sharpen (pyramid blur), denoise; formulas in headers; goldens each
+- [x] Blend table (16 modes) and strength mixing in the engine; goldens per mode on the patch image
+- [x] Client `GenericToolUI` from `ParamSpec`; summaries; inspector header (blend + strength); catalogue groups
 
 ### CHAIN-3 — Recipes
 
