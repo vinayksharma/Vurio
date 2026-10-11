@@ -1238,6 +1238,41 @@
       "text": "When off, edits are kept in the database only and no file is written beside the assets. They then do not travel with the library and are lost when the location is deregistered."
     }
   ],
+  "media.adjustments.preview.cacheBytes": "Preview Node Cache",
+  "media.adjustments.preview.cacheBytes.long": [
+    {
+      "type": "paragraph",
+      "text": "Bytes of intermediate frames each live-preview session keeps, so a slider on the last node re-renders one node instead of the whole chain. 384 MB holds about seven full-size frames at 2560 px."
+    }
+  ],
+  "media.adjustments.preview.sessions": "Preview Sessions",
+  "media.adjustments.preview.sessions.long": [
+    {
+      "type": "paragraph",
+      "text": "How many files keep a decoded base image and node cache in memory for the viewer's live preview at once (the open file and its strip neighbours). The least recently used session is dropped first."
+    }
+  ],
+  "media.adjustments.preview.idleSeconds": "Preview Session Expiry",
+  "media.adjustments.preview.idleSeconds.long": [
+    {
+      "type": "paragraph",
+      "text": "Seconds a live-preview session may sit unused before its memory is released."
+    }
+  ],
+  "media.adjustments.preview.sessionSide": "Preview Session Size",
+  "media.adjustments.preview.sessionSide.long": [
+    {
+      "type": "paragraph",
+      "text": "Longest side, in pixels, of the base image a live-preview session holds. Frames are rendered at this size at rest and at half of it while a control is being dragged."
+    }
+  ],
+  "media.adjustments.history.maxEntries": "Edit History Length",
+  "media.adjustments.history.maxEntries.long": [
+    {
+      "type": "paragraph",
+      "text": "Undo steps kept per photo, stored with its edits in the sidecar and the database. The oldest step is dropped when the limit is reached."
+    }
+  ],
   "media.adjustments.sidecar.suffix": "Adjustment Sidecar Suffix",
   "media.adjustments.sidecar.suffix.long": [
     {

@@ -22,7 +22,9 @@ Completed tasks move to Done as one-liners; their spec documents are deleted
   full-size views and every live preview frame (the client has no pixel
   code).**
   *Designed 2026-10-11, revised twice the same day after the user's answers;
-  all questions resolved (spec §13); ready for CHAIN-1; not started.* CHAIN-1 (engine, document
+  all questions resolved (spec §13). CHAIN-1 implemented 2026-10-11 on
+  `feature/image_adjustments` (engine, format 2 + history, preview session,
+  chain UI), live-verified in the app; CHAIN-2 next.* CHAIN-1 (engine, document
   format 2, preview session, chain UI) first; CHAIN-2 (tools) and CHAIN-3
   (recipes) in parallel; CHAIN-4 (splits, procedural masks); CHAIN-5
   (detected masks); CHAIN-6 (export); CHAIN-7 (second wave). Progress

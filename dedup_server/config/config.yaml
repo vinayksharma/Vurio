@@ -122,6 +122,12 @@ thumbnail.pipeline.size: 256
 media.adjustments.enabled: true
 media.adjustments.sidecar.write: true
 media.adjustments.sidecar.suffix: .vurio.json
+# CHAIN-1 (docs/todo_tool_chain.md §11): live preview sessions and history
+media.adjustments.preview.cacheBytes: 402653184
+media.adjustments.preview.sessions: 3
+media.adjustments.preview.idleSeconds: 120
+media.adjustments.preview.sessionSide: 2560
+media.adjustments.history.maxEntries: 100
 scheduler.backoff.maxMs: 30000
 scheduler.maxConsecutiveFailures: 5
 media.video.mkv: false

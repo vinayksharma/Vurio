@@ -639,6 +639,26 @@
     "type": "string",
     "default": ".vurio.json"
   },
+  "media.adjustments.preview.cacheBytes": {
+    "type": "int",
+    "default": 402653184
+  },
+  "media.adjustments.preview.sessions": {
+    "type": "int",
+    "default": 3
+  },
+  "media.adjustments.preview.idleSeconds": {
+    "type": "int",
+    "default": 120
+  },
+  "media.adjustments.preview.sessionSide": {
+    "type": "int",
+    "default": 2560
+  },
+  "media.adjustments.history.maxEntries": {
+    "type": "int",
+    "default": 100
+  },
   "thumbnail.qhd_preview.threshold_mb": {
     "type": "double",
     "default": 5.0

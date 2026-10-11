@@ -254,7 +254,10 @@ stored row; the `COALESCE(..., 0)` best-fit subquery already copes.
   format 2 on the next commit, not on load.
 - Canonical form: the effective chain as `[{tool, params, blend?, strength?}]`
   (split: `{tool:"split", lanes:[{mask, steps, merge}]}`), keys sorted,
-  numbers to 6 decimals, defaults omitted.
+  numbers to 6 decimals, defaults omitted. (Implementation note: a migrated
+  format-1 document therefore hashes differently from before; the store
+  re-keys such rows once at startup rather than carrying a format-1 special
+  case in the canonical form forever.)
 
 ## 5. Rendering: one engine, in the server
 
@@ -671,6 +674,13 @@ three stacked regions:
   frame is already on screen.
 - **Control-bar rotate buttons** act on the selected Rotate node; else the
   first Rotate in the trunk; else they insert one at the head.
+- **Rotate and Crop are paired only as neighbours** (user, 2026-10-11: every
+  node works on the previous node's output, never on the source). A Rotate
+  re-fits only the crop that is the next geometry node after it; a Crop is
+  constrained only by the rotate that is the geometry node right before it;
+  both are measured on the canvas that rotate receives. Straightening a
+  Rotate that has no crop after it inserts one there, fitted to the content.
+  Adjusting a later rotate never touches an earlier crop.
 - **Crop mode** as today, with the rest of the chain rendered live around
   it (`bypass_node_id`).
 
@@ -726,22 +736,32 @@ CHAIN-1.
 
 ### CHAIN-1 — Engine, document format 2, preview session, chain UI (Rotate + Crop)
 
+Implemented 2026-10-11. Two deviations from the text above, taken during
+the build: (1) format-1 rows are **re-keyed** at startup instead of hashing
+to their old revision — the format-2 canonical form is general and the
+one-time cost is one tile regeneration per edited file, which the store
+does itself (`FormatOneRowsAreRekeyedOnStartup`); (2) crop editing renders
+the chain **truncated before the crop node** (`truncate_at_node_id`), so
+the frame is exactly the canvas the crop receives and no
+`selected_input_to_canvas` transform is needed. Live-verification in the
+app is recorded below the checklists.
+
 Server
-- [ ] OpenCV required in CMake; `Frame`, `RenderContext`, `ChainEngine`; Rotate and Crop as `apply` + `transformSize`; `appendMagickOps` removed; `test_adjustment_render.cpp` ported to engine goldens
-- [ ] `AdjustmentDocument` format 2 (chain array, ids, `enabled`, `blend`/`strength`), format-1 reader + migration with the revision-preserving canonical form (golden)
-- [ ] `RenderPlan` tree with `validate` (geometry trunk-only, blend refused on geometry, nesting depth), `displaySize`, `render` with node cache hooks; split rendering may land in CHAIN-4 but the types exist
-- [ ] Working-size rendering in `generateToBlob` and the two helpers; identity fast path kept
-- [ ] `PreviewService` + `PreviewSessionManager` + node-output cache; `GetPreview(full)` through the engine keyed by revision; `"full"` event
-- [ ] `ToolDescriptor` additions and `DescribeTools`; registry without order
-- [ ] Rows/sidecars persist while the document has nodes or history; `history` column; `StepHistory`; step labels; cap and truncation of the redo tail
-- [ ] Tests: document round trip incl. unknown nodes and history; migration goldens; history append/undo/redo/jump/cap; plan validation table; engine goldens for rotate/crop at two working sizes; session cache hit/miss on slider, insert, reorder; frame budget on the synthetic image (QHD ≤ 80 ms, half ≤ 25 ms on the dev machine, logged not asserted in CI)
+- [x] OpenCV required in CMake; `Frame`, `RenderContext`, `ChainEngine`; Rotate and Crop as `apply` + `transformSize`; `appendMagickOps` removed; `test_adjustment_render.cpp` ported to engine goldens
+- [x] `AdjustmentDocument` format 2 (chain array, ids, `enabled`, `blend`/`strength`), format-1 reader + migration with the revision-preserving canonical form (golden)
+- [x] `RenderPlan` tree with `validate` (geometry trunk-only, blend refused on geometry, nesting depth), `displaySize`, `render` with node cache hooks; split rendering may land in CHAIN-4 but the types exist
+- [x] Working-size rendering in `generateToBlob` and the two helpers; identity fast path kept
+- [x] `PreviewService` + `PreviewSessionManager` + node-output cache; `GetPreview(full)` through the engine keyed by revision; `"full"` event
+- [x] `ToolDescriptor` additions and `DescribeTools`; registry without order
+- [x] Rows/sidecars persist while the document has nodes or history; `history` column; `StepHistory`; step labels; cap and truncation of the redo tail
+- [x] Tests: document round trip incl. unknown nodes and history; migration goldens; history append/undo/redo/jump/cap; plan validation table; engine goldens for rotate/crop at two working sizes; session cache hit/miss on slider, insert, reorder; frame budget on the synthetic image (QHD ≤ 80 ms, half ≤ 25 ms on the dev machine, logged not asserted in CI)
 
 Client
-- [ ] `ChainDocument` model (nodes, ids, move/insert/delete/duplicate/bypass) replacing `rotate`/`crop` properties; one tool-UI instance per node
-- [ ] Preview client: request coalescing, drag/rest sizes, frame decode off-main, stale-frame drop; viewer draws frames (layout reduced to fit); crop mode via `bypass_node_id` + `selected_input_to_canvas`; identity files keep the local full-res path
-- [ ] Chain list (rows, drag reorder, drop validation, selection), inspector region, catalogue with the two tools, panel resize grip
-- [ ] Per-photo undo/redo through `StepHistory`, History disclosure, before/after, bypass, keyboard moves; control-bar rotate buttons per §9.2
-- [ ] Tests: `ChainDocument` operations; format-2 round trip; migration; history index handling; coalescing (newest wins) with a fake client
+- [x] `ChainDocument` model (nodes, ids, move/insert/delete/duplicate/bypass) replacing `rotate`/`crop` properties; one tool-UI instance per node
+- [x] Preview client: request coalescing, drag/rest sizes, frame decode off-main, stale-frame drop; viewer draws frames (layout reduced to fit); crop mode via `bypass_node_id` + `selected_input_to_canvas`; identity files keep the local full-res path
+- [x] Chain list (rows, drag reorder, drop validation, selection), inspector region, catalogue with the two tools, panel resize grip
+- [x] Per-photo undo/redo through `StepHistory`, History disclosure, before/after, bypass, keyboard moves; control-bar rotate buttons per §9.2
+- [x] Tests: `ChainDocument` operations; format-2 round trip; migration; history index handling; coalescing (newest wins) with a fake client
 
 ### CHAIN-2 — Layer and raster tools
 
