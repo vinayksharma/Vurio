@@ -235,6 +235,12 @@ void GrpcServerCore::stop() {
         server_->Shutdown(std::chrono::system_clock::now() + std::chrono::seconds(5));
         server_.reset();
         services_.clear();
+        // CHAIN-1: the preview session manager is process-wide and its base
+        // loader captured the database and config handles at start(); drop
+        // them with the server, or a later start() (and every test fixture
+        // that reopens a database at the same path) finds the old one still
+        // held open.
+        MediaDedup::Adjustments::PreviewSessionManager::instance().reset();
         Poco::Logger::get("GrpcServerCore").information("gRPC Server stopped.");
     }
     if (!instance_dir_.empty()) {
