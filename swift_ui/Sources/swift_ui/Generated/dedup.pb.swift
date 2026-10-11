@@ -8,6 +8,11 @@
 // For information on using the generated types, please see the documentation:
 //   https://github.com/apple/swift-protobuf/
 
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
+import Foundation
+#endif
 import SwiftProtobuf
 
 // If the compiler emits an error on this type, it is because this file
@@ -1407,7 +1412,7 @@ struct Vurio_Dedup_MediaReadyEvent: Sendable {
 
   var filePath: String = String()
 
-  /// "thumbnail" | "preview" | "preview_full"
+  /// "thumbnail" | "preview" | "preview_full" | "adjustments"
   var mediaType: String = String()
 
   var success: Bool = false
@@ -1433,6 +1438,102 @@ struct Vurio_Dedup_MediaReadyEvent: Sendable {
   init() {}
 }
 
+struct Vurio_Dedup_RenderPreviewRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var filePath: String = String()
+
+  /// the chain being edited; "" = the committed one
+  var documentJson: String = String()
+
+  /// longest side of the frame (1280 while dragging, 2560 at rest)
+  var maxSide: Int32 = 0
+
+  /// JPEG quality; 0 = server default
+  var quality: Int32 = 0
+
+  /// echoed so the client can drop stale frames
+  var seq: Int64 = 0
+
+  /// Crop editing: render the chain only up to (not including) this node, so
+  /// the frame is exactly the canvas that node receives.
+  var truncateAtNodeID: String = String()
+
+  /// before/after: render the base image
+  var before: Bool = false
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_PreviewFrame: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var jpeg: Data = Data()
+
+  /// frame pixels
+  var width: Int32 = 0
+
+  var height: Int32 = 0
+
+  var seq: Int64 = 0
+
+  /// engine + encode time, for the debug overlay
+  var renderMs: Int32 = 0
+
+  /// the full-resolution base (EXIF-oriented)
+  var baseWidth: Int32 = 0
+
+  var baseHeight: Int32 = 0
+
+  /// full-resolution size of what the frame shows
+  var displayWidth: Int32 = 0
+
+  var displayHeight: Int32 = 0
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_StepHistoryRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var filePath: String = String()
+
+  var delta: Int32 = 0
+
+  var index: Int32 = 0
+
+  var useIndex: Bool = false
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_HistoryStep: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var label: String = String()
+
+  /// ISO-8601 UTC
+  var at: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
 struct Vurio_Dedup_ParamSpec: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -1442,7 +1543,7 @@ struct Vurio_Dedup_ParamSpec: Sendable {
 
   var label: String = String()
 
-  /// "number" | "integer" | "enum"
+  /// "number" | "integer" | "enum" | "bool" | "text"
   var kind: String = String()
 
   var min: Double = 0
@@ -1470,15 +1571,30 @@ struct Vurio_Dedup_ToolDescriptor: Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  /// "rotate", "crop" — also the key of the document section
+  /// "rotate", "crop" — also the node's "tool" value
   var id: String = String()
 
   var label: String = String()
 
-  /// the section version this build writes
+  /// the params version this build writes
   var version: Int32 = 0
 
   var params: [Vurio_Dedup_ParamSpec] = []
+
+  /// CHAIN-1 (docs/todo_tool_chain.md §3.2, §5.6): how the engine composes
+  /// the tool and where it may be placed.
+  var category: String = String()
+
+  /// SF Symbol name for the catalogue and chain rows
+  var icon: String = String()
+
+  /// false for geometry (a lane must keep its canvas)
+  var laneAllowed: Bool = false
+
+  var resolutionDependent: Bool = false
+
+  /// chain-row text template, "{param:fmt}" placeholders
+  var summary: String = String()
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1490,11 +1606,14 @@ struct Vurio_Dedup_ToolDescriptors: Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  /// in application order
+  /// catalogue order (by category, then label)
   var tools: [Vurio_Dedup_ToolDescriptor] = []
 
   /// the document format version this build writes
   var documentVersion: Int32 = 0
+
+  /// CHAIN-1: the blend names a layer node may carry
+  var blendModes: [String] = []
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1537,6 +1656,11 @@ struct Vurio_Dedup_AdjustmentDocumentResponse: Sendable {
   /// where it is (destination or spool)
   var sidecarPath: String = String()
 
+  /// CHAIN-1: the photo's persisted undo/redo history (docs §4).
+  var historyIndex: Int32 = 0
+
+  var historySteps: [Vurio_Dedup_HistoryStep] = []
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -1549,8 +1673,11 @@ struct Vurio_Dedup_SetAdjustmentsRequest: Sendable {
 
   var filePath: String = String()
 
-  /// a complete document; identity deletes the edit
+  /// a complete document; an empty chain with no history deletes the edit
   var documentJson: String = String()
+
+  /// CHAIN-1: what this edit did, for the History list ("Rotate −2.5°")
+  var stepLabel: String = String()
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1575,6 +1702,11 @@ struct Vurio_Dedup_SetAdjustmentsResponse: Sendable {
   var sidecarSpooled: Bool = false
 
   var sidecarPath: String = String()
+
+  /// CHAIN-1: history after this commit.
+  var historyIndex: Int32 = 0
+
+  var historySteps: [Vurio_Dedup_HistoryStep] = []
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -4509,6 +4641,216 @@ extension Vurio_Dedup_MediaReadyEvent: SwiftProtobuf.Message, SwiftProtobuf._Mes
   }
 }
 
+extension Vurio_Dedup_RenderPreviewRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".RenderPreviewRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{3}document_json\0\u{3}max_side\0\u{1}quality\0\u{1}seq\0\u{3}truncate_at_node_id\0\u{1}before\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.filePath) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.documentJson) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.maxSide) }()
+      case 4: try { try decoder.decodeSingularInt32Field(value: &self.quality) }()
+      case 5: try { try decoder.decodeSingularInt64Field(value: &self.seq) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.truncateAtNodeID) }()
+      case 7: try { try decoder.decodeSingularBoolField(value: &self.before) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.filePath.isEmpty {
+      try visitor.visitSingularStringField(value: self.filePath, fieldNumber: 1)
+    }
+    if !self.documentJson.isEmpty {
+      try visitor.visitSingularStringField(value: self.documentJson, fieldNumber: 2)
+    }
+    if self.maxSide != 0 {
+      try visitor.visitSingularInt32Field(value: self.maxSide, fieldNumber: 3)
+    }
+    if self.quality != 0 {
+      try visitor.visitSingularInt32Field(value: self.quality, fieldNumber: 4)
+    }
+    if self.seq != 0 {
+      try visitor.visitSingularInt64Field(value: self.seq, fieldNumber: 5)
+    }
+    if !self.truncateAtNodeID.isEmpty {
+      try visitor.visitSingularStringField(value: self.truncateAtNodeID, fieldNumber: 6)
+    }
+    if self.before != false {
+      try visitor.visitSingularBoolField(value: self.before, fieldNumber: 7)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_RenderPreviewRequest, rhs: Vurio_Dedup_RenderPreviewRequest) -> Bool {
+    if lhs.filePath != rhs.filePath {return false}
+    if lhs.documentJson != rhs.documentJson {return false}
+    if lhs.maxSide != rhs.maxSide {return false}
+    if lhs.quality != rhs.quality {return false}
+    if lhs.seq != rhs.seq {return false}
+    if lhs.truncateAtNodeID != rhs.truncateAtNodeID {return false}
+    if lhs.before != rhs.before {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_PreviewFrame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".PreviewFrame"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}jpeg\0\u{1}width\0\u{1}height\0\u{1}seq\0\u{3}render_ms\0\u{3}base_width\0\u{3}base_height\0\u{3}display_width\0\u{3}display_height\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBytesField(value: &self.jpeg) }()
+      case 2: try { try decoder.decodeSingularInt32Field(value: &self.width) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.height) }()
+      case 4: try { try decoder.decodeSingularInt64Field(value: &self.seq) }()
+      case 5: try { try decoder.decodeSingularInt32Field(value: &self.renderMs) }()
+      case 6: try { try decoder.decodeSingularInt32Field(value: &self.baseWidth) }()
+      case 7: try { try decoder.decodeSingularInt32Field(value: &self.baseHeight) }()
+      case 8: try { try decoder.decodeSingularInt32Field(value: &self.displayWidth) }()
+      case 9: try { try decoder.decodeSingularInt32Field(value: &self.displayHeight) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.jpeg.isEmpty {
+      try visitor.visitSingularBytesField(value: self.jpeg, fieldNumber: 1)
+    }
+    if self.width != 0 {
+      try visitor.visitSingularInt32Field(value: self.width, fieldNumber: 2)
+    }
+    if self.height != 0 {
+      try visitor.visitSingularInt32Field(value: self.height, fieldNumber: 3)
+    }
+    if self.seq != 0 {
+      try visitor.visitSingularInt64Field(value: self.seq, fieldNumber: 4)
+    }
+    if self.renderMs != 0 {
+      try visitor.visitSingularInt32Field(value: self.renderMs, fieldNumber: 5)
+    }
+    if self.baseWidth != 0 {
+      try visitor.visitSingularInt32Field(value: self.baseWidth, fieldNumber: 6)
+    }
+    if self.baseHeight != 0 {
+      try visitor.visitSingularInt32Field(value: self.baseHeight, fieldNumber: 7)
+    }
+    if self.displayWidth != 0 {
+      try visitor.visitSingularInt32Field(value: self.displayWidth, fieldNumber: 8)
+    }
+    if self.displayHeight != 0 {
+      try visitor.visitSingularInt32Field(value: self.displayHeight, fieldNumber: 9)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_PreviewFrame, rhs: Vurio_Dedup_PreviewFrame) -> Bool {
+    if lhs.jpeg != rhs.jpeg {return false}
+    if lhs.width != rhs.width {return false}
+    if lhs.height != rhs.height {return false}
+    if lhs.seq != rhs.seq {return false}
+    if lhs.renderMs != rhs.renderMs {return false}
+    if lhs.baseWidth != rhs.baseWidth {return false}
+    if lhs.baseHeight != rhs.baseHeight {return false}
+    if lhs.displayWidth != rhs.displayWidth {return false}
+    if lhs.displayHeight != rhs.displayHeight {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_StepHistoryRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".StepHistoryRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{1}delta\0\u{1}index\0\u{3}use_index\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.filePath) }()
+      case 2: try { try decoder.decodeSingularInt32Field(value: &self.delta) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.index) }()
+      case 4: try { try decoder.decodeSingularBoolField(value: &self.useIndex) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.filePath.isEmpty {
+      try visitor.visitSingularStringField(value: self.filePath, fieldNumber: 1)
+    }
+    if self.delta != 0 {
+      try visitor.visitSingularInt32Field(value: self.delta, fieldNumber: 2)
+    }
+    if self.index != 0 {
+      try visitor.visitSingularInt32Field(value: self.index, fieldNumber: 3)
+    }
+    if self.useIndex != false {
+      try visitor.visitSingularBoolField(value: self.useIndex, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_StepHistoryRequest, rhs: Vurio_Dedup_StepHistoryRequest) -> Bool {
+    if lhs.filePath != rhs.filePath {return false}
+    if lhs.delta != rhs.delta {return false}
+    if lhs.index != rhs.index {return false}
+    if lhs.useIndex != rhs.useIndex {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_HistoryStep: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".HistoryStep"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}label\0\u{1}at\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.label) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.at) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.label.isEmpty {
+      try visitor.visitSingularStringField(value: self.label, fieldNumber: 1)
+    }
+    if !self.at.isEmpty {
+      try visitor.visitSingularStringField(value: self.at, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_HistoryStep, rhs: Vurio_Dedup_HistoryStep) -> Bool {
+    if lhs.label != rhs.label {return false}
+    if lhs.at != rhs.at {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
 extension Vurio_Dedup_ParamSpec: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".ParamSpec"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}kind\0\u{1}min\0\u{1}max\0\u{1}step\0\u{3}default_value\0\u{3}default_option\0\u{1}options\0")
@@ -4581,7 +4923,7 @@ extension Vurio_Dedup_ParamSpec: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
 
 extension Vurio_Dedup_ToolDescriptor: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".ToolDescriptor"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}version\0\u{1}params\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}version\0\u{1}params\0\u{1}category\0\u{1}icon\0\u{3}lane_allowed\0\u{3}resolution_dependent\0\u{1}summary\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -4593,6 +4935,11 @@ extension Vurio_Dedup_ToolDescriptor: SwiftProtobuf.Message, SwiftProtobuf._Mess
       case 2: try { try decoder.decodeSingularStringField(value: &self.label) }()
       case 3: try { try decoder.decodeSingularInt32Field(value: &self.version) }()
       case 4: try { try decoder.decodeRepeatedMessageField(value: &self.params) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.category) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.icon) }()
+      case 7: try { try decoder.decodeSingularBoolField(value: &self.laneAllowed) }()
+      case 8: try { try decoder.decodeSingularBoolField(value: &self.resolutionDependent) }()
+      case 9: try { try decoder.decodeSingularStringField(value: &self.summary) }()
       default: break
       }
     }
@@ -4611,6 +4958,21 @@ extension Vurio_Dedup_ToolDescriptor: SwiftProtobuf.Message, SwiftProtobuf._Mess
     if !self.params.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.params, fieldNumber: 4)
     }
+    if !self.category.isEmpty {
+      try visitor.visitSingularStringField(value: self.category, fieldNumber: 5)
+    }
+    if !self.icon.isEmpty {
+      try visitor.visitSingularStringField(value: self.icon, fieldNumber: 6)
+    }
+    if self.laneAllowed != false {
+      try visitor.visitSingularBoolField(value: self.laneAllowed, fieldNumber: 7)
+    }
+    if self.resolutionDependent != false {
+      try visitor.visitSingularBoolField(value: self.resolutionDependent, fieldNumber: 8)
+    }
+    if !self.summary.isEmpty {
+      try visitor.visitSingularStringField(value: self.summary, fieldNumber: 9)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -4619,6 +4981,11 @@ extension Vurio_Dedup_ToolDescriptor: SwiftProtobuf.Message, SwiftProtobuf._Mess
     if lhs.label != rhs.label {return false}
     if lhs.version != rhs.version {return false}
     if lhs.params != rhs.params {return false}
+    if lhs.category != rhs.category {return false}
+    if lhs.icon != rhs.icon {return false}
+    if lhs.laneAllowed != rhs.laneAllowed {return false}
+    if lhs.resolutionDependent != rhs.resolutionDependent {return false}
+    if lhs.summary != rhs.summary {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -4626,7 +4993,7 @@ extension Vurio_Dedup_ToolDescriptor: SwiftProtobuf.Message, SwiftProtobuf._Mess
 
 extension Vurio_Dedup_ToolDescriptors: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".ToolDescriptors"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}tools\0\u{3}document_version\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}tools\0\u{3}document_version\0\u{3}blend_modes\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -4636,6 +5003,7 @@ extension Vurio_Dedup_ToolDescriptors: SwiftProtobuf.Message, SwiftProtobuf._Mes
       switch fieldNumber {
       case 1: try { try decoder.decodeRepeatedMessageField(value: &self.tools) }()
       case 2: try { try decoder.decodeSingularInt32Field(value: &self.documentVersion) }()
+      case 3: try { try decoder.decodeRepeatedStringField(value: &self.blendModes) }()
       default: break
       }
     }
@@ -4648,12 +5016,16 @@ extension Vurio_Dedup_ToolDescriptors: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if self.documentVersion != 0 {
       try visitor.visitSingularInt32Field(value: self.documentVersion, fieldNumber: 2)
     }
+    if !self.blendModes.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.blendModes, fieldNumber: 3)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Vurio_Dedup_ToolDescriptors, rhs: Vurio_Dedup_ToolDescriptors) -> Bool {
     if lhs.tools != rhs.tools {return false}
     if lhs.documentVersion != rhs.documentVersion {return false}
+    if lhs.blendModes != rhs.blendModes {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -4691,7 +5063,7 @@ extension Vurio_Dedup_AdjustmentsFileRequest: SwiftProtobuf.Message, SwiftProtob
 
 extension Vurio_Dedup_AdjustmentDocumentResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".AdjustmentDocumentResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}has_adjustments\0\u{3}document_json\0\u{3}render_revision\0\u{3}display_width\0\u{3}display_height\0\u{3}sidecar_spooled\0\u{3}sidecar_path\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}has_adjustments\0\u{3}document_json\0\u{3}render_revision\0\u{3}display_width\0\u{3}display_height\0\u{3}sidecar_spooled\0\u{3}sidecar_path\0\u{3}history_index\0\u{3}history_steps\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -4706,6 +5078,8 @@ extension Vurio_Dedup_AdjustmentDocumentResponse: SwiftProtobuf.Message, SwiftPr
       case 5: try { try decoder.decodeSingularInt32Field(value: &self.displayHeight) }()
       case 6: try { try decoder.decodeSingularBoolField(value: &self.sidecarSpooled) }()
       case 7: try { try decoder.decodeSingularStringField(value: &self.sidecarPath) }()
+      case 8: try { try decoder.decodeSingularInt32Field(value: &self.historyIndex) }()
+      case 9: try { try decoder.decodeRepeatedMessageField(value: &self.historySteps) }()
       default: break
       }
     }
@@ -4733,6 +5107,12 @@ extension Vurio_Dedup_AdjustmentDocumentResponse: SwiftProtobuf.Message, SwiftPr
     if !self.sidecarPath.isEmpty {
       try visitor.visitSingularStringField(value: self.sidecarPath, fieldNumber: 7)
     }
+    if self.historyIndex != 0 {
+      try visitor.visitSingularInt32Field(value: self.historyIndex, fieldNumber: 8)
+    }
+    if !self.historySteps.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.historySteps, fieldNumber: 9)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -4744,6 +5124,8 @@ extension Vurio_Dedup_AdjustmentDocumentResponse: SwiftProtobuf.Message, SwiftPr
     if lhs.displayHeight != rhs.displayHeight {return false}
     if lhs.sidecarSpooled != rhs.sidecarSpooled {return false}
     if lhs.sidecarPath != rhs.sidecarPath {return false}
+    if lhs.historyIndex != rhs.historyIndex {return false}
+    if lhs.historySteps != rhs.historySteps {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -4751,7 +5133,7 @@ extension Vurio_Dedup_AdjustmentDocumentResponse: SwiftProtobuf.Message, SwiftPr
 
 extension Vurio_Dedup_SetAdjustmentsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".SetAdjustmentsRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{3}document_json\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{3}document_json\0\u{3}step_label\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -4761,6 +5143,7 @@ extension Vurio_Dedup_SetAdjustmentsRequest: SwiftProtobuf.Message, SwiftProtobu
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.filePath) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.documentJson) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.stepLabel) }()
       default: break
       }
     }
@@ -4773,12 +5156,16 @@ extension Vurio_Dedup_SetAdjustmentsRequest: SwiftProtobuf.Message, SwiftProtobu
     if !self.documentJson.isEmpty {
       try visitor.visitSingularStringField(value: self.documentJson, fieldNumber: 2)
     }
+    if !self.stepLabel.isEmpty {
+      try visitor.visitSingularStringField(value: self.stepLabel, fieldNumber: 3)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   static func ==(lhs: Vurio_Dedup_SetAdjustmentsRequest, rhs: Vurio_Dedup_SetAdjustmentsRequest) -> Bool {
     if lhs.filePath != rhs.filePath {return false}
     if lhs.documentJson != rhs.documentJson {return false}
+    if lhs.stepLabel != rhs.stepLabel {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -4786,7 +5173,7 @@ extension Vurio_Dedup_SetAdjustmentsRequest: SwiftProtobuf.Message, SwiftProtobu
 
 extension Vurio_Dedup_SetAdjustmentsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".SetAdjustmentsResponse"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}error_message\0\u{3}render_revision\0\u{3}display_width\0\u{3}display_height\0\u{3}sidecar_spooled\0\u{3}sidecar_path\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}success\0\u{3}error_message\0\u{3}render_revision\0\u{3}display_width\0\u{3}display_height\0\u{3}sidecar_spooled\0\u{3}sidecar_path\0\u{3}history_index\0\u{3}history_steps\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -4801,6 +5188,8 @@ extension Vurio_Dedup_SetAdjustmentsResponse: SwiftProtobuf.Message, SwiftProtob
       case 5: try { try decoder.decodeSingularInt32Field(value: &self.displayHeight) }()
       case 6: try { try decoder.decodeSingularBoolField(value: &self.sidecarSpooled) }()
       case 7: try { try decoder.decodeSingularStringField(value: &self.sidecarPath) }()
+      case 8: try { try decoder.decodeSingularInt32Field(value: &self.historyIndex) }()
+      case 9: try { try decoder.decodeRepeatedMessageField(value: &self.historySteps) }()
       default: break
       }
     }
@@ -4828,6 +5217,12 @@ extension Vurio_Dedup_SetAdjustmentsResponse: SwiftProtobuf.Message, SwiftProtob
     if !self.sidecarPath.isEmpty {
       try visitor.visitSingularStringField(value: self.sidecarPath, fieldNumber: 7)
     }
+    if self.historyIndex != 0 {
+      try visitor.visitSingularInt32Field(value: self.historyIndex, fieldNumber: 8)
+    }
+    if !self.historySteps.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.historySteps, fieldNumber: 9)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -4839,6 +5234,8 @@ extension Vurio_Dedup_SetAdjustmentsResponse: SwiftProtobuf.Message, SwiftProtob
     if lhs.displayHeight != rhs.displayHeight {return false}
     if lhs.sidecarSpooled != rhs.sidecarSpooled {return false}
     if lhs.sidecarPath != rhs.sidecarPath {return false}
+    if lhs.historyIndex != rhs.historyIndex {return false}
+    if lhs.historySteps != rhs.historySteps {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

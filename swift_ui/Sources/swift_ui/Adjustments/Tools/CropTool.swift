@@ -2,9 +2,9 @@ import CoreGraphics
 import Foundation
 import SwiftUI
 
-/// ADJ-2: the client half of the Crop tool. The rectangle is normalized to
-/// the rotated canvas (docs §3.3); the aspect lock is UI state the server
-/// stores so the panel comes back the way it was left.
+/// ADJ-2 / CHAIN-1: the client half of one Crop node. The rectangle is
+/// normalized to the canvas the node receives (docs §3.4); the aspect lock
+/// is UI state the server stores so the panel comes back the way it was left.
 @MainActor
 final class CropToolUI: AdjustmentToolUI {
     static let id = "crop"
@@ -45,7 +45,7 @@ final class CropToolUI: AdjustmentToolUI {
 
     var isIdentity: Bool { rect.isFull }
 
-    func load(section: [String: Any]?) {
+    func load(params section: [String: Any]?) {
         var r = AdjustmentGeometry.NormRect.full
         if let section {
             r.left = (section["left"] as? NSNumber)?.doubleValue ?? 0
@@ -67,7 +67,6 @@ final class CropToolUI: AdjustmentToolUI {
     func encode() -> [String: Any]? {
         // The aspect lock alone changes no pixels and the server treats a
         // full rect as identity; still worth storing so the lock restores.
-        if rect.isFull && aspect == "free" { return nil }
         func r6(_ v: Double) -> Double { (v * 1e6).rounded() / 1e6 }
         var section: [String: Any] = [
             "version": descriptor.version,
@@ -86,6 +85,21 @@ final class CropToolUI: AdjustmentToolUI {
         aspect = "free"
         customAspect = 1.0
         flipped = false
+    }
+
+    func summary() -> String {
+        if rect.isFull { return aspect == "free" ? "Full frame" : CropToolUI.aspectLabel(aspect) }
+        let shape = String(format: "%.0f%% × %.0f%%", rect.width * 100, rect.height * 100)
+        return aspect == "free" ? shape : "\(CropToolUI.aspectLabel(aspect)) · \(shape)"
+    }
+
+    static func aspectLabel(_ option: String) -> String {
+        switch option {
+        case "free": return "Free"
+        case "original": return "Original"
+        case "custom": return "Custom"
+        default: return option
+        }
     }
 
     /// The locked width/height ratio in canvas pixels, or nil when free.

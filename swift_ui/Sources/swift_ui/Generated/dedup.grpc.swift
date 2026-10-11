@@ -3709,6 +3709,11 @@ internal protocol Vurio_Dedup_AdjustmentsServiceClientProtocol: GRPCClient {
     _ request: Vurio_Dedup_SetEditsRootRequest,
     callOptions: CallOptions?
   ) -> UnaryCall<Vurio_Dedup_SetEditsRootRequest, Vurio_Dedup_SetEditsRootResponse>
+
+  func stepHistory(
+    _ request: Vurio_Dedup_StepHistoryRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_StepHistoryRequest, Vurio_Dedup_AdjustmentDocumentResponse>
 }
 
 extension Vurio_Dedup_AdjustmentsServiceClientProtocol {
@@ -3808,6 +3813,28 @@ extension Vurio_Dedup_AdjustmentsServiceClientProtocol {
       interceptors: self.interceptors?.makeSetEditsRootInterceptors() ?? []
     )
   }
+
+  /// CHAIN-1 (docs/todo_tool_chain.md §9.2): move through the photo's
+  /// persisted undo/redo history. `delta` steps relative to the current
+  /// index (-1 undo, +1 redo); `use_index` jumps to `index`. The step's
+  /// chain is committed like any edit (without appending a new step) and the
+  /// resulting document is returned. OUT_OF_RANGE when there is no such step.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to StepHistory.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func stepHistory(
+    _ request: Vurio_Dedup_StepHistoryRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_StepHistoryRequest, Vurio_Dedup_AdjustmentDocumentResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.stepHistory.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeStepHistoryInterceptors() ?? []
+    )
+  }
 }
 
 @available(*, deprecated)
@@ -3904,6 +3931,11 @@ internal protocol Vurio_Dedup_AdjustmentsServiceAsyncClientProtocol: GRPCClient 
     _ request: Vurio_Dedup_SetEditsRootRequest,
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_SetEditsRootRequest, Vurio_Dedup_SetEditsRootResponse>
+
+  func makeStepHistoryCall(
+    _ request: Vurio_Dedup_StepHistoryRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_StepHistoryRequest, Vurio_Dedup_AdjustmentDocumentResponse>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -3975,6 +4007,18 @@ extension Vurio_Dedup_AdjustmentsServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeSetEditsRootInterceptors() ?? []
     )
   }
+
+  internal func makeStepHistoryCall(
+    _ request: Vurio_Dedup_StepHistoryRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_StepHistoryRequest, Vurio_Dedup_AdjustmentDocumentResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.stepHistory.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeStepHistoryInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -4038,6 +4082,18 @@ extension Vurio_Dedup_AdjustmentsServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeSetEditsRootInterceptors() ?? []
     )
   }
+
+  internal func stepHistory(
+    _ request: Vurio_Dedup_StepHistoryRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_AdjustmentDocumentResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.stepHistory.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeStepHistoryInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -4073,6 +4129,9 @@ internal protocol Vurio_Dedup_AdjustmentsServiceClientInterceptorFactoryProtocol
 
   /// - Returns: Interceptors to use when invoking 'setEditsRoot'.
   func makeSetEditsRootInterceptors() -> [ClientInterceptor<Vurio_Dedup_SetEditsRootRequest, Vurio_Dedup_SetEditsRootResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'stepHistory'.
+  func makeStepHistoryInterceptors() -> [ClientInterceptor<Vurio_Dedup_StepHistoryRequest, Vurio_Dedup_AdjustmentDocumentResponse>]
 }
 
 internal enum Vurio_Dedup_AdjustmentsServiceClientMetadata {
@@ -4085,6 +4144,7 @@ internal enum Vurio_Dedup_AdjustmentsServiceClientMetadata {
       Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.setAdjustments,
       Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.getEditsRoot,
       Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.setEditsRoot,
+      Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.stepHistory,
     ]
   )
 
@@ -4116,6 +4176,274 @@ internal enum Vurio_Dedup_AdjustmentsServiceClientMetadata {
     internal static let setEditsRoot = GRPCMethodDescriptor(
       name: "SetEditsRoot",
       path: "/vurio.dedup.AdjustmentsService/SetEditsRoot",
+      type: GRPCCallType.unary
+    )
+
+    internal static let stepHistory = GRPCMethodDescriptor(
+      name: "StepHistory",
+      path: "/vurio.dedup.AdjustmentsService/StepHistory",
+      type: GRPCCallType.unary
+    )
+  }
+}
+
+/// ---------------------------------------------------------
+/// Preview Service (CHAIN-1, docs/todo_tool_chain.md §5.4)
+///
+/// The viewer's live preview. Every frame is rendered by the server's engine
+/// from the file's decoded working-size base, through the chain the client
+/// is editing (committed or not). One request in flight per client; the
+/// client sends the newest document when the previous frame returns.
+/// ---------------------------------------------------------
+///
+/// Usage: instantiate `Vurio_Dedup_PreviewServiceClient`, then call methods of this protocol to make API calls.
+internal protocol Vurio_Dedup_PreviewServiceClientProtocol: GRPCClient {
+  var serviceName: String { get }
+  var interceptors: Vurio_Dedup_PreviewServiceClientInterceptorFactoryProtocol? { get }
+
+  func renderPreview(
+    _ request: Vurio_Dedup_RenderPreviewRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_RenderPreviewRequest, Vurio_Dedup_PreviewFrame>
+
+  func releasePreview(
+    _ request: Vurio_Dedup_AdjustmentsFileRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_AdjustmentsFileRequest, Vurio_Dedup_Empty>
+}
+
+extension Vurio_Dedup_PreviewServiceClientProtocol {
+  internal var serviceName: String {
+    return "vurio.dedup.PreviewService"
+  }
+
+  /// Unary call to RenderPreview
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to RenderPreview.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func renderPreview(
+    _ request: Vurio_Dedup_RenderPreviewRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_RenderPreviewRequest, Vurio_Dedup_PreviewFrame> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_PreviewServiceClientMetadata.Methods.renderPreview.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeRenderPreviewInterceptors() ?? []
+    )
+  }
+
+  /// Drop the file's render session (decoded base + node cache) early;
+  /// sessions also expire on their own.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to ReleasePreview.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func releasePreview(
+    _ request: Vurio_Dedup_AdjustmentsFileRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_AdjustmentsFileRequest, Vurio_Dedup_Empty> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_PreviewServiceClientMetadata.Methods.releasePreview.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeReleasePreviewInterceptors() ?? []
+    )
+  }
+}
+
+@available(*, deprecated)
+extension Vurio_Dedup_PreviewServiceClient: @unchecked Sendable {}
+
+@available(*, deprecated, renamed: "Vurio_Dedup_PreviewServiceNIOClient")
+internal final class Vurio_Dedup_PreviewServiceClient: Vurio_Dedup_PreviewServiceClientProtocol {
+  private let lock = Lock()
+  private var _defaultCallOptions: CallOptions
+  private var _interceptors: Vurio_Dedup_PreviewServiceClientInterceptorFactoryProtocol?
+  internal let channel: GRPCChannel
+  internal var defaultCallOptions: CallOptions {
+    get { self.lock.withLock { return self._defaultCallOptions } }
+    set { self.lock.withLockVoid { self._defaultCallOptions = newValue } }
+  }
+  internal var interceptors: Vurio_Dedup_PreviewServiceClientInterceptorFactoryProtocol? {
+    get { self.lock.withLock { return self._interceptors } }
+    set { self.lock.withLockVoid { self._interceptors = newValue } }
+  }
+
+  /// Creates a client for the vurio.dedup.PreviewService service.
+  ///
+  /// - Parameters:
+  ///   - channel: `GRPCChannel` to the service host.
+  ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
+  ///   - interceptors: A factory providing interceptors for each RPC.
+  internal init(
+    channel: GRPCChannel,
+    defaultCallOptions: CallOptions = CallOptions(),
+    interceptors: Vurio_Dedup_PreviewServiceClientInterceptorFactoryProtocol? = nil
+  ) {
+    self.channel = channel
+    self._defaultCallOptions = defaultCallOptions
+    self._interceptors = interceptors
+  }
+}
+
+internal struct Vurio_Dedup_PreviewServiceNIOClient: Vurio_Dedup_PreviewServiceClientProtocol {
+  internal var channel: GRPCChannel
+  internal var defaultCallOptions: CallOptions
+  internal var interceptors: Vurio_Dedup_PreviewServiceClientInterceptorFactoryProtocol?
+
+  /// Creates a client for the vurio.dedup.PreviewService service.
+  ///
+  /// - Parameters:
+  ///   - channel: `GRPCChannel` to the service host.
+  ///   - defaultCallOptions: Options to use for each service call if the user doesn't provide them.
+  ///   - interceptors: A factory providing interceptors for each RPC.
+  internal init(
+    channel: GRPCChannel,
+    defaultCallOptions: CallOptions = CallOptions(),
+    interceptors: Vurio_Dedup_PreviewServiceClientInterceptorFactoryProtocol? = nil
+  ) {
+    self.channel = channel
+    self.defaultCallOptions = defaultCallOptions
+    self.interceptors = interceptors
+  }
+}
+
+/// ---------------------------------------------------------
+/// Preview Service (CHAIN-1, docs/todo_tool_chain.md §5.4)
+///
+/// The viewer's live preview. Every frame is rendered by the server's engine
+/// from the file's decoded working-size base, through the chain the client
+/// is editing (committed or not). One request in flight per client; the
+/// client sends the newest document when the previous frame returns.
+/// ---------------------------------------------------------
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+internal protocol Vurio_Dedup_PreviewServiceAsyncClientProtocol: GRPCClient {
+  static var serviceDescriptor: GRPCServiceDescriptor { get }
+  var interceptors: Vurio_Dedup_PreviewServiceClientInterceptorFactoryProtocol? { get }
+
+  func makeRenderPreviewCall(
+    _ request: Vurio_Dedup_RenderPreviewRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_RenderPreviewRequest, Vurio_Dedup_PreviewFrame>
+
+  func makeReleasePreviewCall(
+    _ request: Vurio_Dedup_AdjustmentsFileRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_AdjustmentsFileRequest, Vurio_Dedup_Empty>
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+extension Vurio_Dedup_PreviewServiceAsyncClientProtocol {
+  internal static var serviceDescriptor: GRPCServiceDescriptor {
+    return Vurio_Dedup_PreviewServiceClientMetadata.serviceDescriptor
+  }
+
+  internal var interceptors: Vurio_Dedup_PreviewServiceClientInterceptorFactoryProtocol? {
+    return nil
+  }
+
+  internal func makeRenderPreviewCall(
+    _ request: Vurio_Dedup_RenderPreviewRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_RenderPreviewRequest, Vurio_Dedup_PreviewFrame> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_PreviewServiceClientMetadata.Methods.renderPreview.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeRenderPreviewInterceptors() ?? []
+    )
+  }
+
+  internal func makeReleasePreviewCall(
+    _ request: Vurio_Dedup_AdjustmentsFileRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_AdjustmentsFileRequest, Vurio_Dedup_Empty> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_PreviewServiceClientMetadata.Methods.releasePreview.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeReleasePreviewInterceptors() ?? []
+    )
+  }
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+extension Vurio_Dedup_PreviewServiceAsyncClientProtocol {
+  internal func renderPreview(
+    _ request: Vurio_Dedup_RenderPreviewRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_PreviewFrame {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_PreviewServiceClientMetadata.Methods.renderPreview.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeRenderPreviewInterceptors() ?? []
+    )
+  }
+
+  internal func releasePreview(
+    _ request: Vurio_Dedup_AdjustmentsFileRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_Empty {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_PreviewServiceClientMetadata.Methods.releasePreview.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeReleasePreviewInterceptors() ?? []
+    )
+  }
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+internal struct Vurio_Dedup_PreviewServiceAsyncClient: Vurio_Dedup_PreviewServiceAsyncClientProtocol {
+  internal var channel: GRPCChannel
+  internal var defaultCallOptions: CallOptions
+  internal var interceptors: Vurio_Dedup_PreviewServiceClientInterceptorFactoryProtocol?
+
+  internal init(
+    channel: GRPCChannel,
+    defaultCallOptions: CallOptions = CallOptions(),
+    interceptors: Vurio_Dedup_PreviewServiceClientInterceptorFactoryProtocol? = nil
+  ) {
+    self.channel = channel
+    self.defaultCallOptions = defaultCallOptions
+    self.interceptors = interceptors
+  }
+}
+
+internal protocol Vurio_Dedup_PreviewServiceClientInterceptorFactoryProtocol: Sendable {
+
+  /// - Returns: Interceptors to use when invoking 'renderPreview'.
+  func makeRenderPreviewInterceptors() -> [ClientInterceptor<Vurio_Dedup_RenderPreviewRequest, Vurio_Dedup_PreviewFrame>]
+
+  /// - Returns: Interceptors to use when invoking 'releasePreview'.
+  func makeReleasePreviewInterceptors() -> [ClientInterceptor<Vurio_Dedup_AdjustmentsFileRequest, Vurio_Dedup_Empty>]
+}
+
+internal enum Vurio_Dedup_PreviewServiceClientMetadata {
+  internal static let serviceDescriptor = GRPCServiceDescriptor(
+    name: "PreviewService",
+    fullName: "vurio.dedup.PreviewService",
+    methods: [
+      Vurio_Dedup_PreviewServiceClientMetadata.Methods.renderPreview,
+      Vurio_Dedup_PreviewServiceClientMetadata.Methods.releasePreview,
+    ]
+  )
+
+  internal enum Methods {
+    internal static let renderPreview = GRPCMethodDescriptor(
+      name: "RenderPreview",
+      path: "/vurio.dedup.PreviewService/RenderPreview",
+      type: GRPCCallType.unary
+    )
+
+    internal static let releasePreview = GRPCMethodDescriptor(
+      name: "ReleasePreview",
+      path: "/vurio.dedup.PreviewService/ReleasePreview",
       type: GRPCCallType.unary
     )
   }
@@ -6330,6 +6658,13 @@ internal protocol Vurio_Dedup_AdjustmentsServiceProvider: CallHandlerProvider {
   /// "" = back to the default. Existing sidecars are moved into the new
   /// layout. Refused when another location uses or nests with the folder.
   func setEditsRoot(request: Vurio_Dedup_SetEditsRootRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_SetEditsRootResponse>
+
+  /// CHAIN-1 (docs/todo_tool_chain.md §9.2): move through the photo's
+  /// persisted undo/redo history. `delta` steps relative to the current
+  /// index (-1 undo, +1 redo); `use_index` jumps to `index`. The step's
+  /// chain is committed like any edit (without appending a new step) and the
+  /// resulting document is returned. OUT_OF_RANGE when there is no such step.
+  func stepHistory(request: Vurio_Dedup_StepHistoryRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdjustmentDocumentResponse>
 }
 
 extension Vurio_Dedup_AdjustmentsServiceProvider {
@@ -6389,6 +6724,15 @@ extension Vurio_Dedup_AdjustmentsServiceProvider {
         userFunction: self.setEditsRoot(request:context:)
       )
 
+    case "StepHistory":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_StepHistoryRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdjustmentDocumentResponse>(),
+        interceptors: self.interceptors?.makeStepHistoryInterceptors() ?? [],
+        userFunction: self.stepHistory(request:context:)
+      )
+
     default:
       return nil
     }
@@ -6440,6 +6784,16 @@ internal protocol Vurio_Dedup_AdjustmentsServiceAsyncProvider: CallHandlerProvid
     request: Vurio_Dedup_SetEditsRootRequest,
     context: GRPCAsyncServerCallContext
   ) async throws -> Vurio_Dedup_SetEditsRootResponse
+
+  /// CHAIN-1 (docs/todo_tool_chain.md §9.2): move through the photo's
+  /// persisted undo/redo history. `delta` steps relative to the current
+  /// index (-1 undo, +1 redo); `use_index` jumps to `index`. The step's
+  /// chain is committed like any edit (without appending a new step) and the
+  /// resulting document is returned. OUT_OF_RANGE when there is no such step.
+  func stepHistory(
+    request: Vurio_Dedup_StepHistoryRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_AdjustmentDocumentResponse
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -6506,6 +6860,15 @@ extension Vurio_Dedup_AdjustmentsServiceAsyncProvider {
         wrapping: { try await self.setEditsRoot(request: $0, context: $1) }
       )
 
+    case "StepHistory":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_StepHistoryRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdjustmentDocumentResponse>(),
+        interceptors: self.interceptors?.makeStepHistoryInterceptors() ?? [],
+        wrapping: { try await self.stepHistory(request: $0, context: $1) }
+      )
+
     default:
       return nil
     }
@@ -6533,6 +6896,10 @@ internal protocol Vurio_Dedup_AdjustmentsServiceServerInterceptorFactoryProtocol
   /// - Returns: Interceptors to use when handling 'setEditsRoot'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeSetEditsRootInterceptors() -> [ServerInterceptor<Vurio_Dedup_SetEditsRootRequest, Vurio_Dedup_SetEditsRootResponse>]
+
+  /// - Returns: Interceptors to use when handling 'stepHistory'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeStepHistoryInterceptors() -> [ServerInterceptor<Vurio_Dedup_StepHistoryRequest, Vurio_Dedup_AdjustmentDocumentResponse>]
 }
 
 internal enum Vurio_Dedup_AdjustmentsServiceServerMetadata {
@@ -6545,6 +6912,7 @@ internal enum Vurio_Dedup_AdjustmentsServiceServerMetadata {
       Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.setAdjustments,
       Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.getEditsRoot,
       Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.setEditsRoot,
+      Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.stepHistory,
     ]
   )
 
@@ -6576,6 +6944,174 @@ internal enum Vurio_Dedup_AdjustmentsServiceServerMetadata {
     internal static let setEditsRoot = GRPCMethodDescriptor(
       name: "SetEditsRoot",
       path: "/vurio.dedup.AdjustmentsService/SetEditsRoot",
+      type: GRPCCallType.unary
+    )
+
+    internal static let stepHistory = GRPCMethodDescriptor(
+      name: "StepHistory",
+      path: "/vurio.dedup.AdjustmentsService/StepHistory",
+      type: GRPCCallType.unary
+    )
+  }
+}
+/// ---------------------------------------------------------
+/// Preview Service (CHAIN-1, docs/todo_tool_chain.md §5.4)
+///
+/// The viewer's live preview. Every frame is rendered by the server's engine
+/// from the file's decoded working-size base, through the chain the client
+/// is editing (committed or not). One request in flight per client; the
+/// client sends the newest document when the previous frame returns.
+/// ---------------------------------------------------------
+///
+/// To build a server, implement a class that conforms to this protocol.
+internal protocol Vurio_Dedup_PreviewServiceProvider: CallHandlerProvider {
+  var interceptors: Vurio_Dedup_PreviewServiceServerInterceptorFactoryProtocol? { get }
+
+  func renderPreview(request: Vurio_Dedup_RenderPreviewRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_PreviewFrame>
+
+  /// Drop the file's render session (decoded base + node cache) early;
+  /// sessions also expire on their own.
+  func releasePreview(request: Vurio_Dedup_AdjustmentsFileRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_Empty>
+}
+
+extension Vurio_Dedup_PreviewServiceProvider {
+  internal var serviceName: Substring {
+    return Vurio_Dedup_PreviewServiceServerMetadata.serviceDescriptor.fullName[...]
+  }
+
+  /// Determines, calls and returns the appropriate request handler, depending on the request's method.
+  /// Returns nil for methods not handled by this service.
+  internal func handle(
+    method name: Substring,
+    context: CallHandlerContext
+  ) -> GRPCServerHandlerProtocol? {
+    switch name {
+    case "RenderPreview":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_RenderPreviewRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_PreviewFrame>(),
+        interceptors: self.interceptors?.makeRenderPreviewInterceptors() ?? [],
+        userFunction: self.renderPreview(request:context:)
+      )
+
+    case "ReleasePreview":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_AdjustmentsFileRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_Empty>(),
+        interceptors: self.interceptors?.makeReleasePreviewInterceptors() ?? [],
+        userFunction: self.releasePreview(request:context:)
+      )
+
+    default:
+      return nil
+    }
+  }
+}
+
+/// ---------------------------------------------------------
+/// Preview Service (CHAIN-1, docs/todo_tool_chain.md §5.4)
+///
+/// The viewer's live preview. Every frame is rendered by the server's engine
+/// from the file's decoded working-size base, through the chain the client
+/// is editing (committed or not). One request in flight per client; the
+/// client sends the newest document when the previous frame returns.
+/// ---------------------------------------------------------
+///
+/// To implement a server, implement an object which conforms to this protocol.
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+internal protocol Vurio_Dedup_PreviewServiceAsyncProvider: CallHandlerProvider, Sendable {
+  static var serviceDescriptor: GRPCServiceDescriptor { get }
+  var interceptors: Vurio_Dedup_PreviewServiceServerInterceptorFactoryProtocol? { get }
+
+  func renderPreview(
+    request: Vurio_Dedup_RenderPreviewRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_PreviewFrame
+
+  /// Drop the file's render session (decoded base + node cache) early;
+  /// sessions also expire on their own.
+  func releasePreview(
+    request: Vurio_Dedup_AdjustmentsFileRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_Empty
+}
+
+@available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
+extension Vurio_Dedup_PreviewServiceAsyncProvider {
+  internal static var serviceDescriptor: GRPCServiceDescriptor {
+    return Vurio_Dedup_PreviewServiceServerMetadata.serviceDescriptor
+  }
+
+  internal var serviceName: Substring {
+    return Vurio_Dedup_PreviewServiceServerMetadata.serviceDescriptor.fullName[...]
+  }
+
+  internal var interceptors: Vurio_Dedup_PreviewServiceServerInterceptorFactoryProtocol? {
+    return nil
+  }
+
+  internal func handle(
+    method name: Substring,
+    context: CallHandlerContext
+  ) -> GRPCServerHandlerProtocol? {
+    switch name {
+    case "RenderPreview":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_RenderPreviewRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_PreviewFrame>(),
+        interceptors: self.interceptors?.makeRenderPreviewInterceptors() ?? [],
+        wrapping: { try await self.renderPreview(request: $0, context: $1) }
+      )
+
+    case "ReleasePreview":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_AdjustmentsFileRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_Empty>(),
+        interceptors: self.interceptors?.makeReleasePreviewInterceptors() ?? [],
+        wrapping: { try await self.releasePreview(request: $0, context: $1) }
+      )
+
+    default:
+      return nil
+    }
+  }
+}
+
+internal protocol Vurio_Dedup_PreviewServiceServerInterceptorFactoryProtocol: Sendable {
+
+  /// - Returns: Interceptors to use when handling 'renderPreview'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeRenderPreviewInterceptors() -> [ServerInterceptor<Vurio_Dedup_RenderPreviewRequest, Vurio_Dedup_PreviewFrame>]
+
+  /// - Returns: Interceptors to use when handling 'releasePreview'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeReleasePreviewInterceptors() -> [ServerInterceptor<Vurio_Dedup_AdjustmentsFileRequest, Vurio_Dedup_Empty>]
+}
+
+internal enum Vurio_Dedup_PreviewServiceServerMetadata {
+  internal static let serviceDescriptor = GRPCServiceDescriptor(
+    name: "PreviewService",
+    fullName: "vurio.dedup.PreviewService",
+    methods: [
+      Vurio_Dedup_PreviewServiceServerMetadata.Methods.renderPreview,
+      Vurio_Dedup_PreviewServiceServerMetadata.Methods.releasePreview,
+    ]
+  )
+
+  internal enum Methods {
+    internal static let renderPreview = GRPCMethodDescriptor(
+      name: "RenderPreview",
+      path: "/vurio.dedup.PreviewService/RenderPreview",
+      type: GRPCCallType.unary
+    )
+
+    internal static let releasePreview = GRPCMethodDescriptor(
+      name: "ReleasePreview",
+      path: "/vurio.dedup.PreviewService/ReleasePreview",
       type: GRPCCallType.unary
     )
   }

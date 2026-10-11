@@ -1,16 +1,18 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
-/// ADJ-2 (docs §6.3): the viewer's right-hand tool panel. Collapses to a
-/// 28 pt rail of tool icons (mirroring the left column's compact state) and
-/// expands to one section per tool. Every control edits the view model,
-/// which applies it live and commits it.
+/// ADJ-2 / CHAIN-1 (docs/todo_tool_chain.md §9.1): the viewer's right-hand
+/// panel. Collapses to a 28 pt rail of node icons and expands to three
+/// regions: the chain (ordered nodes), the inspector for the selected node,
+/// and the catalogue of tools. Every control edits the view model, which
+/// asks the server for a frame and commits.
 struct AdjustmentsPanel: View {
     @ObservedObject var model: AdjustmentsViewModel
     let hasImage: Bool
 
-    @State private var rotateCollapsed = false
-    @State private var cropCollapsed = false
     @State private var customAspectText = ""
+    @State private var historyShown = false
+    @State private var dragStartWidth: CGFloat?
 
     var body: some View {
         Group {
@@ -20,11 +22,31 @@ struct AdjustmentsPanel: View {
                 expanded
             }
         }
-        .frame(width: model.isCollapsed ? AdjustmentsViewModel.railWidth : AdjustmentsViewModel.expandedWidth)
+        .frame(width: model.isCollapsed ? AdjustmentsViewModel.railWidth : model.panelWidth)
         .frame(maxHeight: .infinity)
         .background(Theme.surface.opacity(0.5))
         .overlay(alignment: .leading) {
             Rectangle().fill(Theme.border).frame(width: 1)
+        }
+        // CHAIN-1 (docs §9.1): drag the left edge to resize, 280–440 pt.
+        .overlay(alignment: .leading) {
+            if !model.isCollapsed {
+                Color.clear
+                    .frame(width: 7)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                            .onChanged { value in
+                                if dragStartWidth == nil { dragStartWidth = model.panelWidth }
+                                let proposed = (dragStartWidth ?? model.panelWidth) - value.translation.width
+                                model.panelWidth = min(max(proposed, AdjustmentsViewModel.minWidth), AdjustmentsViewModel.maxWidth)
+                            }
+                            .onEnded { _ in dragStartWidth = nil }
+                    )
+                    .onHover { inside in
+                        if inside { NSCursor.resizeLeftRight.set() } else { NSCursor.arrow.set() }
+                    }
+            }
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: model.isCollapsed)
     }
@@ -38,15 +60,13 @@ struct AdjustmentsPanel: View {
             }
             .buttonStyle(.vurioIcon)
             .help("Show adjustments (⌘⌥A)")
-            railIcon(model.isRulerMode ? "ruler" : "rotate.right",
-                     help: model.isRulerMode ? "Straighten ruler armed" : "Rotate",
-                     active: model.isRulerMode || !(model.rotate?.isIdentity ?? true)) {
-                model.isCollapsed = false
-                rotateCollapsed = false
-            }
-            railIcon("crop", help: "Crop", active: !(model.crop?.isIdentity ?? true)) {
-                model.isCollapsed = false
-                cropCollapsed = false
+            ForEach(model.document.nodes) { node in
+                railIcon(model.descriptor(for: node.tool)?.icon ?? "questionmark",
+                         help: model.descriptor(for: node.tool)?.label ?? node.tool,
+                         active: node.enabled && !(model.tool(for: node.id)?.isIdentity ?? true)) {
+                    model.isCollapsed = false
+                    model.selectedNodeID = node.id
+                }
             }
             if model.isSpooled { spooledGlyph }
             Spacer()
@@ -66,36 +86,15 @@ struct AdjustmentsPanel: View {
 
     private var expanded: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "slider.horizontal.3")
-                    .foregroundColor(Theme.textPrimary)
-                Text("Adjustments")
-                    .font(.system(size: 11, weight: .semibold))
-                    .textCase(.uppercase)
-                    .foregroundColor(Theme.textPrimary)
-                if model.isCommitting {
-                    ProgressView().controlSize(.mini)
-                }
-                if model.isSpooled { spooledGlyph }
-                Spacer()
-                Button(action: { model.isCollapsed = true }) {
-                    Image(systemName: "chevron.right")
-                }
-                .buttonStyle(.vurioIcon)
-                .help("Hide adjustments (⌘⌥A)")
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-
+            header
             Divider().background(Theme.border)
-
             if !model.isAvailable {
                 Text("Adjustments are disabled on the server (media.adjustments.enabled).")
                     .font(.caption)
                     .foregroundColor(Theme.textSecondary)
                     .padding(12)
                 Spacer()
-            } else if model.rotate == nil || model.crop == nil {
+            } else if model.descriptors.isEmpty {
                 HStack {
                     ProgressView().controlSize(.small)
                     Text("Loading tools…").font(.caption).foregroundColor(Theme.textSecondary)
@@ -103,35 +102,95 @@ struct AdjustmentsPanel: View {
                 .padding(12)
                 Spacer()
             } else {
-                ScrollView {
-                    VStack(spacing: 10) {
-                        if let rotate = model.rotate {
-                            section("Rotate", icon: "rotate.right", collapsed: $rotateCollapsed,
-                                    isEdited: !rotate.isIdentity,
-                                    onReset: { model.resetTool(RotateToolUI.id) }) {
-                                RotateSection(model: model, tool: rotate, hasImage: hasImage)
-                            }
-                        }
-                        if let crop = model.crop {
-                            section("Crop", icon: "crop", collapsed: $cropCollapsed,
-                                    isEdited: !crop.isIdentity,
-                                    onReset: { model.resetTool(CropToolUI.id) }) {
-                                CropSection(model: model, tool: crop, hasImage: hasImage,
-                                            customAspectText: $customAspectText)
-                            }
-                        }
-                        if let error = model.lastError {
-                            Text(error)
-                                .font(.caption)
-                                .foregroundColor(Theme.warning)
-                                .padding(.horizontal, 12)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                    .padding(10)
-                }
+                ChainListView(model: model, hasImage: hasImage)
+                    .frame(maxHeight: .infinity)
+                Divider().background(Theme.border)
+                inspector
+                Divider().background(Theme.border)
+                CatalogueView(model: model, hasImage: hasImage)
             }
         }
+    }
+
+    private var header: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "slider.horizontal.3")
+                .foregroundColor(Theme.textPrimary)
+            Text("Chain")
+                .font(.system(size: 11, weight: .semibold))
+                .textCase(.uppercase)
+                .foregroundColor(Theme.textPrimary)
+            if model.isCommitting || model.preview.isRendering {
+                ProgressView().controlSize(.mini)
+            }
+            if model.isSpooled { spooledGlyph }
+            Spacer()
+            Button(action: { model.undo() }) { Image(systemName: "arrow.uturn.backward") }
+                .buttonStyle(.vurioIcon)
+                .disabled(!hasImage || !model.canUndo)
+                .help("Undo (⌘Z)")
+            Button(action: { model.redo() }) { Image(systemName: "arrow.uturn.forward") }
+                .buttonStyle(.vurioIcon)
+                .disabled(!hasImage || !model.canRedo)
+                .help("Redo (⇧⌘Z)")
+            Button(action: { historyShown.toggle() }) { Image(systemName: "clock.arrow.circlepath") }
+                .buttonStyle(.vurioIcon(tint: historyShown ? Theme.textAccent : Theme.textPrimary))
+                .disabled(!hasImage || model.historySteps.isEmpty)
+                .help("History")
+                .popover(isPresented: $historyShown, arrowEdge: .bottom) { historyList }
+            Button(action: { model.isCollapsed = true }) {
+                Image(systemName: "chevron.right")
+            }
+            .buttonStyle(.vurioIcon)
+            .help("Hide adjustments (⌘⌥A)")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+    }
+
+    /// CHAIN-1 (docs §9.2): the photo's persisted steps; click one to jump.
+    private var historyList: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("History")
+                .font(.system(size: 11, weight: .semibold))
+                .textCase(.uppercase)
+                .foregroundColor(Theme.textSecondary)
+                .padding(.bottom, 4)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(model.historySteps.enumerated().reversed()), id: \.offset) { index, step in
+                        Button(action: { model.jumpHistory(to: index); historyShown = false }) {
+                            HStack {
+                                Image(systemName: index == model.historyIndex ? "checkmark.circle.fill" : "circle")
+                                    .font(.system(size: 9))
+                                    .foregroundColor(index == model.historyIndex ? Theme.textAccent : Theme.textSecondary)
+                                Text(step.label)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(index > model.historyIndex ? Theme.textSecondary : Theme.textPrimary)
+                                Spacer()
+                                Text(Self.shortTime(step.at))
+                                    .font(.custom("Menlo", size: 9))
+                                    .foregroundColor(Theme.textSecondary)
+                            }
+                            .padding(.vertical, 3)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(maxHeight: 260)
+        }
+        .padding(10)
+        .frame(width: 260)
+        .background(Theme.surfaceElevated)
+    }
+
+    private static func shortTime(_ iso: String) -> String {
+        // "2026-10-11T18:21:07Z" -> "18:21"
+        guard let t = iso.firstIndex(of: "T"), iso.distance(from: t, to: iso.endIndex) >= 6 else { return "" }
+        let start = iso.index(after: t)
+        return String(iso[start..<iso.index(start, offsetBy: 5)])
     }
 
     private var spooledGlyph: some View {
@@ -141,46 +200,280 @@ struct AdjustmentsPanel: View {
             .help("The edit is saved; its sidecar waits for the edits folder to be reachable (\(model.sidecarPath))")
     }
 
+    // MARK: - Inspector
+
     @ViewBuilder
-    private func section<Content: View>(_ title: String, icon: String, collapsed: Binding<Bool>,
-                                        isEdited: Bool, onReset: @escaping () -> Void,
-                                        @ViewBuilder content: () -> Content) -> some View {
+    private var inspector: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Button(action: { withAnimation { collapsed.wrappedValue.toggle() } }) {
-                    HStack(spacing: 8) {
-                        Image(systemName: icon)
-                            .foregroundColor(isEdited ? Theme.textAccent : Theme.textPrimary)
-                        Text(title)
-                            .font(.system(size: 11, weight: .semibold))
-                            .textCase(.uppercase)
-                            .foregroundColor(Theme.textPrimary)
-                        Spacer()
-                        Image(systemName: collapsed.wrappedValue ? "chevron.right" : "chevron.down")
-                            .foregroundColor(Theme.textSecondary)
-                            .font(.system(size: 10))
+            if let node = model.selectedNode {
+                let descriptor = model.descriptor(for: node.tool)
+                HStack(spacing: 8) {
+                    Image(systemName: descriptor?.icon ?? "questionmark")
+                        .foregroundColor(node.enabled ? Theme.textAccent : Theme.textSecondary)
+                    Text(descriptor?.label ?? node.tool)
+                        .font(.system(size: 11, weight: .semibold))
+                        .textCase(.uppercase)
+                        .foregroundColor(Theme.textPrimary)
+                    Spacer()
+                    Button(action: { model.toggleNodeEnabled(node.id) }) {
+                        Image(systemName: node.enabled ? "eye" : "eye.slash")
                     }
-                    .contentShape(Rectangle())
+                    .buttonStyle(.vurioIcon)
+                    .help(node.enabled ? "Bypass (⌘E)" : "Enable (⌘E)")
+                    Button(action: { model.resetNode(node.id) }) {
+                        Image(systemName: "arrow.counterclockwise")
+                    }
+                    .buttonStyle(.vurioIcon)
+                    .disabled(model.tool(for: node.id)?.isIdentity ?? true)
+                    .help("Reset to defaults")
+                    Button(action: { model.removeNode(node.id) }) {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.vurioIcon)
+                    .help("Remove from the chain (⌘⌫)")
                 }
-                .buttonStyle(PlainButtonStyle())
-                Button(action: onReset) {
-                    Image(systemName: "arrow.counterclockwise")
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                Group {
+                    if let rotate = model.rotateTool(for: node.id) {
+                        RotateSection(model: model, tool: rotate, hasImage: hasImage)
+                    } else if let crop = model.cropTool(for: node.id) {
+                        CropSection(model: model, tool: crop, hasImage: hasImage, customAspectText: $customAspectText)
+                    } else {
+                        Text("This build has no controls for \"\(node.tool)\"; the node is kept and renders unchanged.")
+                            .font(.caption)
+                            .foregroundColor(Theme.textSecondary)
+                    }
                 }
-                .buttonStyle(.vurioIcon)
-                .disabled(!isEdited)
-                .help("Reset \(title.lowercased())")
+                .padding(.horizontal, 12)
+                .padding(.bottom, 10)
+                .disabled(!node.enabled)
+                .opacity(node.enabled ? 1 : 0.5)
+            } else {
+                Text(model.document.isEmpty ? "Add a tool from the catalogue to start a chain."
+                                            : "Select a node to adjust it.")
+                    .font(.caption)
+                    .foregroundColor(Theme.textSecondary)
+                    .padding(12)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            if !collapsed.wrappedValue {
-                content()
+            if let error = model.lastError ?? model.preview.lastError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundColor(Theme.warning)
                     .padding(.horizontal, 12)
-                    .padding(.bottom, 10)
+                    .padding(.bottom, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .background(Theme.surface)
-        .cornerRadius(8)
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border, lineWidth: 1))
+        .frame(minHeight: 60)
+    }
+}
+
+/// CHAIN-1 (docs §9.1): the chain, top to bottom in processing order.
+/// Rows drag to reorder; a catalogue chip dropped between rows inserts
+/// there.
+private struct ChainListView: View {
+    @ObservedObject var model: AdjustmentsViewModel
+    let hasImage: Bool
+
+    var body: some View {
+        if model.document.isEmpty {
+            VStack(spacing: 6) {
+                Image(systemName: "arrow.down.to.line.compact")
+                    .foregroundColor(Theme.textSecondary)
+                Text("No tools in the chain")
+                    .font(.caption)
+                    .foregroundColor(Theme.textSecondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .onDrop(of: [.plainText], isTargeted: nil) { providers in
+                insertDropped(providers, at: 0)
+            }
+        } else {
+            List(selection: Binding(get: { model.selectedNodeID },
+                                    set: { model.selectedNodeID = $0 })) {
+                ForEach(model.document.nodes) { node in
+                    ChainRow(model: model, node: node)
+                        .tag(node.id)
+                        .listRowInsets(EdgeInsets(top: 2, leading: 6, bottom: 2, trailing: 6))
+                        .listRowBackground(Color.clear)
+                        .contextMenu {
+                            Button(node.enabled ? "Bypass" : "Enable") { model.toggleNodeEnabled(node.id) }
+                            Button("Duplicate") { model.duplicateNode(node.id) }
+                            Button("Reset") { model.resetNode(node.id) }
+                            Divider()
+                            Button("Move up") { model.moveNode(node.id, by: -1) }
+                                .disabled(model.document.index(of: node.id) == 0)
+                            Button("Move down") { model.moveNode(node.id, by: 1) }
+                                .disabled(model.document.index(of: node.id) == model.document.nodes.count - 1)
+                            Divider()
+                            Button("Remove", role: .destructive) { model.removeNode(node.id) }
+                        }
+                }
+                .onMove { source, destination in model.moveNodes(fromOffsets: source, toOffset: destination) }
+                .onInsert(of: [.plainText]) { index, providers in
+                    _ = insertDropped(providers, at: index)
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .environment(\.defaultMinListRowHeight, 28)
+        }
+    }
+
+    /// A catalogue chip is dragged as "vurio-tool:<id>".
+    private func insertDropped(_ providers: [NSItemProvider], at index: Int) -> Bool {
+        guard let provider = providers.first else { return false }
+        provider.loadObject(ofClass: NSString.self) { object, _ in
+            guard let text = object as? String, text.hasPrefix(CatalogueView.dragPrefix) else { return }
+            let toolID = String(text.dropFirst(CatalogueView.dragPrefix.count))
+            Task { @MainActor in model.insertTool(toolID, at: index) }
+        }
+        return true
+    }
+}
+
+private struct ChainRow: View {
+    @ObservedObject var model: AdjustmentsViewModel
+    let node: ChainNode
+
+    var body: some View {
+        let descriptor = model.descriptor(for: node.tool)
+        let tool = model.tool(for: node.id)
+        let selected = model.selectedNodeID == node.id
+        HStack(spacing: 6) {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 9))
+                .foregroundColor(Theme.textSecondary.opacity(0.6))
+            Button(action: { model.toggleNodeEnabled(node.id) }) {
+                Image(systemName: node.enabled ? "circle.fill" : "circle")
+                    .font(.system(size: 8))
+                    .foregroundColor(node.enabled ? Theme.textAccent : Theme.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .help(node.enabled ? "Bypass" : "Enable")
+            Image(systemName: descriptor?.icon ?? "questionmark")
+                .font(.system(size: 11))
+                .foregroundColor(node.enabled ? Theme.textPrimary : Theme.textSecondary)
+                .frame(width: 16)
+            Text(descriptor?.label ?? node.tool)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(node.enabled ? Theme.textPrimary : Theme.textSecondary)
+            Spacer(minLength: 4)
+            Text(tool?.summary() ?? (descriptor == nil ? "unknown tool" : ""))
+                .font(.custom("Menlo", size: 9))
+                .foregroundColor(Theme.textSecondary)
+                .lineLimit(1)
+            if model.editingCropID == node.id {
+                Image(systemName: "crop")
+                    .font(.system(size: 9))
+                    .foregroundColor(Theme.success)
+                    .help("Being edited")
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Theme.surfaceElevated : Theme.surface))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(selected ? Theme.borderActive : Theme.border, lineWidth: 1))
+        .opacity(node.enabled ? 1 : 0.6)
+        .contentShape(Rectangle())
+        .onTapGesture { model.selectedNodeID = node.id }
+    }
+}
+
+/// CHAIN-1 (docs §9.1): the tools, by category. Click appends after the
+/// selection; drag inserts at the drop line in the chain.
+private struct CatalogueView: View {
+    @ObservedObject var model: AdjustmentsViewModel
+    let hasImage: Bool
+    static let dragPrefix = "vurio-tool:"
+
+    private var grouped: [(ToolCategory, [ToolDescriptor])] {
+        let order: [ToolCategory] = [.geometry, .raster, .layer, .mask, .split]
+        return order.compactMap { category in
+            let tools = model.descriptors.filter { $0.category == category }
+            return tools.isEmpty ? nil : (category, tools)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: { withAnimation { model.isCatalogueCollapsed.toggle() } }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "square.grid.2x2")
+                        .foregroundColor(Theme.textPrimary)
+                    Text("Catalogue")
+                        .font(.system(size: 11, weight: .semibold))
+                        .textCase(.uppercase)
+                        .foregroundColor(Theme.textPrimary)
+                    Spacer()
+                    Image(systemName: model.isCatalogueCollapsed ? "chevron.right" : "chevron.down")
+                        .foregroundColor(Theme.textSecondary)
+                        .font(.system(size: 10))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            if !model.isCatalogueCollapsed {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(grouped, id: \.0) { category, tools in
+                        HStack(alignment: .top, spacing: 6) {
+                            Text(category.label)
+                                .font(.system(size: 10))
+                                .foregroundColor(Theme.textSecondary)
+                                .frame(width: 56, alignment: .leading)
+                                .padding(.top, 4)
+                            WrappingChips(tools: tools, hasImage: hasImage) { tool in model.addTool(tool.id) }
+                        }
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 10)
+            }
+        }
+    }
+}
+
+private struct WrappingChips: View {
+    let tools: [ToolDescriptor]
+    let hasImage: Bool
+    let onAdd: (ToolDescriptor) -> Void
+
+    var body: some View {
+        // Chips wrap by hand (a horizontal flow fits the narrow panel).
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(rows(), id: \.first?.id) { row in
+                HStack(spacing: 4) {
+                    ForEach(row, id: \.id) { tool in
+                        Button(action: { onAdd(tool) }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: tool.icon)
+                                Text(tool.label)
+                            }
+                            .font(.system(size: 10))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                        }
+                        .vurioButtonStyle(tint: Theme.textPrimary)
+                        .disabled(!hasImage)
+                        .help("Add \(tool.label) after the selection (drag to place it)")
+                        .onDrag { NSItemProvider(object: NSString(string: CatalogueView.dragPrefix + tool.id)) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func rows() -> [[ToolDescriptor]] {
+        var out: [[ToolDescriptor]] = []
+        for (i, tool) in tools.enumerated() {
+            if i % 3 == 0 { out.append([]) }
+            out[out.count - 1].append(tool)
+        }
+        return out
     }
 }
 
@@ -206,9 +499,7 @@ private struct RotateSection: View {
     /// straighten angle as one number, since that is what the image is
     /// actually turned by. Fixed-width so the buttons beside it do not shift
     /// as the value changes.
-    private var totalDegrees: Double {
-        Double(tool.quarterTurns) * 90 + tool.angle
-    }
+    private var totalDegrees: Double { tool.totalDegrees }
 
     /// A pointer move of this many points changes the angle by one degree,
     /// so a drag across the panel is a few degrees, like a few wheel notches.
@@ -390,7 +681,7 @@ private struct RotateSection: View {
                 guard !wasDrag, hasImage else { return }
                 if resetArmed {
                     disarm()
-                    model.resetTool(RotateToolUI.id)
+                    if let id = model.activeRotateID { model.resetNode(id) }
                 } else {
                     beginEdit()
                 }
@@ -451,20 +742,13 @@ private struct CropSection: View {
                     .onAppear { customAspectText = String(format: "%.2f", tool.customAspect) }
                 }
             }
-            Text(String(format: "%.0f%% × %.0f%%", tool.rect.width * 100, tool.rect.height * 100))
+            Text(tool.summary())
                 .font(.custom("Menlo", size: 10))
                 .foregroundColor(Theme.textSecondary)
         }
     }
 
-    static func label(_ option: String) -> String {
-        switch option {
-        case "free": return "Free"
-        case "original": return "Original"
-        case "custom": return "Custom"
-        default: return option
-        }
-    }
+    static func label(_ option: String) -> String { CropToolUI.aspectLabel(option) }
 }
 
 /// Begins editing the Rotate readout on the OS edit key (F2; Fn+F2 on a

@@ -446,22 +446,33 @@ actor ServerImageLoader {
     /// local decoder can't read — go through GetPreview(size: "full"), which
     /// the server generates async (native res, quality 95) and announces via
     /// the media-ready push, exactly like the web viewer's size=full fetch.
-    nonisolated func loadFullResolution(filePath: String) async throws -> NSImage {
+    /// CHAIN-1 (docs/todo_tool_chain.md §5.5): `renderRevision` is the
+    /// file's current edit revision. 0 keeps the hybrid above. Non-zero means
+    /// the full-size image is the EDITED render, which only the server's
+    /// engine produces: the local decode is skipped, the result is cached
+    /// under a revision-qualified key and never overwrites the "_preview"
+    /// slot (that holds base pixels).
+    nonisolated func loadFullResolution(filePath: String, renderRevision: Int = 0) async throws -> NSImage {
         let currentPriority = Task.currentPriority
-        let key = "\(filePath)_fullres"
+        let key = renderRevision == 0 ? "\(filePath)_fullres" : "\(filePath)_fullres_r\(renderRevision)"
 
         return try await joinInFlight(key: key) {
-            return try await self.performLoadFullResolution(filePath: filePath, priority: currentPriority)
+            return try await self.performLoadFullResolution(filePath: filePath, priority: currentPriority,
+                                                            renderRevision: renderRevision)
         }
     }
 
-    private func performLoadFullResolution(filePath: String, priority: TaskPriority?) async throws -> NSImage {
+    private func performLoadFullResolution(filePath: String, priority: TaskPriority?,
+                                           renderRevision: Int) async throws -> NSImage {
         if let reason = unreadableReason(type: "preview_full", filePath: filePath) {
             throw MediaUnreadableError(message: reason)
         }
+        if renderRevision != 0, let cached = ImageCache.shared.getImage(forKey: "\(filePath)_fullres_r\(renderRevision)") {
+            return cached
+        }
 
         let ext = (filePath as NSString).pathExtension.lowercased()
-        if !Self.rawExtensions.contains(ext), FileManager.default.fileExists(atPath: filePath) {
+        if renderRevision == 0, !Self.rawExtensions.contains(ext), FileManager.default.fileExists(atPath: filePath) {
             if let image = await decodeImageInBackground(filePath: filePath, priority: priority) {
                 knownFullRes.insert(filePath)
                 // Replace the preview slot with the better bitmap: revisits hit
@@ -510,12 +521,18 @@ actor ServerImageLoader {
                 var request = Vurio_Dedup_GetMediaRequest()
                 request.filePath = filePath
                 request.size = "full"
+                request.renderRevision = Int32(renderRevision)
 
                 let response = try await client.getPreview(request)
 
                 try Task.checkCancellation()
 
                 if let image = await self.decodeImageInBackground(filePath: response.filePath, priority: priority) {
+                    if renderRevision != 0 {
+                        // An edited render: its own slot, keyed by revision.
+                        ImageCache.shared.setImage(image, forKey: "\(filePath)_fullres_r\(renderRevision)")
+                        return image
+                    }
                     knownFullRes.insert(filePath)
                     // Keep the "_preview" cache slot holding the best bitmap
                     // (see the local-decode branch above for why).
@@ -569,7 +586,7 @@ actor ServerImageLoader {
         // (local decode proven, or the server has it materialized), serve it
         // directly and skip the QHD step entirely.
         if knownFullRes.contains(filePath) {
-            if let image = try? await performLoadFullResolution(filePath: filePath, priority: priority) {
+            if let image = try? await performLoadFullResolution(filePath: filePath, priority: priority, renderRevision: 0) {
                 ImageCache.shared.setImage(image, forKey: "\(filePath)_preview")
                 return image
             }

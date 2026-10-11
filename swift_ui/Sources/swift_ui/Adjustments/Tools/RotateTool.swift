@@ -1,9 +1,10 @@
 import Foundation
 import SwiftUI
 
-/// ADJ-2: the client half of the Rotate tool. Quarter turns live in the
-/// viewer's control bar (the buttons the user already knows), the straighten
-/// slider in the panel section; both edit this state and both commit.
+/// ADJ-2 / CHAIN-1: the client half of one Rotate node. Quarter turns live
+/// in the viewer's control bar (the buttons the user already knows), the
+/// straighten readout and ruler in the inspector; all of them edit this
+/// state and commit.
 @MainActor
 final class RotateToolUI: AdjustmentToolUI {
     static let id = "rotate"
@@ -24,14 +25,15 @@ final class RotateToolUI: AdjustmentToolUI {
 
     var isIdentity: Bool { quarterTurns == 0 && abs(angle) < 1e-9 }
 
-    func load(section: [String: Any]?) {
-        quarterTurns = ((section?["quarter_turns"] as? Int ?? 0) % 4 + 4) % 4
-        let a = (section?["angle"] as? NSNumber)?.doubleValue ?? 0
+    var totalDegrees: Double { Double(quarterTurns) * 90 + angle }
+
+    func load(params: [String: Any]?) {
+        quarterTurns = ((params?["quarter_turns"] as? Int ?? 0) % 4 + 4) % 4
+        let a = (params?["angle"] as? NSNumber)?.doubleValue ?? 0
         angle = min(max(a, angleRange.lowerBound), angleRange.upperBound)
     }
 
     func encode() -> [String: Any]? {
-        if isIdentity { return nil }
         var section: [String: Any] = ["version": descriptor.version, "quarter_turns": quarterTurns]
         section["angle"] = (angle * 1e6).rounded() / 1e6
         return section
@@ -40,6 +42,10 @@ final class RotateToolUI: AdjustmentToolUI {
     func reset() {
         quarterTurns = 0
         angle = 0
+    }
+
+    func summary() -> String {
+        String(format: "%+.1f°", totalDegrees)
     }
 
     func turn(by delta: Int) {

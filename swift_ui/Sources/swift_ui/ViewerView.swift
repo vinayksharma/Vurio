@@ -21,9 +21,9 @@ struct ViewerView: View {
     let onClose: () -> Void
 
     @StateObject private var model = ViewerViewModel()
-    /// ADJ-2: the selected file's edits (rotate/crop), the panel's state,
-    /// and the commits. The bitmap on screen is the BASE image; the chain
-    /// is applied as layout (docs §6.2).
+    /// ADJ-2 / CHAIN-1: the selected file's chain, the panel's state, the
+    /// live preview and the commits. An un-edited file shows the base
+    /// bitmap; an edited one shows the server's rendered frame (docs §5.4).
     @StateObject private var adjustments = AdjustmentsViewModel()
 
     @State private var scale: CGFloat = 1.0
@@ -63,6 +63,10 @@ struct ViewerView: View {
     // next zoom retries.
     @State private var fullResLoadedFor: String? = nil
     @State private var fullResRequestFor: String? = nil
+    /// CHAIN-1 (docs §5.5): the server's full-size EDITED render for the
+    /// current revision, shown in place of the preview frame once it lands.
+    @State private var renderedFullRes: NSImage? = nil
+    @State private var renderedFullResRevision = 0
 
     // True while `currentImage` is only the file's strip thumbnail, standing in
     // for a preview that is still being generated. It is a real bitmap on
@@ -130,7 +134,21 @@ struct ViewerView: View {
             model.applyAdjustments(filePath: filePath, renderRevision: Int32(revision),
                                    displayWidth: Int32(note.userInfo?["displayWidth"] as? Int ?? 0),
                                    displayHeight: Int32(note.userInfo?["displayHeight"] as? Int ?? 0))
+            // The full-size render of the old revision is stale; a zoom
+            // fetches the new one.
+            if filePath == model.selectedImage?.filePath, renderedFullResRevision != revision {
+                renderedFullRes = nil
+                renderedFullResRevision = 0
+                if revision != 0 { fullResLoadedFor = nil }
+            }
         }
+        // CHAIN-1: hold `\` for the un-edited image.
+        .overlay(
+            KeyHoldCatcher(keyCode: KeyHoldCatcher.backslashKeyCode,
+                           isEnabled: isActive && currentImage != nil && adjustments.hasEdits) { held in
+                adjustments.setShowBefore(held)
+            }
+        )
         .onChange(of: model.selectedID) { _, _ in
             // A ramp still running would fight the reset below, and it is
             // zooming an image that is on its way out.
@@ -142,6 +160,8 @@ struct ViewerView: View {
             }
             fullResLoadedFor = nil
             fullResRequestFor = nil
+            renderedFullRes = nil
+            renderedFullResRevision = 0
         }
         .onChange(of: scale) { _, newScale in
             maybeLoadFullResolution(zoomScale: newScale)
@@ -336,26 +356,23 @@ struct ViewerView: View {
     /// crop. It needs no crop mode of its own: it is a Rotate sub-tool.
     @ViewBuilder
     private func adjustedImage(_ image: NSImage, in area: CGSize) -> some View {
-        let base = image.pixelDimensions ?? image.size
-        let editing = adjustments.isCropEditing && !isPlaceholderImage
-        let quarterTurns = isPlaceholderImage ? 0 : (adjustments.rotate?.quarterTurns ?? 0)
-        let angle = isPlaceholderImage ? 0 : (adjustments.rotate?.angle ?? 0)
-        let crop = isPlaceholderImage ? AdjustmentGeometry.NormRect.full : (adjustments.crop?.rect ?? .full)
-        if let layout = AdjustmentLayout.compute(base: base, area: area, quarterTurns: quarterTurns,
-                                                 angle: angle, crop: crop, editing: editing) {
-            ZStack(alignment: .topLeading) {
-                ZStack {
-                    Image(nsImage: image)
-                        .resizable()
-                        .frame(width: layout.imageSize.width, height: layout.imageSize.height)
-                        .rotationEffect(.degrees(layout.totalDegrees))
-                        .offset(layout.imageOffset)
-                }
-                .frame(width: layout.frameSize.width, height: layout.frameSize.height)
-                .clipped()
-                .frame(width: area.width, height: area.height)
-                .scaleEffect(editing ? 1 : scale)
-                .offset(editing ? .zero : panOffset)
+        // CHAIN-1 (docs §5.4): an edited file (or one being cropped, or the
+        // before view) shows the server's frame; an un-edited one the base
+        // bitmap, fitted. The strip-tile placeholder is shown as is.
+        let frame = (adjustments.usesServerFrame && !isPlaceholderImage) ? adjustments.preview.frame : nil
+        let editing = adjustments.isCropEditing && !isPlaceholderImage && frame != nil
+        return ZStack(alignment: .topLeading) {
+            if let frame, let layout = AdjustmentLayout.compute(frame: frame.size, area: area,
+                                                                crop: adjustments.crop?.rect ?? .full,
+                                                                editing: editing) {
+                let bitmap = (renderedFullRes != nil && renderedFullResRevision == adjustments.renderRevision
+                              && !editing && !adjustments.showBefore) ? renderedFullRes! : frame.image
+                Image(nsImage: bitmap)
+                    .resizable()
+                    .frame(width: layout.frameSize.width, height: layout.frameSize.height)
+                    .frame(width: area.width, height: area.height)
+                    .scaleEffect(editing ? 1 : scale)
+                    .offset(editing ? .zero : panOffset)
 
                 if editing, let cropTool = adjustments.crop {
                     CropOverlay(layout: layout, rect: cropTool.rect,
@@ -364,21 +381,21 @@ struct ViewerView: View {
                                 onEnded: { adjustments.commitCrop() })
                         .frame(width: area.width, height: area.height)
                 }
-
-                if adjustments.isRulerMode, !isPlaceholderImage {
-                    RulerOverlay(onRuler: { a, b in adjustments.applyRuler(from: a, to: b) })
-                        .frame(width: area.width, height: area.height)
-                }
+            } else {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: area.width, height: area.height)
+                    .scaleEffect(scale)
+                    .offset(panOffset)
             }
-            .frame(width: area.width, height: area.height)
-        } else {
-            Image(nsImage: image)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: area.width, height: area.height)
-                .scaleEffect(scale)
-                .offset(panOffset)
+
+            if adjustments.isRulerMode, !isPlaceholderImage {
+                RulerOverlay(onRuler: { a, b in adjustments.applyRuler(from: a, to: b) })
+                    .frame(width: area.width, height: area.height)
+            }
         }
+        .frame(width: area.width, height: area.height)
     }
 
     private func loadingBadge(_ text: String) -> some View {
@@ -760,6 +777,30 @@ struct ViewerView: View {
                 Button("") { adjustments.isCollapsed.toggle() }
                     .keyboardShortcut("a", modifiers: [.command, .option])
                     .hidden()
+                // CHAIN-1 (docs §9.2): history and node shortcuts.
+                Button("") { adjustments.undo() }
+                    .keyboardShortcut("z", modifiers: [.command])
+                    .hidden()
+                Button("") { adjustments.redo() }
+                    .keyboardShortcut("z", modifiers: [.command, .shift])
+                    .hidden()
+                if let selected = adjustments.selectedNodeID {
+                    Button("") { adjustments.removeNode(selected) }
+                        .keyboardShortcut(.delete, modifiers: [.command])
+                        .hidden()
+                    Button("") { adjustments.duplicateNode(selected) }
+                        .keyboardShortcut("d", modifiers: [.command])
+                        .hidden()
+                    Button("") { adjustments.toggleNodeEnabled(selected) }
+                        .keyboardShortcut("e", modifiers: [.command])
+                        .hidden()
+                    Button("") { adjustments.moveNode(selected, by: -1) }
+                        .keyboardShortcut(.upArrow, modifiers: [.option])
+                        .hidden()
+                    Button("") { adjustments.moveNode(selected, by: 1) }
+                        .keyboardShortcut(.downArrow, modifiers: [.option])
+                        .hidden()
+                }
                 if adjustments.isCropEditing {
                     Button("") { adjustments.exitCropEditing() }
                         .keyboardShortcut(.return, modifiers: [])
@@ -896,15 +937,18 @@ struct ViewerView: View {
         // are the tile's, not the photo's, so "1:1" would land nowhere near it.
         guard !isPlaceholderImage,
               let image = currentImage, mainAreaSize.width > 0, mainAreaSize.height > 0 else { return }
+        if adjustments.usesServerFrame, let frame = adjustments.preview.frame,
+           let layout = AdjustmentLayout.compute(frame: frame.size, area: mainAreaSize, editing: false),
+           frame.displaySize.width > 0 {
+            // CHAIN-1: the frame is a downscaled render; 1:1 is one pixel of
+            // the full-resolution result per point.
+            let pointsPerFullPixel = layout.fitRatio * frame.size.width / frame.displaySize.width
+            setScale(1.0 / pointsPerFullPixel)
+            return
+        }
         let pixels = image.pixelDimensions ?? image.size
         guard pixels.width > 0, pixels.height > 0 else { return }
-        // ADJ-2: the fit is of the EDITED geometry; the layout knows the
-        // points-per-base-pixel ratio that 1:1 undoes.
-        guard let layout = AdjustmentLayout.compute(base: pixels, area: mainAreaSize,
-                                                    quarterTurns: adjustments.rotate?.quarterTurns ?? 0,
-                                                    angle: adjustments.rotate?.angle ?? 0,
-                                                    crop: adjustments.crop?.rect ?? .full,
-                                                    editing: false) else { return }
+        guard let layout = AdjustmentLayout.compute(frame: pixels, area: mainAreaSize, editing: false) else { return }
         setScale(1.0 / layout.fitRatio)
     }
 
@@ -929,13 +973,24 @@ struct ViewerView: View {
 
         let filePath = selected.filePath
         fullResRequestFor = filePath
+        // CHAIN-1 (docs §5.5): an edited file's full-size image is the
+        // server's render of the chain, kept apart from the base bitmap.
+        let revision = adjustments.renderRevision
 
         Task { @MainActor in
             do {
-                let image = try await ServerImageLoader.shared.loadFullResolution(filePath: filePath)
+                let image = try await ServerImageLoader.shared.loadFullResolution(filePath: filePath,
+                                                                                   renderRevision: revision)
                 if model.selectedImage?.filePath == filePath {
-                    currentImage = image
-                    adjustments.baseSize = image.pixelDimensions ?? image.size
+                    if revision != 0 {
+                        if adjustments.renderRevision == revision {
+                            renderedFullRes = image
+                            renderedFullResRevision = revision
+                        }
+                    } else {
+                        currentImage = image
+                        if adjustments.baseSize == .zero { adjustments.baseSize = image.pixelDimensions ?? image.size }
+                    }
                 }
                 fullResLoadedFor = filePath
                 if fullResRequestFor == filePath { fullResRequestFor = nil }
@@ -973,7 +1028,7 @@ struct ViewerView: View {
                 isPlaceholderImage = false
                 isLoadingImage = false
             }
-            adjustments.baseSize = cached.pixelDimensions ?? cached.size
+            if adjustments.baseSize == .zero { adjustments.baseSize = cached.pixelDimensions ?? cached.size }
             if await ServerImageLoader.shared.isFullResolutionKnown(filePath: filePath) {
                 fullResLoadedFor = filePath
             }
@@ -1010,7 +1065,7 @@ struct ViewerView: View {
                     isPlaceholderImage = false
                     isLoadingImage = false
                 }
-                adjustments.baseSize = image.pixelDimensions ?? image.size
+                if adjustments.baseSize == .zero { adjustments.baseSize = image.pixelDimensions ?? image.size }
                 // Served best-available: when the preview is already full
                 // resolution (original file or materialized render), there is
                 // nothing to upgrade on zoom.
