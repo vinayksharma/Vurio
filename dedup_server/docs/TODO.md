@@ -29,8 +29,12 @@ Completed tasks move to Done as one-liners; their spec documents are deleted
   implemented 2026-10-11 (recipes table and service, viewer menu and
   catalogue, Settings › Recipes with file export/import). CHAIN-4
   implemented 2026-10-11 (split nodes, masked lanes with five procedural
-  sources, merge blend/strength, solo and mask overlay, gradient pins);
-  CHAIN-5 (detected masks) next.* CHAIN-1 (engine, document
+  sources, merge blend/strength, solo and mask overlay, gradient pins).
+  CHAIN-5 implemented 2026-10-11 (detected masks: subject via Vision with a
+  CLIPSeg fallback, people via MediaPipe selfie segmentation, faces from
+  the library, text prompts via CLIPSeg; mask service with disk cache and
+  a "mask" event; prompt field, person picker, Settings status); CHAIN-5b
+  (SAM refinement) and CHAIN-6 (export) next.* CHAIN-1 (engine, document
   format 2, preview session, chain UI) first; CHAIN-2 (tools) and CHAIN-3
   (recipes) in parallel; CHAIN-4 (splits, procedural masks); CHAIN-5
   (detected masks); CHAIN-6 (export); CHAIN-7 (second wave). Progress

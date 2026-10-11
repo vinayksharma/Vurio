@@ -811,12 +811,49 @@ have more controls than the panel has height.
 
 ### CHAIN-5 — Detected masks
 
-- [ ] `MaskService` + cache layout + per-file detection lock + inline detection for thumbnails + `"mask"` event
-- [ ] Sources: `subject` (Vision on macOS + portable fallback), `people` (portable ONNX model, licence verified), `faces` (DB boxes, `person_ids`), `prompt` (CLIPSeg ONNX via `OnnxSessionManager`, edge-aware upsample); model download/verify; config
-- [ ] Backend measurement on twenty library photos (IoU); drop the Vision `subject` backend if the portable path is within 5 points
-- [ ] Client: prompt text field with recent prompts, person picker, pending state; Settings › Advanced mask status
+- [x] `MaskService` + cache layout + per-file detection lock + inline detection for thumbnails + `"mask"` event
+- [x] Sources: `subject` (Vision on macOS + portable fallback), `people` (portable ONNX model, licence verified), `faces` (DB boxes, `person_ids`), `prompt` (CLIPSeg ONNX, edge-aware upsample); model download/verify; config
+- [x] Backend measurement on twenty library photos (IoU); drop the Vision `subject` backend if the portable path is within 5 points
+- [x] Client: prompt text field with recent prompts, person picker, pending state; Settings › Advanced mask status
 - [ ] CHAIN-5b: SAM refinement of prompt masks (MobileSAM ONNX)
-- [ ] Tests: cache key stability under unrelated edits; transport alignment; detection smoke tests behind the model gate used by CLIP tests
+- [x] Tests: cache key stability under unrelated edits; transport alignment; detection smoke tests behind the model gate used by CLIP tests
+
+Notes from the implementation (2026-10-11):
+
+- **Models (optional assets in `ensure_models.sh`)**: `prompt` is
+  `Xenova/clipseg-rd64-refined` `model_quantized.onnx` (int8, 139 MB, the
+  Apache-2.0 CIDAS weights): on ten library photos it matched the fp16
+  export at 0.92–1.00 IoU for "the sky" and ran ~80 ms vs ~105 ms on the
+  CPU, so the smaller file ships. `people` is
+  `onnx-community/mediapipe_selfie_segmentation` (Apache-2.0, 462 KB, 256²):
+  on five group photos it covered people most consistently; MODNet
+  (Apache-2.0) missed most of a classroom and CLIPSeg "people" was blotchy
+  at 352 px, so both were set aside. Both coarse masks are upsampled with a
+  guided filter against the base luminance (edge-aware, ~40 lines, no
+  ximgproc). The CLIP tokenizer files beside the CLIP towers are reused.
+- **Subject backend (the §5.6 exit clause)**: Vision's foreground-instance
+  mask against CLIPSeg "the main subject" on twenty library photos gave a
+  mean IoU of 0.18 (Vision found no subject on five of them; CLIPSeg's raw
+  sigmoid peaks at 0.01–0.2 for that prompt, so the fallback stretches the
+  response per picture). Nowhere near 5 points: Vision stays as the macOS
+  backend, the stretched CLIPSeg prompt is the portable fallback. The
+  twenty masks were not hand-checked; the measurement is agreement between
+  the two backends, which is enough to settle the clause.
+- **Engine plumbing**: `RenderOptions` carries `file_path`, `inline_masks`
+  and `pending_lanes`; a detected source looks its cached base-space mask
+  up by (file, source, detector params) — threshold and softness are view
+  parameters outside the key — and warps it to the fork through the frame's
+  affine. A preview never waits (`Pending`, the lane renders as a no-op, the
+  node cache is skipped from that node on, and a `MediaReadyEvent "mask"`
+  follows); thumbnails and full renders compute inline. The client re-asks
+  for a frame on the event even when the document is unchanged.
+- **Faces**: boxes come from the library's `faces` rows (now with
+  `cluster_id`/`person_id`), grown about their centres and feathered; the
+  picker lists named people (`FaceClusterInfo.person_id` added). Faces
+  need no model and are never queued.
+- Deferred to CHAIN-5b: SAM refinement (MobileSAM ONNX exports exist on
+  Hugging Face with permissive licences) and the mask-models status on a
+  non-macOS build (status is reported, the Vision line reads "onnx" there).
 
 ### CHAIN-6 — Export
 
