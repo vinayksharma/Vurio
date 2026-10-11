@@ -25,8 +25,10 @@ Completed tasks move to Done as one-liners; their spec documents are deleted
   all questions resolved (spec §13). CHAIN-1 implemented 2026-10-11 on
   `feature/image_adjustments` (engine, format 2 + history, preview session,
   chain UI), live-verified in the app. CHAIN-2 implemented 2026-10-11 (eleven
-  layer/raster tools, sixteen blend modes, generic inspector); CHAIN-3
-  (recipes) next.* CHAIN-1 (engine, document
+  layer/raster tools, sixteen blend modes, generic inspector). CHAIN-3
+  implemented 2026-10-11 (recipes table and service, viewer menu and
+  catalogue, Settings › Recipes with file export/import); CHAIN-4 (splits,
+  lanes, procedural masks) next.* CHAIN-1 (engine, document
   format 2, preview session, chain UI) first; CHAIN-2 (tools) and CHAIN-3
   (recipes) in parallel; CHAIN-4 (splits, procedural masks); CHAIN-5
   (detected masks); CHAIN-6 (export); CHAIN-7 (second wave). Progress

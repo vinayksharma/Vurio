@@ -778,10 +778,15 @@ reference the tests pin). A raster node takes a strength but no blend.
 
 ### CHAIN-3 — Recipes
 
-- [ ] `recipes` table + ops, `RecipesService` incl. `ValidateChain`, content-hash dedup, builtin seed, config
-- [ ] Viewer Recipes menu (save sheet with include-geometry toggle, apply replace/append, copy/paste with validation), recipes in the catalogue with drag insert
-- [ ] Settings › Recipes (list, rename, delete, export selected/all via `NSSavePanel`, import with conflict policy + result sheet)
-- [ ] Tests: validation at save/import/apply; replace/append/insert; geometry exclusion; export/import round trip; conflict policies; newer-version refusal; hash dedup
+Implemented 2026-10-11. Starter recipes are "Mono, red filter", "Soft
+contrast" and "Warm vignette" ("Darken sky" waits for CHAIN-4's splits).
+A chain pasted or dragged in gets fresh node ids; an apply labels its
+history step "Apply recipe …" (replace) or "Add recipe …" (append/insert).
+
+- [x] `recipes` table + ops, `RecipesService` incl. `ValidateChain`, content-hash dedup, builtin seed, config
+- [x] Viewer Recipes menu (save sheet with include-geometry toggle, apply replace/append, copy/paste with validation), recipes in the catalogue with drag insert
+- [x] Settings › Recipes (list, rename, delete, export selected/all via `NSSavePanel`, import with conflict policy + result sheet)
+- [x] Tests: validation at save/import/apply; replace/append/insert; geometry exclusion; export/import round trip; conflict policies; newer-version refusal; hash dedup
 
 ### CHAIN-4 — Splits, lanes, procedural masks, merge
 
