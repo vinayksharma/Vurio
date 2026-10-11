@@ -3714,6 +3714,16 @@ internal protocol Vurio_Dedup_AdjustmentsServiceClientProtocol: GRPCClient {
     _ request: Vurio_Dedup_StepHistoryRequest,
     callOptions: CallOptions?
   ) -> UnaryCall<Vurio_Dedup_StepHistoryRequest, Vurio_Dedup_AdjustmentDocumentResponse>
+
+  func maskStatus(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_MaskStatusResponse>
+
+  func clearMaskCache(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_MaskStatusResponse>
 }
 
 extension Vurio_Dedup_AdjustmentsServiceClientProtocol {
@@ -3835,6 +3845,42 @@ extension Vurio_Dedup_AdjustmentsServiceClientProtocol {
       interceptors: self.interceptors?.makeStepHistoryInterceptors() ?? []
     )
   }
+
+  /// CHAIN-5 (docs §9.3): detected-mask backends, models and cache.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to MaskStatus.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func maskStatus(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_MaskStatusResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.maskStatus.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeMaskStatusInterceptors() ?? []
+    )
+  }
+
+  /// Unary call to ClearMaskCache
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to ClearMaskCache.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func clearMaskCache(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_MaskStatusResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.clearMaskCache.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeClearMaskCacheInterceptors() ?? []
+    )
+  }
 }
 
 @available(*, deprecated)
@@ -3936,6 +3982,16 @@ internal protocol Vurio_Dedup_AdjustmentsServiceAsyncClientProtocol: GRPCClient 
     _ request: Vurio_Dedup_StepHistoryRequest,
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_StepHistoryRequest, Vurio_Dedup_AdjustmentDocumentResponse>
+
+  func makeMaskStatusCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_MaskStatusResponse>
+
+  func makeClearMaskCacheCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_MaskStatusResponse>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -4019,6 +4075,30 @@ extension Vurio_Dedup_AdjustmentsServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeStepHistoryInterceptors() ?? []
     )
   }
+
+  internal func makeMaskStatusCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_MaskStatusResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.maskStatus.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeMaskStatusInterceptors() ?? []
+    )
+  }
+
+  internal func makeClearMaskCacheCall(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_MaskStatusResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.clearMaskCache.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeClearMaskCacheInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -4094,6 +4174,30 @@ extension Vurio_Dedup_AdjustmentsServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeStepHistoryInterceptors() ?? []
     )
   }
+
+  internal func maskStatus(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_MaskStatusResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.maskStatus.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeMaskStatusInterceptors() ?? []
+    )
+  }
+
+  internal func clearMaskCache(
+    _ request: Vurio_Dedup_Empty,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_MaskStatusResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.clearMaskCache.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeClearMaskCacheInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -4132,6 +4236,12 @@ internal protocol Vurio_Dedup_AdjustmentsServiceClientInterceptorFactoryProtocol
 
   /// - Returns: Interceptors to use when invoking 'stepHistory'.
   func makeStepHistoryInterceptors() -> [ClientInterceptor<Vurio_Dedup_StepHistoryRequest, Vurio_Dedup_AdjustmentDocumentResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'maskStatus'.
+  func makeMaskStatusInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_MaskStatusResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'clearMaskCache'.
+  func makeClearMaskCacheInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_MaskStatusResponse>]
 }
 
 internal enum Vurio_Dedup_AdjustmentsServiceClientMetadata {
@@ -4145,6 +4255,8 @@ internal enum Vurio_Dedup_AdjustmentsServiceClientMetadata {
       Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.getEditsRoot,
       Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.setEditsRoot,
       Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.stepHistory,
+      Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.maskStatus,
+      Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.clearMaskCache,
     ]
   )
 
@@ -4182,6 +4294,18 @@ internal enum Vurio_Dedup_AdjustmentsServiceClientMetadata {
     internal static let stepHistory = GRPCMethodDescriptor(
       name: "StepHistory",
       path: "/vurio.dedup.AdjustmentsService/StepHistory",
+      type: GRPCCallType.unary
+    )
+
+    internal static let maskStatus = GRPCMethodDescriptor(
+      name: "MaskStatus",
+      path: "/vurio.dedup.AdjustmentsService/MaskStatus",
+      type: GRPCCallType.unary
+    )
+
+    internal static let clearMaskCache = GRPCMethodDescriptor(
+      name: "ClearMaskCache",
+      path: "/vurio.dedup.AdjustmentsService/ClearMaskCache",
       type: GRPCCallType.unary
     )
   }
@@ -7299,6 +7423,11 @@ internal protocol Vurio_Dedup_AdjustmentsServiceProvider: CallHandlerProvider {
   /// chain is committed like any edit (without appending a new step) and the
   /// resulting document is returned. OUT_OF_RANGE when there is no such step.
   func stepHistory(request: Vurio_Dedup_StepHistoryRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdjustmentDocumentResponse>
+
+  /// CHAIN-5 (docs §9.3): detected-mask backends, models and cache.
+  func maskStatus(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_MaskStatusResponse>
+
+  func clearMaskCache(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_MaskStatusResponse>
 }
 
 extension Vurio_Dedup_AdjustmentsServiceProvider {
@@ -7367,6 +7496,24 @@ extension Vurio_Dedup_AdjustmentsServiceProvider {
         userFunction: self.stepHistory(request:context:)
       )
 
+    case "MaskStatus":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_MaskStatusResponse>(),
+        interceptors: self.interceptors?.makeMaskStatusInterceptors() ?? [],
+        userFunction: self.maskStatus(request:context:)
+      )
+
+    case "ClearMaskCache":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_MaskStatusResponse>(),
+        interceptors: self.interceptors?.makeClearMaskCacheInterceptors() ?? [],
+        userFunction: self.clearMaskCache(request:context:)
+      )
+
     default:
       return nil
     }
@@ -7428,6 +7575,17 @@ internal protocol Vurio_Dedup_AdjustmentsServiceAsyncProvider: CallHandlerProvid
     request: Vurio_Dedup_StepHistoryRequest,
     context: GRPCAsyncServerCallContext
   ) async throws -> Vurio_Dedup_AdjustmentDocumentResponse
+
+  /// CHAIN-5 (docs §9.3): detected-mask backends, models and cache.
+  func maskStatus(
+    request: Vurio_Dedup_Empty,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_MaskStatusResponse
+
+  func clearMaskCache(
+    request: Vurio_Dedup_Empty,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_MaskStatusResponse
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -7503,6 +7661,24 @@ extension Vurio_Dedup_AdjustmentsServiceAsyncProvider {
         wrapping: { try await self.stepHistory(request: $0, context: $1) }
       )
 
+    case "MaskStatus":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_MaskStatusResponse>(),
+        interceptors: self.interceptors?.makeMaskStatusInterceptors() ?? [],
+        wrapping: { try await self.maskStatus(request: $0, context: $1) }
+      )
+
+    case "ClearMaskCache":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_Empty>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_MaskStatusResponse>(),
+        interceptors: self.interceptors?.makeClearMaskCacheInterceptors() ?? [],
+        wrapping: { try await self.clearMaskCache(request: $0, context: $1) }
+      )
+
     default:
       return nil
     }
@@ -7534,6 +7710,14 @@ internal protocol Vurio_Dedup_AdjustmentsServiceServerInterceptorFactoryProtocol
   /// - Returns: Interceptors to use when handling 'stepHistory'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeStepHistoryInterceptors() -> [ServerInterceptor<Vurio_Dedup_StepHistoryRequest, Vurio_Dedup_AdjustmentDocumentResponse>]
+
+  /// - Returns: Interceptors to use when handling 'maskStatus'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeMaskStatusInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_MaskStatusResponse>]
+
+  /// - Returns: Interceptors to use when handling 'clearMaskCache'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeClearMaskCacheInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_MaskStatusResponse>]
 }
 
 internal enum Vurio_Dedup_AdjustmentsServiceServerMetadata {
@@ -7547,6 +7731,8 @@ internal enum Vurio_Dedup_AdjustmentsServiceServerMetadata {
       Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.getEditsRoot,
       Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.setEditsRoot,
       Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.stepHistory,
+      Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.maskStatus,
+      Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.clearMaskCache,
     ]
   )
 
@@ -7584,6 +7770,18 @@ internal enum Vurio_Dedup_AdjustmentsServiceServerMetadata {
     internal static let stepHistory = GRPCMethodDescriptor(
       name: "StepHistory",
       path: "/vurio.dedup.AdjustmentsService/StepHistory",
+      type: GRPCCallType.unary
+    )
+
+    internal static let maskStatus = GRPCMethodDescriptor(
+      name: "MaskStatus",
+      path: "/vurio.dedup.AdjustmentsService/MaskStatus",
+      type: GRPCCallType.unary
+    )
+
+    internal static let clearMaskCache = GRPCMethodDescriptor(
+      name: "ClearMaskCache",
+      path: "/vurio.dedup.AdjustmentsService/ClearMaskCache",
       type: GRPCCallType.unary
     )
   }

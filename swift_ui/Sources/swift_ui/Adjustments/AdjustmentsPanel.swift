@@ -602,6 +602,10 @@ private struct LaneRow: View {
                 .foregroundColor(lane.enabled ? Theme.textPrimary : Theme.textSecondary)
                 .lineLimit(1)
             Spacer(minLength: 4)
+            if model.pendingLaneIDs.contains(lane.id) {
+                ProgressView().controlSize(.mini)
+                    .help("Finding the mask…")
+            }
             Text(summary)
                 .font(.custom("Menlo", size: 9))
                 .foregroundColor(Theme.textSecondary)
@@ -636,7 +640,8 @@ private struct LaneRow: View {
 
     private var summary: String {
         var parts: [String] = []
-        let source = model.maskSource(lane.mask.primary.source)?.summary ?? lane.mask.primary.source
+        let source = model.maskTool(for: lane.id)?.summary()
+            ?? model.maskSource(lane.mask.primary.source)?.summary ?? lane.mask.primary.source
         parts.append(lane.mask.invert ? "¬" + source : source)
         if lane.blend != "normal" { parts.append(GenericToolUI.readable(lane.blend)) }
         if lane.strength < 0.9999 { parts.append(String(format: "%.0f%%", lane.strength * 100)) }
@@ -835,7 +840,8 @@ private struct LaneMaskInspector: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(tool.descriptor.params, id: \.id) { p in
-                if p.kind == .number {
+                switch p.kind {
+                case .number:
                     ParamSlider(label: p.label, value: Binding(get: { tool.numbers[p.id] ?? p.defaultValue },
                                                                set: { tool.numbers[p.id] = $0 }),
                                 range: p.min...p.max, step: p.step,
@@ -843,6 +849,20 @@ private struct LaneMaskInspector: View {
                                     model.laneMaskChanged(laneID, label: "Mask \(p.label)", interactive: editing)
                                 })
                         .disabled(!hasImage)
+                case .text where p.id == "person_ids":
+                    PersonPicker(label: p.label,
+                                 selection: Binding(get: { tool.strings[p.id] ?? p.defaultOption },
+                                                    set: { tool.strings[p.id] = $0
+                                                           model.laneMaskChanged(laneID, label: "Mask people", interactive: false) }))
+                        .disabled(!hasImage)
+                case .text:
+                    PromptField(label: p.label,
+                                text: Binding(get: { tool.strings[p.id] ?? p.defaultOption },
+                                              set: { tool.strings[p.id] = $0 }),
+                                onCommit: { model.laneMaskChanged(laneID, label: "Mask prompt", interactive: false) })
+                        .disabled(!hasImage)
+                default:
+                    EmptyView()
                 }
             }
             if tool.descriptor.id == "linear" || tool.descriptor.id == "radial" {
@@ -850,7 +870,149 @@ private struct LaneMaskInspector: View {
                     .font(.caption2)
                     .foregroundColor(Theme.textSecondary)
             }
+            if model.pendingLaneIDs.contains(laneID) {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.mini)
+                    Text("Finding the mask… the lane shows once it is ready.")
+                        .font(.caption2)
+                        .foregroundColor(Theme.textSecondary)
+                }
+            }
         }
+    }
+}
+
+/// CHAIN-5 (docs §5.6): the prompt mask's text, with the last twenty
+/// prompts and a few starters a click away. Commits on Return or when a
+/// recent is picked; typing alone never runs the detector.
+private struct PromptField: View {
+    let label: String
+    @Binding var text: String
+    let onCommit: () -> Void
+    @State private var draft = ""
+
+    static let recentsKey = "maskPromptRecents"
+    static let starters = ["the sky", "the main subject", "the background", "the face", "water", "trees", "the building", "the road"]
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(label).font(.system(size: 11)).foregroundColor(Theme.textSecondary)
+            TextField("sky, the red car, the person on the left…", text: $draft)
+                .onSubmit(commit)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 11))
+                .onAppear { draft = text }
+                .onChange(of: text) { _, new in if new != draft { draft = new } }
+            Menu {
+                let recents = Self.recents()
+                if !recents.isEmpty {
+                    Section("Recent") {
+                        ForEach(recents, id: \.self) { r in Button(r) { pick(r) } }
+                    }
+                }
+                Section("Try") {
+                    ForEach(Self.starters, id: \.self) { r in Button(r) { pick(r) } }
+                }
+            } label: {
+                Image(systemName: "clock.arrow.circlepath")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Recent prompts")
+        }
+    }
+
+    private func pick(_ value: String) {
+        draft = value
+        commit()
+    }
+
+    private func commit() {
+        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft = trimmed
+        text = trimmed
+        if !trimmed.isEmpty { Self.remember(trimmed) }
+        onCommit()
+    }
+
+    static func recents() -> [String] {
+        UserDefaults.standard.stringArray(forKey: recentsKey) ?? []
+    }
+
+    static func remember(_ prompt: String) {
+        var list = recents().filter { $0.caseInsensitiveCompare(prompt) != .orderedSame }
+        list.insert(prompt, at: 0)
+        UserDefaults.standard.set(Array(list.prefix(20)), forKey: recentsKey)
+    }
+}
+
+/// CHAIN-5: the faces mask's people — named clusters from the library,
+/// any number of them; none selected = every face.
+private struct PersonPicker: View {
+    let label: String
+    @Binding var selection: String
+    @State private var clusters: [Vurio_Dedup_FaceClusterInfo] = []
+    @State private var loaded = false
+
+    private var selectedIDs: Set<Int> {
+        Set(selection.split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) })
+    }
+
+    var body: some View {
+        HStack {
+            Text(label).font(.system(size: 11)).foregroundColor(Theme.textSecondary)
+            Spacer()
+            Menu {
+                Button("Everyone") { selection = "" }
+                if clusters.isEmpty {
+                    Text(loaded ? "No named people yet" : "Loading…")
+                } else {
+                    Divider()
+                    ForEach(clusters, id: \.id) { c in
+                        Button(action: { toggle(Int(c.personID)) }) {
+                            if selectedIDs.contains(Int(c.personID)) {
+                                Label(c.name, systemImage: "checkmark")
+                            } else {
+                                Text(c.name)
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Text(summary).font(.system(size: 11)).lineLimit(1)
+            }
+            .menuStyle(.borderlessButton)
+            .frame(maxWidth: 170)
+        }
+        .task { await load() }
+    }
+
+    private var summary: String {
+        let ids = selectedIDs
+        if ids.isEmpty { return "Everyone" }
+        let names = clusters.filter { ids.contains(Int($0.personID)) }.map(\.name)
+        return names.isEmpty ? "\(ids.count) selected" : names.joined(separator: ", ")
+    }
+
+    private func toggle(_ id: Int) {
+        var ids = selectedIDs
+        if ids.contains(id) { ids.remove(id) } else { ids.insert(id) }
+        selection = ids.sorted().map(String.init).joined(separator: ",")
+    }
+
+    private func load() async {
+        guard let client = VurioGrpcClient.shared.duplicates else { loaded = true; return }
+        let request = Vurio_Dedup_ListFaceClustersRequest.with { $0.includeHidden = false }
+        if let response = try? await client.listFaceClusters(request) {
+            // One entry per person: a named cluster, the first of a name.
+            var seen = Set<Int32>()
+            clusters = response.clusters.filter { c in
+                guard c.personID != 0, !c.name.isEmpty, !seen.contains(c.personID) else { return false }
+                seen.insert(c.personID)
+                return true
+            }
+        }
+        loaded = true
     }
 }
 

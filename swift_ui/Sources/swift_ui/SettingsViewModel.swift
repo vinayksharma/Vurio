@@ -187,6 +187,26 @@ class SettingsViewModel: ObservableObject {
         await performAdvancedAction({ try await VurioGrpcClient.shared.advanced!.purgeEjectedAndErrored(Vurio_Dedup_Empty()) }, successMessage: "Purged ejected and errored files", mutatesEjectedBins: true)
     }
     
+    // CHAIN-5 (docs §9.3): detected-mask backends, models and cache.
+    @Published var maskStatus: Vurio_Dedup_MaskStatusResponse?
+
+    func loadMaskStatus() async {
+        guard let client = VurioGrpcClient.shared.adjustments else { return }
+        maskStatus = try? await client.maskStatus(Vurio_Dedup_Empty())
+    }
+
+    func clearMaskCache() async {
+        guard let client = VurioGrpcClient.shared.adjustments else { return }
+        isAnyActionRunning = true
+        defer { isAnyActionRunning = false }
+        do {
+            maskStatus = try await client.clearMaskCache(Vurio_Dedup_Empty())
+            MessageCenter.shared.post("Detected masks cleared; they are found again when a lane needs them")
+        } catch {
+            MessageCenter.shared.post("Action error: \(error.localizedDescription)")
+        }
+    }
+
     func clearAllCaches() async {
         isAnyActionRunning = true
         defer { isAnyActionRunning = false }

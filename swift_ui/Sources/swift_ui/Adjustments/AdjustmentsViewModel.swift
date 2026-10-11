@@ -11,6 +11,8 @@ extension Notification.Name {
     /// ["filePath": String, "renderRevision": Int, "displayWidth": Int,
     ///  "displayHeight": Int].
     static let adjustmentsChanged = Notification.Name("AdjustmentsChanged")
+    /// CHAIN-5: a detected mask for `filePath` finished on the server.
+    static let maskReady = Notification.Name("MaskReady")
 }
 
 /// CHAIN-1 (docs/todo_tool_chain.md §9): the viewer's chain for the selected
@@ -111,8 +113,22 @@ final class AdjustmentsViewModel: ObservableObject {
             guard let self, let frame, frame.filePath == self.filePath, frame.baseSize.width > 0 else { return }
             if self.baseSize != frame.baseSize { self.baseSize = frame.baseSize }
         }
+        maskSubscription = NotificationCenter.default.publisher(for: .maskReady)
+            .compactMap { $0.userInfo?["filePath"] as? String }
+            .sink { [weak self] path in
+                guard let self, path == self.filePath else { return }
+                self.requestPreview()
+            }
     }
     private var frameSubscription: AnyCancellable?
+    private var maskSubscription: AnyCancellable?
+
+    /// CHAIN-5: lanes the last frame rendered as no-ops because their
+    /// detected mask was still computing.
+    var pendingLaneIDs: [String] {
+        guard let frame = preview.frame, frame.filePath == filePath else { return [] }
+        return frame.pendingLaneIDs
+    }
 
     // MARK: - Derived state
 

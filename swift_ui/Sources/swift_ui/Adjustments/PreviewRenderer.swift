@@ -63,6 +63,9 @@ struct PreviewFrame {
     let renderMs: Int
     /// CHAIN-4: normalised base coordinates → frame pixels (2×3 affine).
     let baseToCanvas: [Double]
+    /// CHAIN-5: lanes whose detected mask was still computing; they
+    /// rendered as no-ops and a "mask" event will follow.
+    var pendingLaneIDs: [String] = []
 
     func project(_ p: CGPoint) -> CGPoint {
         guard baseToCanvas.count == 6 else { return CGPoint(x: p.x * size.width, y: p.y * size.height) }
@@ -105,7 +108,10 @@ final class PreviewRenderer: ObservableObject {
 
     /// Ask for a frame. A request that matches the one on screen is a no-op.
     func request(_ r: PreviewFrameRequest) {
-        if let f = frame, task == nil, queue.inFlight == nil,
+        // An identical request is skipped — unless the last frame rendered
+        // a lane as a no-op while its detected mask was computing (CHAIN-5):
+        // the same document now renders differently.
+        if let f = frame, task == nil, queue.inFlight == nil, f.pendingLaneIDs.isEmpty,
            f.filePath == r.filePath, f.truncateAtNodeID == r.truncateAtNodeID, f.before == r.before,
            lastDocumentJSON == r.documentJSON, lastMaxSide == r.maxSide,
            lastSolo == r.soloLaneID, lastOverlay == r.overlayLaneID {
@@ -166,7 +172,7 @@ final class PreviewRenderer: ObservableObject {
                         displaySize: CGSize(width: Int(response.displayWidth), height: Int(response.displayHeight)),
                         baseSize: CGSize(width: Int(response.baseWidth), height: Int(response.baseHeight)),
                         truncateAtNodeID: r.truncateAtNodeID, before: r.before, renderMs: Int(response.renderMs),
-                        baseToCanvas: response.baseToCanvas)
+                        baseToCanvas: response.baseToCanvas, pendingLaneIDs: response.pendingLaneIds)
                 } else {
                     failure = "The preview frame could not be decoded"
                 }

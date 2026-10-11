@@ -443,6 +443,10 @@ struct Vurio_Dedup_FaceClusterInfo: Sendable {
 
   var coverFaceID: Int32 = 0
 
+  /// CHAIN-5: the person this cluster is named as (0 = unnamed); the
+  /// faces mask's `person_ids` picker uses it.
+  var personID: Int32 = 0
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -1412,7 +1416,7 @@ struct Vurio_Dedup_MediaReadyEvent: Sendable {
 
   var filePath: String = String()
 
-  /// "thumbnail" | "preview" | "preview_full" | "adjustments"
+  /// "thumbnail" | "preview" | "preview_full" | "adjustments" | "mask" (CHAIN-5: a detected mask finished)
   var mediaType: String = String()
 
   var success: Bool = false
@@ -1761,6 +1765,59 @@ struct Vurio_Dedup_PreviewFrame: Sendable {
   /// CHAIN-4 (docs §3.4): normalised base coordinates → frame pixels, as a
   /// 2×3 affine (a b c / d e f), for mask pins drawn over the frame.
   var baseToCanvas: [Double] = []
+
+  /// CHAIN-5 (docs §5.6): lanes whose detected mask is still computing;
+  /// they rendered as no-ops. A MediaReadyEvent "mask" follows.
+  var pendingLaneIds: [String] = []
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+/// CHAIN-5: one detected mask source's backend and model state.
+struct Vurio_Dedup_MaskSourceStatus: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// subject | people | faces | prompt
+  var id: String = String()
+
+  /// vision | onnx | database
+  var backend: String = String()
+
+  var modelPath: String = String()
+
+  var available: Bool = false
+
+  var modelPresent: Bool = false
+
+  var loaded: Bool = false
+
+  var note: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_MaskStatusResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var sources: [Vurio_Dedup_MaskSourceStatus] = []
+
+  /// detected-mask PNGs on disk
+  var cacheBytes: Int64 = 0
+
+  var cacheFiles: Int32 = 0
+
+  /// detections queued or running
+  var pending: Int32 = 0
+
+  var enabled: Bool = false
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -2863,7 +2920,7 @@ extension Vurio_Dedup_GetStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._M
 
 extension Vurio_Dedup_FaceClusterInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".FaceClusterInfo"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{3}face_count\0\u{3}file_count\0\u{3}cover_file_path\0\u{3}cover_x\0\u{3}cover_y\0\u{3}cover_w\0\u{3}cover_h\0\u{1}hidden\0\u{1}aliases\0\u{3}cover_pinned\0\u{3}cover_face_id\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{3}face_count\0\u{3}file_count\0\u{3}cover_file_path\0\u{3}cover_x\0\u{3}cover_y\0\u{3}cover_w\0\u{3}cover_h\0\u{1}hidden\0\u{1}aliases\0\u{3}cover_pinned\0\u{3}cover_face_id\0\u{3}person_id\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2884,6 +2941,7 @@ extension Vurio_Dedup_FaceClusterInfo: SwiftProtobuf.Message, SwiftProtobuf._Mes
       case 11: try { try decoder.decodeRepeatedStringField(value: &self.aliases) }()
       case 12: try { try decoder.decodeSingularBoolField(value: &self.coverPinned) }()
       case 13: try { try decoder.decodeSingularInt32Field(value: &self.coverFaceID) }()
+      case 14: try { try decoder.decodeSingularInt32Field(value: &self.personID) }()
       default: break
       }
     }
@@ -2929,6 +2987,9 @@ extension Vurio_Dedup_FaceClusterInfo: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if self.coverFaceID != 0 {
       try visitor.visitSingularInt32Field(value: self.coverFaceID, fieldNumber: 13)
     }
+    if self.personID != 0 {
+      try visitor.visitSingularInt32Field(value: self.personID, fieldNumber: 14)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2946,6 +3007,7 @@ extension Vurio_Dedup_FaceClusterInfo: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if lhs.aliases != rhs.aliases {return false}
     if lhs.coverPinned != rhs.coverPinned {return false}
     if lhs.coverFaceID != rhs.coverFaceID {return false}
+    if lhs.personID != rhs.personID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -5569,7 +5631,7 @@ extension Vurio_Dedup_RenderPreviewRequest: SwiftProtobuf.Message, SwiftProtobuf
 
 extension Vurio_Dedup_PreviewFrame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".PreviewFrame"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}jpeg\0\u{1}width\0\u{1}height\0\u{1}seq\0\u{3}render_ms\0\u{3}base_width\0\u{3}base_height\0\u{3}display_width\0\u{3}display_height\0\u{3}base_to_canvas\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}jpeg\0\u{1}width\0\u{1}height\0\u{1}seq\0\u{3}render_ms\0\u{3}base_width\0\u{3}base_height\0\u{3}display_width\0\u{3}display_height\0\u{3}base_to_canvas\0\u{3}pending_lane_ids\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -5587,6 +5649,7 @@ extension Vurio_Dedup_PreviewFrame: SwiftProtobuf.Message, SwiftProtobuf._Messag
       case 8: try { try decoder.decodeSingularInt32Field(value: &self.displayWidth) }()
       case 9: try { try decoder.decodeSingularInt32Field(value: &self.displayHeight) }()
       case 10: try { try decoder.decodeRepeatedDoubleField(value: &self.baseToCanvas) }()
+      case 11: try { try decoder.decodeRepeatedStringField(value: &self.pendingLaneIds) }()
       default: break
       }
     }
@@ -5623,6 +5686,9 @@ extension Vurio_Dedup_PreviewFrame: SwiftProtobuf.Message, SwiftProtobuf._Messag
     if !self.baseToCanvas.isEmpty {
       try visitor.visitPackedDoubleField(value: self.baseToCanvas, fieldNumber: 10)
     }
+    if !self.pendingLaneIds.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.pendingLaneIds, fieldNumber: 11)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -5637,6 +5703,117 @@ extension Vurio_Dedup_PreviewFrame: SwiftProtobuf.Message, SwiftProtobuf._Messag
     if lhs.displayWidth != rhs.displayWidth {return false}
     if lhs.displayHeight != rhs.displayHeight {return false}
     if lhs.baseToCanvas != rhs.baseToCanvas {return false}
+    if lhs.pendingLaneIds != rhs.pendingLaneIds {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_MaskSourceStatus: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".MaskSourceStatus"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}backend\0\u{3}model_path\0\u{1}available\0\u{3}model_present\0\u{1}loaded\0\u{1}note\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.backend) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.modelPath) }()
+      case 4: try { try decoder.decodeSingularBoolField(value: &self.available) }()
+      case 5: try { try decoder.decodeSingularBoolField(value: &self.modelPresent) }()
+      case 6: try { try decoder.decodeSingularBoolField(value: &self.loaded) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self.note) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.id.isEmpty {
+      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
+    }
+    if !self.backend.isEmpty {
+      try visitor.visitSingularStringField(value: self.backend, fieldNumber: 2)
+    }
+    if !self.modelPath.isEmpty {
+      try visitor.visitSingularStringField(value: self.modelPath, fieldNumber: 3)
+    }
+    if self.available != false {
+      try visitor.visitSingularBoolField(value: self.available, fieldNumber: 4)
+    }
+    if self.modelPresent != false {
+      try visitor.visitSingularBoolField(value: self.modelPresent, fieldNumber: 5)
+    }
+    if self.loaded != false {
+      try visitor.visitSingularBoolField(value: self.loaded, fieldNumber: 6)
+    }
+    if !self.note.isEmpty {
+      try visitor.visitSingularStringField(value: self.note, fieldNumber: 7)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_MaskSourceStatus, rhs: Vurio_Dedup_MaskSourceStatus) -> Bool {
+    if lhs.id != rhs.id {return false}
+    if lhs.backend != rhs.backend {return false}
+    if lhs.modelPath != rhs.modelPath {return false}
+    if lhs.available != rhs.available {return false}
+    if lhs.modelPresent != rhs.modelPresent {return false}
+    if lhs.loaded != rhs.loaded {return false}
+    if lhs.note != rhs.note {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_MaskStatusResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".MaskStatusResponse"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}sources\0\u{3}cache_bytes\0\u{3}cache_files\0\u{1}pending\0\u{1}enabled\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.sources) }()
+      case 2: try { try decoder.decodeSingularInt64Field(value: &self.cacheBytes) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.cacheFiles) }()
+      case 4: try { try decoder.decodeSingularInt32Field(value: &self.pending) }()
+      case 5: try { try decoder.decodeSingularBoolField(value: &self.enabled) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.sources.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.sources, fieldNumber: 1)
+    }
+    if self.cacheBytes != 0 {
+      try visitor.visitSingularInt64Field(value: self.cacheBytes, fieldNumber: 2)
+    }
+    if self.cacheFiles != 0 {
+      try visitor.visitSingularInt32Field(value: self.cacheFiles, fieldNumber: 3)
+    }
+    if self.pending != 0 {
+      try visitor.visitSingularInt32Field(value: self.pending, fieldNumber: 4)
+    }
+    if self.enabled != false {
+      try visitor.visitSingularBoolField(value: self.enabled, fieldNumber: 5)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_MaskStatusResponse, rhs: Vurio_Dedup_MaskStatusResponse) -> Bool {
+    if lhs.sources != rhs.sources {return false}
+    if lhs.cacheBytes != rhs.cacheBytes {return false}
+    if lhs.cacheFiles != rhs.cacheFiles {return false}
+    if lhs.pending != rhs.pending {return false}
+    if lhs.enabled != rhs.enabled {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

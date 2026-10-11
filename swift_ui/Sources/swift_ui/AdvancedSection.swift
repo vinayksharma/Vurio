@@ -142,6 +142,9 @@ struct AdvancedSection: View {
                         isRunning: viewModel.isAnyActionRunning
                     )
                     
+                    // CHAIN-5 (docs §9.3): detected-mask backends and cache.
+                    MaskStatusRow(viewModel: viewModel)
+
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Advanced Overlay")
@@ -276,5 +279,65 @@ struct ActionRow: View {
             .padding(24)
             .frame(width: 450)
         }
+    }
+}
+
+/// CHAIN-5: which detected-mask sources can run here, their models, and
+/// the mask cache with a clear button.
+private struct MaskStatusRow: View {
+    @ObservedObject var viewModel: SettingsViewModel
+
+    var body: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Detected Masks")
+                    .font(.headline)
+                    .textCase(.uppercase)
+                Text("Lane masks that find the subject, people, faces or a text prompt in the picture. Each is computed once per photo and cached under the preview cache; editing never re-runs a detector.")
+                    .font(.subheadline)
+                    .foregroundColor(Theme.textSecondary)
+                if let status = viewModel.maskStatus {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(status.sources, id: \.id) { s in
+                            HStack(spacing: 6) {
+                                Image(systemName: s.available ? "checkmark.circle.fill" : "xmark.circle")
+                                    .foregroundColor(s.available ? Theme.success : Theme.textSecondary)
+                                Text(s.id.capitalized).font(.system(size: 11, weight: .medium)).frame(width: 60, alignment: .leading)
+                                Text(s.note).font(.system(size: 11)).foregroundColor(Theme.textSecondary)
+                                if !s.modelPath.isEmpty {
+                                    Text(s.modelPath).font(.custom("Menlo", size: 9)).foregroundColor(Theme.textSecondary).lineLimit(1)
+                                }
+                                if s.loaded {
+                                    Text("loaded").font(.custom("Menlo", size: 9)).foregroundColor(Theme.textAccent)
+                                }
+                            }
+                        }
+                        Text(String(format: "Cache: %d masks, %.1f MB%@", status.cacheFiles, Double(status.cacheBytes) / 1_048_576,
+                                    status.pending > 0 ? ", \(status.pending) computing" : ""))
+                            .font(.custom("Menlo", size: 10))
+                            .foregroundColor(Theme.textSecondary)
+                            .padding(.top, 2)
+                    }
+                    .padding(.top, 4)
+                } else {
+                    Text("Status unavailable (server not connected).")
+                        .font(.caption)
+                        .foregroundColor(Theme.textSecondary)
+                }
+            }
+            Spacer()
+            VStack(spacing: 8) {
+                Button(action: { Task { await viewModel.clearMaskCache() } }) {
+                    Label("Clear Masks", systemImage: "trash")
+                }
+                .vurioButtonStyle(tint: Theme.warning)
+                .disabled(viewModel.isAnyActionRunning || viewModel.maskStatus == nil)
+                Button(action: { Task { await viewModel.loadMaskStatus() } }) {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .vurioButtonStyle()
+            }
+        }
+        .task { await viewModel.loadMaskStatus() }
     }
 }

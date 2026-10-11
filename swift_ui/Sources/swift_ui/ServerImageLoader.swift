@@ -203,6 +203,14 @@ actor ServerImageLoader {
     }
 
     private func handleMediaReady(_ event: Vurio_Dedup_MediaReadyEvent) {
+        // CHAIN-5: a detected mask finished; the open viewer re-renders.
+        if event.mediaType == "mask" {
+            let info: [String: Any] = ["filePath": event.filePath]
+            Task { @MainActor in
+                NotificationCenter.default.post(name: .maskReady, object: nil, userInfo: info)
+            }
+            return
+        }
         // ADJ-2: the file's edits changed on the server (a sidecar imported
         // by a scan, or a commit from another surface). Broadcast so strips,
         // cards and the viewer re-key and reshape; the old-revision bitmaps
