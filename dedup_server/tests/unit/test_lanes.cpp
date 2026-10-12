@@ -14,6 +14,7 @@
 #include "adjustments/masks.hpp"
 #include "adjustments/render_plan.hpp"
 #include "adjustments/tool_registry.hpp"
+#include "adjustments/tools/perspective_tool.hpp"
 
 using namespace MediaDedup::Adjustments;
 using nlohmann::json;
@@ -208,6 +209,59 @@ TEST(MaskSourceTest, BrushStrokesFollowThePictureAndEraseInOrder)
     ASSERT_TRUE(LaneMask::parse(json{{"components", json::array({{{"source", "brush"}}})}}, empty, error));
     empty.coverage(g, cov);
     EXPECT_FLOAT_EQ(cov.at<float>(100, 100), 0.0f);
+}
+
+TEST(MaskSourceTest, PerspectiveKeystonesAndCarriesMasksThroughTheHomography)
+{
+    // CHAIN-7f. A feature at base (0.25, 0.5); a vertical keystone (top
+    // narrowed) without the fill. Where the engine put the feature is where
+    // project() says it is, and a radial mask centred there covers it.
+    Frame f = solid(0.2f, 0.2f, 0.2f, 400, 200);
+    f.pixels(cv::Rect(96, 96, 8, 8)).setTo(cv::Scalar(1.0f, 1.0f, 1.0f));
+    RenderPlan plan = compile(json::array({node("perspective", {{"version", 1}, {"vertical", 0.6}, {"auto_fill", false}})}));
+    plan.render(f);
+    ASSERT_EQ(f.width(), 400);
+    ASSERT_EQ(f.height(), 200);
+    EXPECT_FALSE(f.isAffine());
+    cv::Point2d p = f.project(0.25, 0.5);
+    EXPECT_GT(p.x, 100.0) << "the left half moved inward toward the centre";
+    EXPECT_GT(at(f, static_cast<int>(std::lround(p.x)), static_cast<int>(std::lround(p.y)))[0], 0.6f) << "the feature is there";
+    // The inverse mapping returns the base point.
+    cv::Point2d back = f.unproject(p.x, p.y);
+    EXPECT_NEAR(back.x, 0.25, 1e-6);
+    EXPECT_NEAR(back.y, 0.5, 1e-6);
+    EXPECT_FLOAT_EQ(at(f, 2, 2)[0], 0.0f) << "no fill: the corner is empty";
+
+    LaneMask radial;
+    std::string error;
+    ASSERT_TRUE(LaneMask::parse(json{{"components", json::array({{{"source", "radial"}, {"params", {{"cx", 0.25}, {"cy", 0.5}, {"rx", 0.08}, {"ry", 0.08}, {"softness", 0.0}}}}})}}, radial, error));
+    cv::Mat cov;
+    radial.coverage(f, cov);
+    EXPECT_FLOAT_EQ(cov.at<float>(static_cast<int>(std::lround(p.y)), static_cast<int>(std::lround(p.x))), 1.0f);
+    EXPECT_FLOAT_EQ(cov.at<float>(10, 380), 0.0f);
+    // A brush stroke through the feature follows it too.
+    LaneMask brush;
+    ASSERT_TRUE(LaneMask::parse(json{{"components", json::array({{{"source", "brush"}, {"params", {{"strokes", json::array({{{"r", 0.05}, {"p", json::array({{0.25, 0.5}})}}})}, {"softness", 0.0}}}}})}}, brush, error));
+    brush.coverage(f, cov);
+    EXPECT_FLOAT_EQ(cov.at<float>(static_cast<int>(std::lround(p.y)), static_cast<int>(std::lround(p.x))), 1.0f);
+
+    // With the fill, no corner is empty and the canvas keeps its size.
+    Frame g = solid(0.2f, 0.2f, 0.2f, 400, 200);
+    RenderPlan filled = compile(json::array({node("perspective", {{"version", 1}, {"vertical", 0.6}})}));
+    filled.render(g);
+    ASSERT_EQ(g.width(), 400);
+    EXPECT_GT(at(g, 1, 1)[0], 0.15f);
+    EXPECT_GT(at(g, 398, 198)[0], 0.15f);
+    EXPECT_GT(PerspectiveTool::fillScale(400, 200, PerspectiveTool::keystone(400, 200, 0.6, 0)), 0.5);
+    EXPECT_DOUBLE_EQ(PerspectiveTool::fillScale(400, 200, PerspectiveTool::keystone(400, 200, 0, 0)), 1.0);
+    // Geometry: trunk only, no blend, canvas unchanged.
+    const AdjustmentTool *tool = ToolRegistry::instance().find("perspective");
+    ASSERT_NE(tool, nullptr);
+    EXPECT_EQ(tool->category(), ToolCategory::Geometry);
+    EXPECT_FALSE(tool->descriptor().lane_allowed);
+    auto st = tool->parse(json{{"horizontal", -0.3}}, error);
+    ASSERT_NE(st, nullptr) << error;
+    EXPECT_EQ(tool->transformSize(*st, Size{400, 200}).width, 400);
 }
 
 // ------------------------------------------------------------------ lanes

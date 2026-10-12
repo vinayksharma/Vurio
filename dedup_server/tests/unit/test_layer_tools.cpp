@@ -122,9 +122,10 @@ TEST(BlendModeTest, MatApplyMatchesPixelFormula)
 TEST(LayerToolTest, RegistryServesTheCatalogueWithCategories)
 {
     const auto &tools = ToolRegistry::instance().tools();
-    ASSERT_EQ(tools.size(), 19u);
+    ASSERT_EQ(tools.size(), 20u);
     EXPECT_EQ(tools[0]->id(), "rotate");
-    EXPECT_EQ(tools[2]->id(), "exposure");
+    EXPECT_EQ(tools[2]->id(), "perspective");
+    EXPECT_EQ(tools[3]->id(), "exposure");
     int layers = 0, rasters = 0;
     for (const AdjustmentTool *t : tools)
     {

@@ -43,7 +43,7 @@ public:
         reply->set_base_height(static_cast<int>(std::lround(r.base_full.height)));
         reply->set_display_width(static_cast<int>(std::lround(r.display_full.width)));
         reply->set_display_height(static_cast<int>(std::lround(r.display_full.height)));
-        for (int i = 0; i < 2; ++i)
+        for (int i = 0; i < 3; ++i)
             for (int j = 0; j < 3; ++j)
                 reply->add_base_to_canvas(r.base_to_canvas(i, j));
         for (const auto& lane : r.pending_lanes)

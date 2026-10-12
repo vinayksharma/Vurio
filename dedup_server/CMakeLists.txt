@@ -324,6 +324,7 @@ add_executable(media_dedup_server
     src/adjustments/tools/crop_tool.cpp
     src/adjustments/tools/param_tool.cpp
     src/adjustments/tools/layer_tools.cpp
+    src/adjustments/tools/perspective_tool.cpp
     src/adjustments/tools/tone_tools.cpp
     src/adjustments/tools/detail_tools.cpp
     src/adjustments/blend.cpp

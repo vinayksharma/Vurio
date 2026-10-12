@@ -115,6 +115,7 @@ set(ADJUSTMENTS_SOURCES
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/crop_tool.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/param_tool.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/layer_tools.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/tools/perspective_tool.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/tone_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/detail_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/blend.cpp
@@ -850,6 +851,7 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/crop_tool.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/param_tool.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/layer_tools.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/tools/perspective_tool.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/tone_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/detail_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/blend.cpp

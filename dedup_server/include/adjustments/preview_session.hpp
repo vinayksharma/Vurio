@@ -42,7 +42,7 @@ namespace MediaDedup::Adjustments
         int render_ms = 0;
         Size base_full;     // full-resolution base (EXIF-oriented)
         Size display_full;  // full-resolution size of what the frame shows
-        cv::Matx23d base_to_canvas = cv::Matx23d(1, 0, 0, 0, 1, 0); // normalised base → frame pixels
+        cv::Matx33d base_to_canvas = cv::Matx33d::eye(); // normalised base → frame pixels (3×3, CHAIN-7f)
         std::vector<std::string> pending_lanes; // CHAIN-5: lanes whose detected mask is still computing
     };
 

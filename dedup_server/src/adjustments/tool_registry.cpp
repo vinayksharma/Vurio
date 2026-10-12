@@ -1,6 +1,7 @@
 #include "adjustments/tool_registry.hpp"
 #include "adjustments/tools/crop_tool.hpp"
 #include "adjustments/tools/detail_tools.hpp"
+#include "adjustments/tools/perspective_tool.hpp"
 #include "adjustments/tools/layer_tools.hpp"
 #include "adjustments/tools/rotate_tool.hpp"
 #include "adjustments/tools/tone_tools.hpp"
@@ -18,6 +19,7 @@ namespace MediaDedup::Adjustments
         // Catalogue order: geometry, then the layer tools, then raster.
         owned_.push_back(std::make_unique<RotateTool>());
         owned_.push_back(std::make_unique<CropTool>());
+        owned_.push_back(std::make_unique<PerspectiveTool>()); // CHAIN-7f
         owned_.push_back(std::make_unique<ExposureTool>());
         owned_.push_back(std::make_unique<BrightContrastTool>());
         owned_.push_back(std::make_unique<WhiteBalanceTool>());

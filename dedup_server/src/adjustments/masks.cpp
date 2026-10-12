@@ -100,8 +100,10 @@ namespace MediaDedup::Adjustments
                 double scale = fork.affineScale();
                 double rx = std::max(1e-6, s.number("rx", 0.4) * scale);
                 double ry = std::max(1e-6, s.number("ry", 0.3) * scale);
-                // The affine's rotation adds to the mask's own.
-                double affineRot = std::atan2(fork.base_to_canvas(1, 0), fork.base_to_canvas(0, 0));
+                // The transform's rotation at the centre adds to the mask's
+                // own (the local linear map; exact for an affine, CHAIN-7f).
+                cv::Matx22d j = fork.jacobian(s.number("cx", 0.5), s.number("cy", 0.5));
+                double affineRot = std::atan2(j(1, 0), j(0, 0));
                 double a = s.number("rotation") * kPi / 180.0 + affineRot;
                 double ca = std::cos(a), sa = std::sin(a);
                 double soft = std::clamp(s.number("softness", 0.5), 0.0, 1.0);
@@ -324,14 +326,24 @@ namespace MediaDedup::Adjustments
             }
 
             // Mask pixels → fork pixels: normalise by the mask size, then the
-            // frame's base→canvas affine (docs §3.4).
+            // frame's base→canvas transform (docs §3.4); a perspective
+            // warp when the transform is projective (CHAIN-7f).
             static void transport(const cv::Mat &base_mask, const Frame &fork, cv::Mat &out)
             {
-                const cv::Matx23d &m = fork.base_to_canvas;
+                const cv::Matx33d &m = fork.base_to_canvas;
                 double sx = 1.0 / base_mask.cols, sy = 1.0 / base_mask.rows;
-                cv::Matx23d a(m(0, 0) * sx, m(0, 1) * sy, m(0, 2), m(1, 0) * sx, m(1, 1) * sy, m(1, 2));
-                cv::warpAffine(base_mask, out, a, cv::Size(fork.width(), fork.height()), cv::INTER_LINEAR,
-                               cv::BORDER_CONSTANT, cv::Scalar(0.0f));
+                cv::Matx33d h = m * cv::Matx33d(sx, 0, 0, 0, sy, 0, 0, 0, 1);
+                if (fork.isAffine())
+                {
+                    cv::Matx23d a(h(0, 0), h(0, 1), h(0, 2), h(1, 0), h(1, 1), h(1, 2));
+                    cv::warpAffine(base_mask, out, a, cv::Size(fork.width(), fork.height()), cv::INTER_LINEAR,
+                                   cv::BORDER_CONSTANT, cv::Scalar(0.0f));
+                }
+                else
+                {
+                    cv::warpPerspective(base_mask, out, cv::Mat(h), cv::Size(fork.width(), fork.height()), cv::INTER_LINEAR,
+                                        cv::BORDER_CONSTANT, cv::Scalar(0.0f));
+                }
             }
 
         protected:
