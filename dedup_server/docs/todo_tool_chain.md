@@ -723,6 +723,7 @@ three stacked regions:
 | `media.adjustments.masks.useCoreML` | true | CoreML EP where available |
 | `media.adjustments.recipes.builtin` | true | seed starter recipes |
 | `media.adjustments.history.maxEntries` | 100 | persisted undo steps per photo |
+| `media.adjustments.history.maxSnapshots` | 20 | named snapshots per photo (CHAIN-7e) |
 | `media.adjustments.export.defaultFormat` / `defaultQuality` | jpeg / 92 | export sheet defaults |
 
 ## 12. Phasing and progress tracking
@@ -1055,8 +1056,19 @@ rename|delete, name, snapshot_id})`; restoring appends a history step
 History popover: Snapshots section, "Save snapshot…", restore on click,
 rename/delete in the context menu.
 
-- [ ] Server store + RPC + tests
-- [ ] Client popover
+- [x] Server store + RPC + tests
+- [x] Client popover
+
+7e implemented 2026-10-12: `AdjustmentDocument::saveSnapshot/restoreSnapshot/
+renameSnapshot/deleteSnapshot` over `history.snapshots`, `AdjustmentStore::
+snapshotHistory` (restore appends "Restore snapshot <name>", the others
+persist without a step; snapshots alone keep the row), `SnapshotHistory` RPC,
+`snapshots` on every commit reply (SetAdjustments, StepHistory, ApplyRecipe,
+GetAdjustments), config `media.adjustments.history.maxSnapshots` (20).
+Client: Snapshots section in the History popover (Save with an inline name
+field, click to restore, Rename…/Delete in the context menu). Verified:
+saved without a step, restored after an undo as a new step with the chain's
+revision back, deleted.
 
 **7f — Perspective.** The base→canvas transport becomes a 3×3 homography
 (`Frame::base_to_canvas`, `project` with the divide, detected masks via
