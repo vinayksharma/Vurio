@@ -211,6 +211,21 @@ struct HistoryStep: Equatable {
     let at: String
 }
 
+/// CHAIN-7e: a named copy of the chain beside the undo stack.
+struct HistorySnapshot: Equatable, Identifiable {
+    let id: String
+    let name: String
+    let at: String
+    let nodeCount: Int
+
+    init(_ p: Vurio_Dedup_HistorySnapshot) {
+        id = p.id
+        name = p.name
+        at = p.at
+        nodeCount = Int(p.nodeCount)
+    }
+}
+
 /// CHAIN-1 (docs §4): the client's view of a photo's edit document — the
 /// ordered chain. The server owns the revision, the history and the
 /// canonical form; the client sends the chain and receives everything else.

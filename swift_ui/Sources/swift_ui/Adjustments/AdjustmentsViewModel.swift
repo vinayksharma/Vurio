@@ -85,6 +85,8 @@ final class AdjustmentsViewModel: ObservableObject {
     @Published private(set) var isCommitting = false
     @Published private(set) var lastError: String?
     @Published private(set) var historyIndex = -1
+    /// CHAIN-7e: the photo's named snapshots.
+    @Published private(set) var snapshots: [HistorySnapshot] = []
     @Published private(set) var historySteps: [HistoryStep] = []
     /// False once the server says adjustments are disabled; the panel then
     /// explains instead of offering controls.
@@ -349,6 +351,7 @@ final class AdjustmentsViewModel: ObservableObject {
         selectedNodeID = nil
         historyIndex = -1
         historySteps = []
+        snapshots = []
         tools = [:]
         maskTools = [:]
         toolSubscriptions = [:]
@@ -379,6 +382,7 @@ final class AdjustmentsViewModel: ObservableObject {
         sidecarPath = response.sidecarPath
         historyIndex = Int(response.historyIndex)
         historySteps = response.historySteps.map { HistoryStep(label: $0.label, at: $0.at) }
+        snapshots = response.snapshots.map(HistorySnapshot.init)
         if response.hasAdjustments_p, let doc = ChainDocument.parse(response.documentJson) {
             document = doc
         } else {
@@ -1281,6 +1285,43 @@ final class AdjustmentsViewModel: ObservableObject {
 
     // MARK: - History
 
+    // MARK: - Snapshots (CHAIN-7e)
+
+    /// Save, restore, rename or delete a named snapshot. Restoring commits
+    /// the snapshot's chain as a new history step; the rest only persist.
+    func snapshot(_ action: String, name: String = "", id: String = "") {
+        Task { await snapshotNow(action, name: name, id: id) }
+    }
+
+    private func snapshotNow(_ action: String, name: String, id: String) async {
+        await flushPendingCommit()
+        guard let path = filePath, let client = VurioGrpcClient.shared.adjustments else { return }
+        if action == "restore", isCropEditing { exitCropEditing() }
+        do {
+            let response = try await client.snapshotHistory(Vurio_Dedup_SnapshotRequest.with {
+                $0.filePath = path
+                $0.action = action
+                $0.name = name
+                $0.snapshotID = id
+            })
+            guard filePath == path else { return }
+            apply(response: response)
+            lastError = nil
+            if action == "restore" {
+                NotificationCenter.default.post(name: .adjustmentsChanged, object: nil, userInfo: [
+                    "filePath": path,
+                    "renderRevision": Int(response.renderRevision),
+                    "displayWidth": Int(response.displayWidth),
+                    "displayHeight": Int(response.displayHeight),
+                ])
+            }
+        } catch {
+            if isGrpcCancellation(error) { return }
+            lastError = "Snapshot: \((error as? GRPCStatus)?.message ?? error.localizedDescription)"
+            MessageCenter.shared.post(lastError ?? "The snapshot could not be saved")
+        }
+    }
+
     func undo() { Task { await stepHistory(delta: -1) } }
     func redo() { Task { await stepHistory(delta: 1) } }
     func jumpHistory(to index: Int) { Task { await stepHistory(index: index) } }
@@ -1401,6 +1442,7 @@ final class AdjustmentsViewModel: ObservableObject {
             sidecarPath = response.sidecarPath
             historyIndex = Int(response.historyIndex)
             historySteps = response.historySteps.map { HistoryStep(label: $0.label, at: $0.at) }
+        snapshots = response.snapshots.map(HistorySnapshot.init)
             lastError = response.success ? nil : response.errorMessage
             NotificationCenter.default.post(name: .adjustmentsChanged, object: nil, userInfo: [
                 "filePath": path,

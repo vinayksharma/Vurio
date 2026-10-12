@@ -3715,6 +3715,11 @@ internal protocol Vurio_Dedup_AdjustmentsServiceClientProtocol: GRPCClient {
     callOptions: CallOptions?
   ) -> UnaryCall<Vurio_Dedup_StepHistoryRequest, Vurio_Dedup_AdjustmentDocumentResponse>
 
+  func snapshotHistory(
+    _ request: Vurio_Dedup_SnapshotRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_SnapshotRequest, Vurio_Dedup_AdjustmentDocumentResponse>
+
   func maskStatus(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions?
@@ -3848,6 +3853,24 @@ extension Vurio_Dedup_AdjustmentsServiceClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeStepHistoryInterceptors() ?? []
+    )
+  }
+
+  /// CHAIN-7e: save / restore / rename / delete a named snapshot of the chain.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to SnapshotHistory.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func snapshotHistory(
+    _ request: Vurio_Dedup_SnapshotRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_SnapshotRequest, Vurio_Dedup_AdjustmentDocumentResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.snapshotHistory.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSnapshotHistoryInterceptors() ?? []
     )
   }
 
@@ -4012,6 +4035,11 @@ internal protocol Vurio_Dedup_AdjustmentsServiceAsyncClientProtocol: GRPCClient 
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_StepHistoryRequest, Vurio_Dedup_AdjustmentDocumentResponse>
 
+  func makeSnapshotHistoryCall(
+    _ request: Vurio_Dedup_SnapshotRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_SnapshotRequest, Vurio_Dedup_AdjustmentDocumentResponse>
+
   func makeMaskStatusCall(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions?
@@ -4107,6 +4135,18 @@ extension Vurio_Dedup_AdjustmentsServiceAsyncClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeStepHistoryInterceptors() ?? []
+    )
+  }
+
+  internal func makeSnapshotHistoryCall(
+    _ request: Vurio_Dedup_SnapshotRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_SnapshotRequest, Vurio_Dedup_AdjustmentDocumentResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.snapshotHistory.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSnapshotHistoryInterceptors() ?? []
     )
   }
 
@@ -4221,6 +4261,18 @@ extension Vurio_Dedup_AdjustmentsServiceAsyncClientProtocol {
     )
   }
 
+  internal func snapshotHistory(
+    _ request: Vurio_Dedup_SnapshotRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_AdjustmentDocumentResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.snapshotHistory.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeSnapshotHistoryInterceptors() ?? []
+    )
+  }
+
   internal func maskStatus(
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions? = nil
@@ -4295,6 +4347,9 @@ internal protocol Vurio_Dedup_AdjustmentsServiceClientInterceptorFactoryProtocol
   /// - Returns: Interceptors to use when invoking 'stepHistory'.
   func makeStepHistoryInterceptors() -> [ClientInterceptor<Vurio_Dedup_StepHistoryRequest, Vurio_Dedup_AdjustmentDocumentResponse>]
 
+  /// - Returns: Interceptors to use when invoking 'snapshotHistory'.
+  func makeSnapshotHistoryInterceptors() -> [ClientInterceptor<Vurio_Dedup_SnapshotRequest, Vurio_Dedup_AdjustmentDocumentResponse>]
+
   /// - Returns: Interceptors to use when invoking 'maskStatus'.
   func makeMaskStatusInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_MaskStatusResponse>]
 
@@ -4316,6 +4371,7 @@ internal enum Vurio_Dedup_AdjustmentsServiceClientMetadata {
       Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.getEditsRoot,
       Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.setEditsRoot,
       Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.stepHistory,
+      Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.snapshotHistory,
       Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.maskStatus,
       Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.clearMaskCache,
       Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.exportRendered,
@@ -4356,6 +4412,12 @@ internal enum Vurio_Dedup_AdjustmentsServiceClientMetadata {
     internal static let stepHistory = GRPCMethodDescriptor(
       name: "StepHistory",
       path: "/vurio.dedup.AdjustmentsService/StepHistory",
+      type: GRPCCallType.unary
+    )
+
+    internal static let snapshotHistory = GRPCMethodDescriptor(
+      name: "SnapshotHistory",
+      path: "/vurio.dedup.AdjustmentsService/SnapshotHistory",
       type: GRPCCallType.unary
     )
 
@@ -7492,6 +7554,9 @@ internal protocol Vurio_Dedup_AdjustmentsServiceProvider: CallHandlerProvider {
   /// resulting document is returned. OUT_OF_RANGE when there is no such step.
   func stepHistory(request: Vurio_Dedup_StepHistoryRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdjustmentDocumentResponse>
 
+  /// CHAIN-7e: save / restore / rename / delete a named snapshot of the chain.
+  func snapshotHistory(request: Vurio_Dedup_SnapshotRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_AdjustmentDocumentResponse>
+
   /// CHAIN-5 (docs §9.3): detected-mask backends, models and cache.
   func maskStatus(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_MaskStatusResponse>
 
@@ -7571,6 +7636,15 @@ extension Vurio_Dedup_AdjustmentsServiceProvider {
         responseSerializer: ProtobufSerializer<Vurio_Dedup_AdjustmentDocumentResponse>(),
         interceptors: self.interceptors?.makeStepHistoryInterceptors() ?? [],
         userFunction: self.stepHistory(request:context:)
+      )
+
+    case "SnapshotHistory":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_SnapshotRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdjustmentDocumentResponse>(),
+        interceptors: self.interceptors?.makeSnapshotHistoryInterceptors() ?? [],
+        userFunction: self.snapshotHistory(request:context:)
       )
 
     case "MaskStatus":
@@ -7659,6 +7733,12 @@ internal protocol Vurio_Dedup_AdjustmentsServiceAsyncProvider: CallHandlerProvid
   /// resulting document is returned. OUT_OF_RANGE when there is no such step.
   func stepHistory(
     request: Vurio_Dedup_StepHistoryRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_AdjustmentDocumentResponse
+
+  /// CHAIN-7e: save / restore / rename / delete a named snapshot of the chain.
+  func snapshotHistory(
+    request: Vurio_Dedup_SnapshotRequest,
     context: GRPCAsyncServerCallContext
   ) async throws -> Vurio_Dedup_AdjustmentDocumentResponse
 
@@ -7759,6 +7839,15 @@ extension Vurio_Dedup_AdjustmentsServiceAsyncProvider {
         wrapping: { try await self.stepHistory(request: $0, context: $1) }
       )
 
+    case "SnapshotHistory":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_SnapshotRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_AdjustmentDocumentResponse>(),
+        interceptors: self.interceptors?.makeSnapshotHistoryInterceptors() ?? [],
+        wrapping: { try await self.snapshotHistory(request: $0, context: $1) }
+      )
+
     case "MaskStatus":
       return GRPCAsyncServerHandler(
         context: context,
@@ -7818,6 +7907,10 @@ internal protocol Vurio_Dedup_AdjustmentsServiceServerInterceptorFactoryProtocol
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeStepHistoryInterceptors() -> [ServerInterceptor<Vurio_Dedup_StepHistoryRequest, Vurio_Dedup_AdjustmentDocumentResponse>]
 
+  /// - Returns: Interceptors to use when handling 'snapshotHistory'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeSnapshotHistoryInterceptors() -> [ServerInterceptor<Vurio_Dedup_SnapshotRequest, Vurio_Dedup_AdjustmentDocumentResponse>]
+
   /// - Returns: Interceptors to use when handling 'maskStatus'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeMaskStatusInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_MaskStatusResponse>]
@@ -7842,6 +7935,7 @@ internal enum Vurio_Dedup_AdjustmentsServiceServerMetadata {
       Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.getEditsRoot,
       Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.setEditsRoot,
       Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.stepHistory,
+      Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.snapshotHistory,
       Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.maskStatus,
       Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.clearMaskCache,
       Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.exportRendered,
@@ -7882,6 +7976,12 @@ internal enum Vurio_Dedup_AdjustmentsServiceServerMetadata {
     internal static let stepHistory = GRPCMethodDescriptor(
       name: "StepHistory",
       path: "/vurio.dedup.AdjustmentsService/StepHistory",
+      type: GRPCCallType.unary
+    )
+
+    internal static let snapshotHistory = GRPCMethodDescriptor(
+      name: "SnapshotHistory",
+      path: "/vurio.dedup.AdjustmentsService/SnapshotHistory",
       type: GRPCCallType.unary
     )
 

@@ -12,6 +12,11 @@ struct AdjustmentsPanel: View {
 
     @State private var customAspectText = ""
     @State private var historyShown = false
+    // CHAIN-7e: snapshot naming inside the History popover.
+    @State private var snapshotNameDraft = ""
+    @State private var namingSnapshot = false
+    @State private var renamingSnapshotID: String?
+    @FocusState private var snapshotFieldFocused: Bool
     @State private var dragStartWidth: CGFloat?
     @ObservedObject private var recipes = RecipesModel.shared
     @State private var saveRecipeShown = false
@@ -145,8 +150,8 @@ struct AdjustmentsPanel: View {
                 .help("Redo (⇧⌘Z)")
             Button(action: { historyShown.toggle() }) { Image(systemName: "clock.arrow.circlepath") }
                 .buttonStyle(.vurioIcon(tint: historyShown ? Theme.textAccent : Theme.textPrimary))
-                .disabled(!hasImage || model.historySteps.isEmpty)
-                .help("History")
+                .disabled(!hasImage || (model.historySteps.isEmpty && model.snapshots.isEmpty))
+                .help("History and snapshots")
                 .popover(isPresented: $historyShown, arrowEdge: .bottom) { historyList }
             Button(action: { model.isCollapsed = true }) {
                 Image(systemName: "chevron.right")
@@ -280,11 +285,94 @@ struct AdjustmentsPanel: View {
                     }
                 }
             }
-            .frame(maxHeight: 260)
+            .frame(maxHeight: 220)
+            snapshotsSection
         }
         .padding(10)
         .frame(width: 260)
         .background(Theme.surfaceElevated)
+    }
+
+    /// CHAIN-7e: named snapshots of the chain. Click one to restore it (a
+    /// new history step); rename or delete from the context menu.
+    private var snapshotsSection: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Divider().padding(.vertical, 4)
+            HStack {
+                Text("Snapshots")
+                    .font(.system(size: 11, weight: .semibold))
+                    .textCase(.uppercase)
+                    .foregroundColor(Theme.textSecondary)
+                Spacer()
+                Button(action: {
+                    snapshotNameDraft = "Snapshot \(model.snapshots.count + 1)"
+                    renamingSnapshotID = nil
+                    namingSnapshot = true
+                }) {
+                    Label("Save", systemImage: "camera.badge.clock")
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(model.hasEdits ? Theme.textAccent : Theme.textSecondary)
+                .disabled(!model.hasEdits)
+                .help("Keep the current chain under a name")
+            }
+            if namingSnapshot {
+                HStack(spacing: 6) {
+                    TextField("Name", text: $snapshotNameDraft, onCommit: {
+                        if let id = renamingSnapshotID {
+                            model.snapshot("rename", name: snapshotNameDraft, id: id)
+                        } else {
+                            model.snapshot("save", name: snapshotNameDraft)
+                        }
+                        namingSnapshot = false
+                    })
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11))
+                    .focused($snapshotFieldFocused)
+                    .onAppear { snapshotFieldFocused = true }
+                    Button("Cancel") { namingSnapshot = false }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 10))
+                        .foregroundColor(Theme.textSecondary)
+                }
+                .padding(.vertical, 2)
+            }
+            if model.snapshots.isEmpty && !namingSnapshot {
+                Text("None yet. A snapshot outlives the undo limit.")
+                    .font(.caption2)
+                    .foregroundColor(Theme.textSecondary)
+            }
+            ForEach(model.snapshots.reversed()) { snap in
+                Button(action: { model.snapshot("restore", id: snap.id); historyShown = false }) {
+                    HStack {
+                        Image(systemName: "camera.on.rectangle")
+                            .font(.system(size: 9))
+                            .foregroundColor(Theme.textSecondary)
+                        Text(snap.name)
+                            .font(.system(size: 11))
+                            .foregroundColor(Theme.textPrimary)
+                            .lineLimit(1)
+                        Spacer()
+                        Text("\(snap.nodeCount) · \(Self.shortTime(snap.at))")
+                            .font(.custom("Menlo", size: 9))
+                            .foregroundColor(Theme.textSecondary)
+                    }
+                    .padding(.vertical, 3)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Restore this snapshot (a new history step)")
+                .contextMenu {
+                    Button("Rename…") {
+                        snapshotNameDraft = snap.name
+                        renamingSnapshotID = snap.id
+                        namingSnapshot = true
+                    }
+                    Button("Delete") { model.snapshot("delete", id: snap.id) }
+                }
+            }
+        }
     }
 
     private static func shortTime(_ iso: String) -> String {
