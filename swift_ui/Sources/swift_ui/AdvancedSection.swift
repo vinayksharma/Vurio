@@ -296,7 +296,7 @@ private struct MaskStatusRow: View {
                 Text("Detected Masks")
                     .font(.headline)
                     .textCase(.uppercase)
-                Text("Lane masks that find the subject, people, faces or a text prompt in the picture. Each is computed once per photo and cached under the preview cache; editing never re-runs a detector. With the SAM sharpening model installed, the prompt and people masks get object-accurate edges.")
+                Text("Lane masks that find the subject, people, faces or a text prompt in the picture. Each is computed once per photo and cached under the preview cache; editing never re-runs a detector. With the SAM sharpening model installed, the prompt and people masks get object-accurate edges. The Denoise and Upscale rows are the export sheet's AI finishing models.")
                     .font(.subheadline)
                     .foregroundColor(Theme.textSecondary)
                 if let status = viewModel.maskStatus {

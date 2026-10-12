@@ -42,6 +42,9 @@ final class AdjustmentsViewModel: ObservableObject {
     struct ExportDefaults: Equatable {
         var format = "jpeg"
         var quality = 92
+        /// CHAIN-7h: the AI finishing models the server has installed.
+        var denoiseAvailable = false
+        var upscaleAvailable = false
     }
     @Published private(set) var exportDefaults = ExportDefaults()
     @Published var isExportPresented = false
@@ -324,7 +327,9 @@ final class AdjustmentsViewModel: ObservableObject {
             maskSources = response.maskSources.map(ToolDescriptor.init)
             if !response.exportDefaultFormat.isEmpty {
                 exportDefaults = ExportDefaults(format: response.exportDefaultFormat,
-                                                quality: (1...100).contains(Int(response.exportDefaultQuality)) ? Int(response.exportDefaultQuality) : 92)
+                                                quality: (1...100).contains(Int(response.exportDefaultQuality)) ? Int(response.exportDefaultQuality) : 92,
+                                                denoiseAvailable: response.exportDenoiseAvailable,
+                                                upscaleAvailable: response.exportUpscaleAvailable)
             }
             descriptorsLoaded = true
             rebuildTools()
@@ -1379,9 +1384,11 @@ final class AdjustmentsViewModel: ObservableObject {
             return .failure(GRPCStatus(code: .unavailable, message: "Not connected to the server"))
         }
         await flushPendingCommit()
-        // The client's defaults carry the session token; only the deadline changes.
+        // The client's defaults carry the session token; only the deadline
+        // changes. CHAIN-7h: an AI finishing step is minutes on a CPU.
         var options = client.defaultCallOptions
-        options.timeLimit = .timeout(.seconds(300))
+        let ai = request.denoise > 0 || request.upscale > 1
+        options.timeLimit = .timeout(.seconds(ai ? 1800 : 300))
         do {
             return .success(try await client.exportRendered(request, callOptions: options))
         } catch {

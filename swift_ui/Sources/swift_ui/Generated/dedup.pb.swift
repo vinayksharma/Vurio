@@ -1464,6 +1464,12 @@ struct Vurio_Dedup_ExportRequest: Sendable {
   /// <stem>-<suffix>.<ext>; "" = the applied recipe's name or "edit"
   var nameSuffix: String = String()
 
+  /// CHAIN-7h: AI finishing, run once over the rendered frame.
+  var denoise: Double = 0
+
+  /// 1 = off, 2 = ×2 (applied after the long-side limit)
+  var upscale: Int32 = 0
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -1810,8 +1816,10 @@ struct Vurio_Dedup_PreviewFrame: Sendable {
 
   var displayHeight: Int32 = 0
 
-  /// CHAIN-4 (docs §3.4): normalised base coordinates → frame pixels, as a
-  /// 2×3 affine (a b c / d e f), for mask pins drawn over the frame.
+  /// CHAIN-4 (docs §3.4): normalised base coordinates → frame pixels, for
+  /// mask pins drawn over the frame. 9 values, a row-major 3×3 homography
+  /// since CHAIN-7f (Perspective); a client may still receive the 6 values
+  /// of a 2×3 affine from an older server.
   var baseToCanvas: [Double] = []
 
   /// CHAIN-5 (docs §5.6): lanes whose detected mask is still computing;
@@ -2047,6 +2055,12 @@ struct Vurio_Dedup_ToolDescriptors: Sendable {
 
   /// CHAIN-6: media.adjustments.export.defaultQuality
   var exportDefaultQuality: Int32 = 0
+
+  /// CHAIN-7h: the denoise model is installed
+  var exportDenoiseAvailable: Bool = false
+
+  /// CHAIN-7h: the upscale model is installed
+  var exportUpscaleAvailable: Bool = false
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -5087,7 +5101,7 @@ extension Vurio_Dedup_MediaReadyEvent: SwiftProtobuf.Message, SwiftProtobuf._Mes
 
 extension Vurio_Dedup_ExportRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".ExportRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{1}folder\0\u{1}format\0\u{1}quality\0\u{3}max_side\0\u{3}name_suffix\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{1}folder\0\u{1}format\0\u{1}quality\0\u{3}max_side\0\u{3}name_suffix\0\u{1}denoise\0\u{1}upscale\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -5101,6 +5115,8 @@ extension Vurio_Dedup_ExportRequest: SwiftProtobuf.Message, SwiftProtobuf._Messa
       case 4: try { try decoder.decodeSingularInt32Field(value: &self.quality) }()
       case 5: try { try decoder.decodeSingularInt32Field(value: &self.maxSide) }()
       case 6: try { try decoder.decodeSingularStringField(value: &self.nameSuffix) }()
+      case 7: try { try decoder.decodeSingularDoubleField(value: &self.denoise) }()
+      case 8: try { try decoder.decodeSingularInt32Field(value: &self.upscale) }()
       default: break
       }
     }
@@ -5125,6 +5141,12 @@ extension Vurio_Dedup_ExportRequest: SwiftProtobuf.Message, SwiftProtobuf._Messa
     if !self.nameSuffix.isEmpty {
       try visitor.visitSingularStringField(value: self.nameSuffix, fieldNumber: 6)
     }
+    if self.denoise.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.denoise, fieldNumber: 7)
+    }
+    if self.upscale != 0 {
+      try visitor.visitSingularInt32Field(value: self.upscale, fieldNumber: 8)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -5135,6 +5157,8 @@ extension Vurio_Dedup_ExportRequest: SwiftProtobuf.Message, SwiftProtobuf._Messa
     if lhs.quality != rhs.quality {return false}
     if lhs.maxSide != rhs.maxSide {return false}
     if lhs.nameSuffix != rhs.nameSuffix {return false}
+    if lhs.denoise != rhs.denoise {return false}
+    if lhs.upscale != rhs.upscale {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -6361,7 +6385,7 @@ extension Vurio_Dedup_ToolDescriptor: SwiftProtobuf.Message, SwiftProtobuf._Mess
 
 extension Vurio_Dedup_ToolDescriptors: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".ToolDescriptors"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}tools\0\u{3}document_version\0\u{3}blend_modes\0\u{3}mask_sources\0\u{3}export_default_format\0\u{3}export_default_quality\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}tools\0\u{3}document_version\0\u{3}blend_modes\0\u{3}mask_sources\0\u{3}export_default_format\0\u{3}export_default_quality\0\u{3}export_denoise_available\0\u{3}export_upscale_available\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -6375,6 +6399,8 @@ extension Vurio_Dedup_ToolDescriptors: SwiftProtobuf.Message, SwiftProtobuf._Mes
       case 4: try { try decoder.decodeRepeatedMessageField(value: &self.maskSources) }()
       case 5: try { try decoder.decodeSingularStringField(value: &self.exportDefaultFormat) }()
       case 6: try { try decoder.decodeSingularInt32Field(value: &self.exportDefaultQuality) }()
+      case 7: try { try decoder.decodeSingularBoolField(value: &self.exportDenoiseAvailable) }()
+      case 8: try { try decoder.decodeSingularBoolField(value: &self.exportUpscaleAvailable) }()
       default: break
       }
     }
@@ -6399,6 +6425,12 @@ extension Vurio_Dedup_ToolDescriptors: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if self.exportDefaultQuality != 0 {
       try visitor.visitSingularInt32Field(value: self.exportDefaultQuality, fieldNumber: 6)
     }
+    if self.exportDenoiseAvailable != false {
+      try visitor.visitSingularBoolField(value: self.exportDenoiseAvailable, fieldNumber: 7)
+    }
+    if self.exportUpscaleAvailable != false {
+      try visitor.visitSingularBoolField(value: self.exportUpscaleAvailable, fieldNumber: 8)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -6409,6 +6441,8 @@ extension Vurio_Dedup_ToolDescriptors: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if lhs.maskSources != rhs.maskSources {return false}
     if lhs.exportDefaultFormat != rhs.exportDefaultFormat {return false}
     if lhs.exportDefaultQuality != rhs.exportDefaultQuality {return false}
+    if lhs.exportDenoiseAvailable != rhs.exportDenoiseAvailable {return false}
+    if lhs.exportUpscaleAvailable != rhs.exportUpscaleAvailable {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

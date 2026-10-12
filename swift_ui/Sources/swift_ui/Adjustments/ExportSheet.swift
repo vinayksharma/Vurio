@@ -11,6 +11,8 @@ struct ExportSettings {
     static let qualityKey = "exportQuality"
     static let limitKey = "exportLimitEnabled"
     static let maxSideKey = "exportMaxSide"
+    static let denoiseKey = "exportDenoise"
+    static let upscaleKey = "exportUpscale"
 
     static var folder: String {
         get { UserDefaults.standard.string(forKey: folderKey) ?? "" }
@@ -37,6 +39,13 @@ struct ExportSettings {
         d.set(quality, forKey: qualityKey)
         d.set(limitEnabled, forKey: limitKey)
         d.set(maxSide, forKey: maxSideKey)
+    }
+    /// CHAIN-7h: the AI finishing choices (strength 0 = off; upscale on/off).
+    static var denoise: Double { UserDefaults.standard.double(forKey: denoiseKey) }
+    static var upscale: Bool { UserDefaults.standard.bool(forKey: upscaleKey) }
+    static func remember(denoise: Double, upscale: Bool) {
+        UserDefaults.standard.set(denoise, forKey: denoiseKey)
+        UserDefaults.standard.set(upscale, forKey: upscaleKey)
     }
 
     /// Folder picker shared by the sheet and Settings › Advanced.
@@ -65,6 +74,10 @@ struct ExportSheet: View {
     @State private var limitEnabled = ExportSettings.limitEnabled
     @State private var maxSideText = String(ExportSettings.maxSide)
     @State private var suffix = ""
+    // CHAIN-7h
+    @State private var denoiseOn = ExportSettings.denoise > 0
+    @State private var denoiseStrength = ExportSettings.denoise > 0 ? ExportSettings.denoise : 0.7
+    @State private var upscaleOn = ExportSettings.upscale
     @State private var isRunning = false
     @State private var error: String?
     @State private var written: Vurio_Dedup_ExportResponse?
@@ -167,6 +180,38 @@ struct ExportSheet: View {
                 Text("px").foregroundColor(Theme.textSecondary)
                 Spacer()
             }
+            // CHAIN-7h: AI finishing, shown only for installed models.
+            if model.exportDefaults.denoiseAvailable || model.exportDefaults.upscaleAvailable {
+                if model.exportDefaults.denoiseAvailable {
+                    HStack(spacing: 8) {
+                        Text("Finish").frame(width: 56, alignment: .trailing)
+                        Toggle("AI denoise", isOn: $denoiseOn).toggleStyle(.checkbox).fixedSize()
+                        Slider(value: $denoiseStrength, in: 0.1...1, step: 0.05)
+                            .frame(width: 120)
+                            .disabled(!denoiseOn)
+                        Text(String(format: "%.0f%%", denoiseStrength * 100))
+                            .font(.custom("Menlo", size: 11))
+                            .foregroundColor(denoiseOn ? Theme.textPrimary : Theme.textSecondary)
+                            .frame(width: 36, alignment: .trailing)
+                        Spacer()
+                    }
+                }
+                if model.exportDefaults.upscaleAvailable {
+                    HStack(spacing: 8) {
+                        Text(model.exportDefaults.denoiseAvailable ? "" : "Finish").frame(width: 56, alignment: .trailing)
+                        Toggle("Upscale ×2 (Real-ESRGAN)", isOn: $upscaleOn).toggleStyle(.checkbox).fixedSize()
+                        Spacer()
+                    }
+                }
+                if denoiseOn || upscaleOn {
+                    Text((denoiseOn ? "NAFNet denoises the rendered photo after the long-side limit. " : "")
+                         + (upscaleOn ? "Real-ESRGAN then doubles the size (at most 100 megapixels). " : "")
+                         + "Allow about a minute per 24 megapixels for each.")
+                        .font(.caption)
+                        .foregroundColor(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             // Name
             HStack(spacing: 8) {
                 Text("Name").frame(width: 56, alignment: .trailing)
@@ -198,7 +243,8 @@ struct ExportSheet: View {
             HStack {
                 if isRunning {
                     ProgressView().controlSize(.small)
-                    Text(isBatch ? "Exporting \(progress) of \(paths.count)…" : "Rendering at full resolution…")
+                    Text(isBatch ? "Exporting \(progress) of \(paths.count)…"
+                         : ((denoiseOn || upscaleOn) ? "Rendering, then the AI finishing (this takes a while)…" : "Rendering at full resolution…"))
                         .font(.caption)
                         .foregroundColor(Theme.textSecondary)
                 }
@@ -249,6 +295,8 @@ struct ExportSheet: View {
             $0.quality = Int32(format == "jpeg" ? quality : 0)
             $0.maxSide = Int32(limitEnabled ? maxSide : 0)
             $0.nameSuffix = cleanSuffix
+            $0.denoise = denoiseOn && model.exportDefaults.denoiseAvailable ? denoiseStrength : 0
+            $0.upscale = upscaleOn && model.exportDefaults.upscaleAvailable ? 2 : 1
         }
     }
 
@@ -257,6 +305,7 @@ struct ExportSheet: View {
         isRunning = true
         ExportSettings.folder = folder
         ExportSettings.remember(format: format, quality: quality, limitEnabled: limitEnabled, maxSide: maxSide)
+        ExportSettings.remember(denoise: denoiseOn ? denoiseStrength : 0, upscale: upscaleOn)
         if isBatch {
             runBatch()
             return
