@@ -76,6 +76,13 @@ public:
             h->set_label(step.first);
             h->set_at(step.second);
         }
+        for (const auto& s : result.snapshots) {
+            auto* p = reply->add_snapshots();
+            p->set_id(s.id);
+            p->set_name(s.name);
+            p->set_at(s.at);
+            p->set_node_count(s.node_count);
+        }
         switch (result.outcome) {
             case Outcome::Ok: return grpc::Status::OK;
             case Outcome::Invalid: return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, result.error);

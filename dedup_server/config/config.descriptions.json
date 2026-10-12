@@ -1273,6 +1273,13 @@
       "text": "Undo steps kept per photo, stored with its edits in the sidecar and the database. The oldest step is dropped when the limit is reached."
     }
   ],
+  "media.adjustments.history.maxSnapshots": "Snapshots Per Photo",
+  "media.adjustments.history.maxSnapshots.long": [
+    {
+      "type": "paragraph",
+      "text": "Named snapshots of a photo's edit chain kept beside its undo history (History › Save snapshot). They survive the undo limit and redo truncation; the oldest snapshot is dropped when this limit is reached."
+    }
+  ],
   "media.adjustments.recipes.builtin": "Starter Recipes",
   "media.adjustments.recipes.builtin.long": [
     {

@@ -184,6 +184,7 @@ public:
             h->set_label(step.first);
             h->set_at(step.second);
         }
+        fillSnapshots(result.snapshots, reply->mutable_snapshots());
         return statusOf(result);
     }
 
@@ -223,9 +224,22 @@ public:
 
     grpc::Status StepHistory(grpc::ServerContext*, const vurio::dedup::StepHistoryRequest* request,
                              vurio::dedup::AdjustmentDocumentResponse* reply) override {
-        using Outcome = MediaDedup::Adjustments::AdjustmentStore::Outcome;
         auto result = MediaDedup::Adjustments::AdjustmentStore::instance().stepHistory(
             request->file_path(), request->delta(), request->use_index(), request->index());
+        return fillCommit(result, reply);
+    }
+
+    // CHAIN-7e
+    grpc::Status SnapshotHistory(grpc::ServerContext*, const vurio::dedup::SnapshotRequest* request,
+                                 vurio::dedup::AdjustmentDocumentResponse* reply) override {
+        auto result = MediaDedup::Adjustments::AdjustmentStore::instance().snapshotHistory(
+            request->file_path(), request->action(), request->name(), request->snapshot_id());
+        return fillCommit(result, reply);
+    }
+
+    static grpc::Status fillCommit(const MediaDedup::Adjustments::AdjustmentStore::CommitResult& result,
+                                   vurio::dedup::AdjustmentDocumentResponse* reply) {
+        using Outcome = MediaDedup::Adjustments::AdjustmentStore::Outcome;
         if (result.outcome != Outcome::Ok) return statusOf(result);
         reply->set_has_adjustments(!result.document_json.empty());
         reply->set_document_json(result.document_json);
@@ -240,6 +254,7 @@ public:
             h->set_label(step.first);
             h->set_at(step.second);
         }
+        fillSnapshots(result.snapshots, reply->mutable_snapshots());
         return grpc::Status::OK;
     }
 
@@ -285,6 +300,18 @@ private:
         return grpc::Status(grpc::StatusCode::INTERNAL, result.error);
     }
 
+    // CHAIN-7e: the snapshot list (without the chains) on any reply.
+    static void fillSnapshots(const std::vector<MediaDedup::Adjustments::AdjustmentDocument::Snapshot>& snaps,
+                              google::protobuf::RepeatedPtrField<vurio::dedup::HistorySnapshot>* out) {
+        for (const auto& s : snaps) {
+            auto* p = out->Add();
+            p->set_id(s.id);
+            p->set_name(s.name);
+            p->set_at(s.at);
+            p->set_node_count(s.node_count);
+        }
+    }
+
     // The row's history column → the reply's index and step list.
     static void fillHistory(const std::string& history_json, vurio::dedup::AdjustmentDocumentResponse* reply) {
         if (history_json.empty()) { reply->set_history_index(-1); return; }
@@ -294,6 +321,7 @@ private:
             if (h.is_object()) doc.history = h;
         } catch (...) {}
         reply->set_history_index(doc.historyIndex());
+        fillSnapshots(doc.snapshots(), reply->mutable_snapshots());
         for (const auto& step : doc.historySteps()) {
             auto* s = reply->add_history_steps();
             s->set_label(step.first);

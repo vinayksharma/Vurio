@@ -1,4 +1,5 @@
 #include "adjustments/adjustment_store.hpp"
+#include <cctype>
 #include "adjustments/sidecar_store.hpp"
 #include "adjustments/tool_registry.hpp"
 #include "config/unified_observable_config.hpp"
@@ -86,7 +87,7 @@ namespace MediaDedup::Adjustments
             AdjustmentDocument without = doc;
             without.history = nlohmann::json();
             document_column = without.serialize();
-            history_column = doc.hasHistory() ? doc.history.dump() : std::string();
+            history_column = (doc.hasHistory() || doc.hasSnapshots()) ? doc.history.dump() : std::string();
         }
 
         int64_t sizeBytesOf(const ScannedFileRow &row, const std::string &path)
@@ -247,6 +248,13 @@ namespace MediaDedup::Adjustments
         std::shared_lock<std::shared_mutex> lock(mutex_);
         int n = config_ ? config_->getPropertyValue<int>("media.adjustments.history.maxEntries", 100) : 100;
         return n < 2 ? 2 : n;
+    }
+
+    int AdjustmentStore::historyMaxSnapshots() const
+    {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        int n = config_ ? config_->getPropertyValue<int>("media.adjustments.history.maxSnapshots", 20) : 20;
+        return n < 1 ? 1 : n;
     }
 
     int AdjustmentStore::revisionFor(const std::string &file_path) const
@@ -676,6 +684,114 @@ namespace MediaDedup::Adjustments
         return commitDocument(file_path, doc, plan, *scanned, base);
     }
 
+    AdjustmentStore::CommitResult AdjustmentStore::snapshotHistory(const std::string &file_path, const std::string &action,
+                                                                   const std::string &name, const std::string &snapshot_id)
+    {
+        CommitResult result;
+        std::shared_ptr<DatabaseManager> db;
+        {
+            std::shared_lock<std::shared_mutex> lock(mutex_);
+            if (!initialized_)
+            {
+                result.error = "adjustment store is not initialized";
+                return result;
+            }
+            db = db_;
+        }
+        if (!enabled())
+        {
+            result.outcome = Outcome::Disabled;
+            result.error = "adjustments are disabled (media.adjustments.enabled)";
+            return result;
+        }
+        std::lock_guard<std::mutex> write_lock(writeMutex());
+
+        auto scanned = ScannedFilesOps::getByPath(*db, file_path);
+        std::optional<ImageAdjustmentRow> existing = rowFor(file_path);
+        if (!scanned || !existing)
+        {
+            result.outcome = Outcome::NotFound;
+            result.error = existing ? "file is not registered: " + file_path : "the file has no edits to snapshot";
+            return result;
+        }
+        AdjustmentDocument doc;
+        std::string error;
+        if (!parseRow(*existing, doc, error))
+        {
+            result.outcome = Outcome::Invalid;
+            result.error = error;
+            return result;
+        }
+        std::string trimmed = name;
+        while (!trimmed.empty() && std::isspace(static_cast<unsigned char>(trimmed.back())))
+            trimmed.pop_back();
+        while (!trimmed.empty() && std::isspace(static_cast<unsigned char>(trimmed.front())))
+            trimmed.erase(0, 1);
+        if (action == "save")
+        {
+            if (trimmed.empty())
+                trimmed = "Snapshot " + std::to_string(doc.snapshots().size() + 1);
+            doc.saveSnapshot(trimmed, historyMaxSnapshots());
+        }
+        else if (action == "rename")
+        {
+            if (trimmed.empty())
+            {
+                result.outcome = Outcome::Invalid;
+                result.error = "a snapshot needs a name";
+                return result;
+            }
+            if (!doc.renameSnapshot(snapshot_id, trimmed))
+            {
+                result.outcome = Outcome::NotFound;
+                result.error = "no snapshot " + snapshot_id;
+                return result;
+            }
+        }
+        else if (action == "delete")
+        {
+            if (!doc.deleteSnapshot(snapshot_id))
+            {
+                result.outcome = Outcome::NotFound;
+                result.error = "no snapshot " + snapshot_id;
+                return result;
+            }
+        }
+        else if (action == "restore")
+        {
+            std::string restored;
+            if (!doc.restoreSnapshot(snapshot_id, &restored))
+            {
+                result.outcome = Outcome::NotFound;
+                result.error = "no snapshot " + snapshot_id;
+                return result;
+            }
+            doc.appendHistoryStep("Restore snapshot " + restored, historyMaxEntries());
+        }
+        else
+        {
+            result.outcome = Outcome::Invalid;
+            result.error = "unknown snapshot action '" + action + "'";
+            return result;
+        }
+        RenderPlan plan;
+        if (!doc.compile(ToolRegistry::instance(), plan, error))
+        {
+            result.outcome = Outcome::Invalid;
+            result.error = error;
+            return result;
+        }
+        DisplayDims base = scanned->exif_resolution ? displayDimensionsFromExifResolution(*scanned->exif_resolution)
+                                                    : DisplayDims{};
+        if (!plan.validate(toSize(base), error))
+        {
+            result.outcome = Outcome::Invalid;
+            result.error = error;
+            return result;
+        }
+        return commitDocument(file_path, doc, plan, *scanned, base);
+    }
+
     AdjustmentStore::CommitResult AdjustmentStore::commitDocument(const std::string &file_path, AdjustmentDocument &doc,
                                                                   const RenderPlan &plan, const ScannedFileRow &scanned,
                                                                   const DisplayDims &base)
@@ -736,6 +852,7 @@ namespace MediaDedup::Adjustments
         result.document_json = row.document;
         result.history_index = doc.historyIndex();
         result.history_steps = doc.historySteps();
+        result.snapshots = doc.snapshots();
         return result;
     }
 

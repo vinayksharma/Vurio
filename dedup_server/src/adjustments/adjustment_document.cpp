@@ -671,6 +671,100 @@ namespace MediaDedup::Adjustments
         return true;
     }
 
+    // ------------------------------------------------------------ snapshots
+
+    bool AdjustmentDocument::hasSnapshots() const
+    {
+        return history.is_object() && history.contains("snapshots") && history["snapshots"].is_array() &&
+               !history["snapshots"].empty();
+    }
+
+    std::vector<AdjustmentDocument::Snapshot> AdjustmentDocument::snapshots() const
+    {
+        std::vector<Snapshot> out;
+        if (!hasSnapshots())
+            return out;
+        for (const auto &s : history["snapshots"])
+        {
+            if (!s.is_object())
+                continue;
+            Snapshot snap;
+            snap.id = s.value("id", std::string());
+            snap.name = s.value("name", std::string());
+            snap.at = s.value("at", std::string());
+            snap.node_count = s.contains("chain") && s["chain"].is_array() ? static_cast<int>(s["chain"].size()) : 0;
+            out.push_back(snap);
+        }
+        return out;
+    }
+
+    std::string AdjustmentDocument::saveSnapshot(const std::string &name, int max_snapshots)
+    {
+        if (!history.is_object())
+            history = nlohmann::json::object();
+        if (!history.contains("snapshots") || !history["snapshots"].is_array())
+            history["snapshots"] = nlohmann::json::array();
+        auto &list = history["snapshots"];
+        nlohmann::json snap;
+        snap["id"] = newNodeId();
+        snap["name"] = name;
+        snap["at"] = nowIso8601();
+        snap["chain"] = chain;
+        list.push_back(snap);
+        if (max_snapshots < 1)
+            max_snapshots = 1;
+        while (static_cast<int>(list.size()) > max_snapshots)
+            list.erase(0);
+        return list.back()["id"].get<std::string>();
+    }
+
+    bool AdjustmentDocument::restoreSnapshot(const std::string &id, std::string *name)
+    {
+        if (!hasSnapshots())
+            return false;
+        for (const auto &s : history["snapshots"])
+            if (s.is_object() && s.value("id", std::string()) == id)
+            {
+                chain = s.value("chain", nlohmann::json::array());
+                // Fresh ids: the snapshot's nodes may still exist in the chain.
+                for (auto &node : chain)
+                    if (node.is_object())
+                        node.erase("id");
+                ensureNodeIds();
+                if (name)
+                    *name = s.value("name", std::string());
+                return true;
+            }
+        return false;
+    }
+
+    bool AdjustmentDocument::renameSnapshot(const std::string &id, const std::string &name)
+    {
+        if (!hasSnapshots())
+            return false;
+        for (auto &s : history["snapshots"])
+            if (s.is_object() && s.value("id", std::string()) == id)
+            {
+                s["name"] = name;
+                return true;
+            }
+        return false;
+    }
+
+    bool AdjustmentDocument::deleteSnapshot(const std::string &id)
+    {
+        if (!hasSnapshots())
+            return false;
+        auto &list = history["snapshots"];
+        for (size_t i = 0; i < list.size(); ++i)
+            if (list[i].is_object() && list[i].value("id", std::string()) == id)
+            {
+                list.erase(i);
+                return true;
+            }
+        return false;
+    }
+
     std::string AdjustmentDocument::nowIso8601()
     {
         auto now = std::chrono::system_clock::now();

@@ -255,6 +255,76 @@ TEST_F(AdjustmentStoreTest, HistoryStepsUndoRedoAndTruncateTheRedoTail)
     EXPECT_EQ(store.stepHistory("/nope/x.jpg", -1, false, 0).outcome, AdjustmentStore::Outcome::NotFound);
 }
 
+TEST_F(AdjustmentStoreTest, SnapshotsSaveRestoreRenameDeleteAndSurviveTheStack)
+{
+    // CHAIN-7e.
+    auto &store = AdjustmentStore::instance();
+    EXPECT_EQ(store.snapshotHistory(asset_, "save", "A", "").outcome, AdjustmentStore::Outcome::NotFound)
+        << "nothing to snapshot before an edit";
+    auto first = store.setDocument(asset_, kRotate90, "Rotate right");
+    ASSERT_EQ(first.outcome, AdjustmentStore::Outcome::Ok) << first.error;
+    EXPECT_TRUE(first.snapshots.empty());
+    auto saved = store.snapshotHistory(asset_, "save", "  Quarter turn ", "");
+    ASSERT_EQ(saved.outcome, AdjustmentStore::Outcome::Ok) << saved.error;
+    ASSERT_EQ(saved.snapshots.size(), 1u);
+    EXPECT_EQ(saved.snapshots[0].name, "Quarter turn");
+    EXPECT_EQ(saved.snapshots[0].node_count, 1);
+    EXPECT_EQ(saved.history_steps.size(), 2u) << "saving is not a history step";
+    EXPECT_EQ(saved.render_revision, first.render_revision);
+    const std::string id = saved.snapshots[0].id;
+    EXPECT_FALSE(id.empty());
+
+    auto second = store.setDocument(asset_, kRotate180, "Rotate 180");
+    ASSERT_EQ(second.outcome, AdjustmentStore::Outcome::Ok);
+    EXPECT_EQ(second.snapshots.size(), 1u) << "a commit carries the snapshots along";
+    auto unnamed = store.snapshotHistory(asset_, "save", "", "");
+    ASSERT_EQ(unnamed.outcome, AdjustmentStore::Outcome::Ok);
+    ASSERT_EQ(unnamed.snapshots.size(), 2u);
+    EXPECT_EQ(unnamed.snapshots[1].name, "Snapshot 2");
+
+    // Restore: the quarter turn comes back as a new history step.
+    auto restored = store.snapshotHistory(asset_, "restore", "", id);
+    ASSERT_EQ(restored.outcome, AdjustmentStore::Outcome::Ok) << restored.error;
+    EXPECT_EQ(restored.render_revision, first.render_revision);
+    EXPECT_EQ(restored.history_steps.back().first, "Restore snapshot Quarter turn");
+    EXPECT_EQ(restored.history_index, 3);
+    EXPECT_EQ(store.revisionFor(asset_), first.render_revision);
+
+    // Rename and delete; unknown ids are refused; the empty name too.
+    EXPECT_EQ(store.snapshotHistory(asset_, "rename", "Turned", id).snapshots[0].name, "Turned");
+    EXPECT_EQ(store.snapshotHistory(asset_, "rename", "", id).outcome, AdjustmentStore::Outcome::Invalid);
+    EXPECT_EQ(store.snapshotHistory(asset_, "restore", "", "nope").outcome, AdjustmentStore::Outcome::NotFound);
+    EXPECT_EQ(store.snapshotHistory(asset_, "frobnicate", "", id).outcome, AdjustmentStore::Outcome::Invalid);
+    auto deleted = store.snapshotHistory(asset_, "delete", "", id);
+    ASSERT_EQ(deleted.outcome, AdjustmentStore::Outcome::Ok);
+    ASSERT_EQ(deleted.snapshots.size(), 1u);
+    EXPECT_EQ(deleted.snapshots[0].name, "Snapshot 2");
+
+    // Snapshots outlive undo truncation and a restart, and sit in the sidecar.
+    auto undo = store.stepHistory(asset_, -3, false, 0);
+    ASSERT_EQ(undo.outcome, AdjustmentStore::Outcome::Ok);
+    auto fresh = store.setDocument(asset_, kRotate90, "New branch");
+    EXPECT_EQ(fresh.snapshots.size(), 1u);
+    store.initialize(db_, nullptr, Adjustments::SidecarStore::defaultSpoolRoot(db_path_));
+    auto again = store.snapshotHistory(asset_, "save", "After restart", "");
+    ASSERT_EQ(again.outcome, AdjustmentStore::Outcome::Ok) << again.error;
+    EXPECT_EQ(again.snapshots.size(), 2u);
+    std::ifstream in(sidecarOf(asset_));
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    EXPECT_NE(text.find("\"snapshots\""), std::string::npos);
+    EXPECT_NE(text.find("After restart"), std::string::npos);
+
+    // The document-level cap drops the oldest.
+    MediaDedup::Adjustments::AdjustmentDocument doc;
+    doc.chain = nlohmann::json::array();
+    doc.saveSnapshot("one", 2);
+    doc.saveSnapshot("two", 2);
+    doc.saveSnapshot("three", 2);
+    ASSERT_EQ(doc.snapshots().size(), 2u);
+    EXPECT_EQ(doc.snapshots()[0].name, "two");
+    EXPECT_FALSE(doc.isEmpty()) << "snapshots alone keep the row";
+}
+
 TEST_F(AdjustmentStoreTest, FormatOneRowsAreRekeyedOnStartup)
 {
     auto &store = AdjustmentStore::instance();

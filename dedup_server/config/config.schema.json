@@ -659,6 +659,10 @@
     "type": "int",
     "default": 100
   },
+  "media.adjustments.history.maxSnapshots": {
+    "type": "int",
+    "default": 20
+  },
   "media.adjustments.recipes.builtin": {
     "type": "bool",
     "default": true

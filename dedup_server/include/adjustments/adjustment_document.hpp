@@ -32,7 +32,8 @@ namespace MediaDedup::Adjustments
         int64_t asset_size_bytes = 0;
         std::string updated_at;           // ISO-8601 UTC, informational
         nlohmann::json chain = nlohmann::json::array();   // nodes, the user's order
-        nlohmann::json history = nlohmann::json();        // {"index": n, "steps": [{at, label, chain}]} or null
+        // {"index": n, "steps": [{at, label, chain}], "snapshots": [{id, name, at, chain}]} or null
+        nlohmann::json history = nlohmann::json();
 
         // Parse the sidecar/column text (format 1 or 2). Refuses a newer
         // format version, a malformed chain, and duplicate node ids. Nodes
@@ -64,8 +65,10 @@ namespace MediaDedup::Adjustments
         bool isIdentity(const ToolRegistry &registry) const;
         bool hasNodes() const { return chain.is_array() && !chain.empty(); }
         bool hasHistory() const;
-        // Nothing to keep: no nodes and no history → the row and sidecar go.
-        bool isEmpty() const { return !hasNodes() && !hasHistory(); }
+        bool hasSnapshots() const;
+        // Nothing to keep: no nodes, no history, no snapshots → the row and
+        // sidecar go.
+        bool isEmpty() const { return !hasNodes() && !hasHistory() && !hasSnapshots(); }
 
         // Node ids: 8 base32 characters, unique within the document.
         static std::string newNodeId();
@@ -82,6 +85,27 @@ namespace MediaDedup::Adjustments
         void appendHistoryStep(const std::string &label, int max_entries);
         // Make step `index` the current chain. False when out of range.
         bool jumpHistory(int index);
+
+        // ---- snapshots (CHAIN-7e) ----------------------------------------
+        // Named copies of the chain beside the undo stack: they survive the
+        // step cap and the redo truncation, and restoring one is an ordinary
+        // edit (the caller appends the step). Stored as
+        // history.snapshots[{id, name, at, chain}].
+        struct Snapshot
+        {
+            std::string id;
+            std::string name;
+            std::string at;
+            int node_count = 0;
+        };
+        std::vector<Snapshot> snapshots() const;
+        // Copy the current chain under `name`; the oldest snapshots go past
+        // `max_snapshots`. Returns the new id.
+        std::string saveSnapshot(const std::string &name, int max_snapshots);
+        // Make the snapshot's chain current (fresh node ids). False when unknown.
+        bool restoreSnapshot(const std::string &id, std::string *name = nullptr);
+        bool renameSnapshot(const std::string &id, const std::string &name);
+        bool deleteSnapshot(const std::string &id);
 
         static uint32_t fnv1a32(const std::string &text);
         static std::string nowIso8601();

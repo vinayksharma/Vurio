@@ -74,6 +74,7 @@ namespace MediaDedup::Adjustments
             std::string document_json;
             int history_index = -1;
             std::vector<std::pair<std::string, std::string>> history_steps; // (label, at)
+            std::vector<AdjustmentDocument::Snapshot> snapshots;              // CHAIN-7e
         };
         // Commit a chain. `step_label` names the edit in the photo's history
         // (docs §9.2); the server appends the step. An identity chain for a
@@ -84,6 +85,13 @@ namespace MediaDedup::Adjustments
         // step, or to `index` when `use_index`. Commits that step's chain
         // without appending.
         CommitResult stepHistory(const std::string &file_path, int delta, bool use_index, int index);
+        // CHAIN-7e: named snapshots of the chain. `action` is save (with
+        // `name`), restore, rename (with `name`) or delete (with
+        // `snapshot_id`). Restoring commits the snapshot's chain as a new
+        // history step "Restore snapshot <name>"; the others persist the
+        // document without a step.
+        CommitResult snapshotHistory(const std::string &file_path, const std::string &action,
+                                     const std::string &name, const std::string &snapshot_id);
         // The committed document text of a file ("" when none), for the
         // preview session.
         std::string documentJsonFor(const std::string &file_path) const;
@@ -159,6 +167,7 @@ namespace MediaDedup::Adjustments
         // Shared tail of a commit and an import: row + map + caches + push.
         void storeEntry(const ImageAdjustmentRow &row, const RenderPlan &plan, const DisplayDims &dims);
         int historyMaxEntries() const;
+        int historyMaxSnapshots() const;
         // Shared tail of setDocument/stepHistory: persist `doc` for `file_path`.
         CommitResult commitDocument(const std::string &file_path, AdjustmentDocument &doc, const RenderPlan &plan,
                                     const ScannedFileRow &scanned, const DisplayDims &base);

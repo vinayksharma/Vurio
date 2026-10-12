@@ -710,6 +710,8 @@ service AdjustmentsService {
   // chain is committed like any edit (without appending a new step) and the
   // resulting document is returned. OUT_OF_RANGE when there is no such step.
   rpc StepHistory(StepHistoryRequest) returns (AdjustmentDocumentResponse);
+  // CHAIN-7e: save / restore / rename / delete a named snapshot of the chain.
+  rpc SnapshotHistory(SnapshotRequest) returns (AdjustmentDocumentResponse);
   // CHAIN-5 (docs §9.3): detected-mask backends, models and cache.
   rpc MaskStatus(Empty) returns (MaskStatusResponse);
   rpc ClearMaskCache(Empty) returns (MaskStatusResponse);
@@ -931,6 +933,21 @@ message HistoryStep {
   string at = 2; // ISO-8601 UTC
 }
 
+// CHAIN-7e: a named copy of the chain beside the undo stack.
+message HistorySnapshot {
+  string id = 1;
+  string name = 2;
+  string at = 3; // ISO-8601 UTC
+  int32 node_count = 4;
+}
+
+message SnapshotRequest {
+  string file_path = 1;
+  string action = 2;      // "save" | "restore" | "rename" | "delete"
+  string name = 3;        // save, rename ("" on save = "Snapshot N")
+  string snapshot_id = 4; // restore, rename, delete
+}
+
 message ParamSpec {
   string id = 1;
   string label = 2;
@@ -989,6 +1006,7 @@ message AdjustmentDocumentResponse {
   // CHAIN-1: the photo's persisted undo/redo history (docs §4).
   int32 history_index = 8;
   repeated HistoryStep history_steps = 9;
+  repeated HistorySnapshot snapshots = 10; // CHAIN-7e
 }
 
 message SetAdjustmentsRequest {
@@ -1008,6 +1026,7 @@ message SetAdjustmentsResponse {
   // CHAIN-1: history after this commit.
   int32 history_index = 8;
   repeated HistoryStep history_steps = 9;
+  repeated HistorySnapshot snapshots = 10; // CHAIN-7e
 }
 
 message EditsRootRequest {
