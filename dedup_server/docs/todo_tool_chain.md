@@ -1030,8 +1030,20 @@ step per photo), and the export sheet exports them all with a progress
 count and a summary of failures. RPCs stay per file; the loops are client
 orchestration.
 
-- [ ] Strip selection model and tile ring
-- [ ] Batch recipe apply; batch export sheet
+- [x] Strip selection model and tile ring
+- [x] Batch recipe apply; batch export sheet
+
+7d implemented 2026-10-12 (client only): `ViewerViewModel.selection` (⌘-click
+toggles and pulls the current photo in, ⇧-click extends, ⌘A, Esc, plain
+click collapses), tiles carry a green ring and a check badge; the viewer
+hands the selection's paths to `AdjustmentsViewModel.batchPaths`, and
+`batchTargets` is what recipes and the export sheet act on (two or more
+selected, else the open photo). Recipe apply loops `ApplyRecipe` per photo
+with one history step each and a summary in the message centre; the export
+sheet loops `ExportRendered` with "Exporting n of N", an empty name suffix
+meaning each photo's own recipe name, and a result list with failures.
+Verified: three photos exported (one got " (2)"), a recipe appended to all
+three, each undone with ⌘Z afterwards.
 
 **7e — History snapshots.** `history.snapshots: [{id, name, at, chain}]` in
 the document (persisted with the history column and the sidecar, excluded
