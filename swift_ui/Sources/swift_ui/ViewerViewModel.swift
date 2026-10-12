@@ -115,6 +115,11 @@ final class ViewerViewModel: ObservableObject {
 
     @Published var items: [ViewerItem] = []
     @Published var selectedID: String?
+    /// CHAIN-7d: the strip's multi-selection (image ids), beside the
+    /// current photo. ⌘-click toggles (the current photo joins the first
+    /// time), ⇧-click extends from the current photo, ⌘A takes every tile,
+    /// Esc clears. Recipes and exports act on it when it holds two or more.
+    @Published var selection: Set<String> = []
     @Published private(set) var isGroupMode = false
     @Published private(set) var isLoading = false
     /// The last timeline load ended without producing anything because the
@@ -290,6 +295,29 @@ final class ViewerViewModel: ObservableObject {
         guard selectedID != id else { return }
         selectedID = id
     }
+
+    // MARK: - CHAIN-7d: multi-selection
+
+    /// The selection's file paths in strip order.
+    var selectionPaths: [String] {
+        images.filter { selection.contains($0.id) }.map(\.filePath)
+    }
+
+    func toggleSelection(_ id: String) {
+        if selection.isEmpty, let current = selectedID, current != id { selection.insert(current) }
+        if selection.contains(id) { selection.remove(id) } else { selection.insert(id) }
+    }
+
+    /// Select every tile between the current photo and `id` (inclusive).
+    func extendSelection(to id: String) {
+        let all = images
+        guard let to = all.firstIndex(where: { $0.id == id }) else { return }
+        let from = all.firstIndex { $0.id == selectedID } ?? to
+        for i in min(from, to)...max(from, to) { selection.insert(all[i].id) }
+    }
+
+    func selectAll() { selection = Set(images.map(\.id)) }
+    func clearSelection() { selection = [] }
 
     func selectNext() { step(1) }
     func selectPrevious() { step(-1) }

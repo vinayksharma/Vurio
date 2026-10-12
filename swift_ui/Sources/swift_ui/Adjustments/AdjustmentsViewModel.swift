@@ -45,6 +45,16 @@ final class AdjustmentsViewModel: ObservableObject {
     }
     @Published private(set) var exportDefaults = ExportDefaults()
     @Published var isExportPresented = false
+    /// CHAIN-7d: the strip's multi-selection as file paths (strip order),
+    /// kept current by the viewer. Recipes and exports act on `batchTargets`.
+    @Published var batchPaths: [String] = []
+    /// The photos a recipe or an export acts on: the multi-selection when it
+    /// holds two or more, else the open photo.
+    var batchTargets: [String] {
+        if batchPaths.count >= 2 { return batchPaths }
+        return filePath.map { [$0] } ?? []
+    }
+    var isBatch: Bool { batchPaths.count >= 2 }
     /// CHAIN-4 view modes (docs §9.2): a lane alone over grey, a lane's
     /// coverage tinted red. View-only, never committed.
     @Published private(set) var soloLaneID: String?
@@ -1128,7 +1138,41 @@ final class AdjustmentsViewModel: ObservableObject {
     /// Apply a recipe onto the photo (replace, append, or insert at
     /// `index`), then reload the chain the server committed.
     func applyRecipe(_ recipeID: String, mode: String, index: Int = 0) {
-        Task { await applyRecipeNow(recipeID, mode: mode, index: index) }
+        if isBatch && index == 0 {
+            Task { await applyRecipeToBatch(recipeID, mode: mode) }
+        } else {
+            Task { await applyRecipeNow(recipeID, mode: mode, index: index) }
+        }
+    }
+
+    /// CHAIN-7d: the recipe onto every photo of the strip selection, one
+    /// commit (one history step) per photo; the open photo reloads, every
+    /// other re-keys its tiles through the usual notification.
+    private func applyRecipeToBatch(_ recipeID: String, mode: String) async {
+        await flushPendingCommit()
+        if isCropEditing { exitCropEditing() }
+        let targets = batchTargets
+        var failed: [String] = []
+        for path in targets {
+            guard let response = await RecipesModel.shared.apply(recipeID, to: path, mode: mode, index: 0) else {
+                failed.append(URL(fileURLWithPath: path).lastPathComponent)
+                continue
+            }
+            if path == filePath { await reloadDocument() }
+            NotificationCenter.default.post(name: .adjustmentsChanged, object: nil, userInfo: [
+                "filePath": path,
+                "renderRevision": Int(response.renderRevision),
+                "displayWidth": Int(response.displayWidth),
+                "displayHeight": Int(response.displayHeight),
+            ])
+        }
+        let name = RecipesModel.shared.recipes.first { $0.id == recipeID }?.name ?? "recipe"
+        let done = targets.count - failed.count
+        if failed.isEmpty {
+            MessageCenter.shared.post("Applied \(name) to \(done) photos")
+        } else {
+            MessageCenter.shared.post("Applied \(name) to \(done) of \(targets.count) photos; failed: \(failed.prefix(3).joined(separator: ", "))")
+        }
     }
 
     private func applyRecipeNow(_ recipeID: String, mode: String, index: Int) async {

@@ -151,6 +151,12 @@ struct ViewerView: View {
                 adjustments.setShowBefore(held)
             }
         )
+        .onChange(of: model.selection) { _, _ in
+            adjustments.batchPaths = model.selectionPaths
+        }
+        .onChange(of: model.items.count) { _, _ in
+            adjustments.batchPaths = model.selectionPaths
+        }
         .onChange(of: model.selectedID) { _, _ in
             // A ramp still running would fight the reset below, and it is
             // zooming an image that is on its way out.
@@ -764,6 +770,7 @@ struct ViewerView: View {
 
     private func stripTile(_ image: ViewerImage) -> some View {
         let isSelected = image.id == model.selectedID
+        let inSelection = model.selection.contains(image.id)
         let tile = ThumbnailGeometry.tileSize(height: stripTileHeight,
                                               displayWidth: image.displayWidth,
                                               displayHeight: image.displayHeight)
@@ -785,8 +792,36 @@ struct ViewerView: View {
                     lineWidth: isSelected ? 3 : (image.isEjected ? 2 : 1)
                 )
         )
+        // CHAIN-7d: a tile in the multi-selection carries a second ring and
+        // a check badge; the current photo keeps its accent ring.
+        .overlay(alignment: .topTrailing) {
+            if inSelection {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.white, Theme.success)
+                    .padding(4)
+            }
+        }
+        .overlay {
+            if inSelection {
+                RoundedRectangle(cornerRadius: 8)
+                    .inset(by: isSelected ? 3 : 1)
+                    .stroke(Theme.success, lineWidth: 2)
+            }
+        }
         .contentShape(Rectangle())
-        .onTapGesture { model.select(image.id) }
+        .onTapGesture {
+            let mods = NSEvent.modifierFlags
+            if mods.contains(.command) {
+                model.toggleSelection(image.id)
+            } else if mods.contains(.shift) {
+                model.extendSelection(to: image.id)
+            } else {
+                // A plain click is a single selection again.
+                model.clearSelection()
+                model.select(image.id)
+            }
+        }
     }
 
     // MARK: - Keyboard
@@ -810,11 +845,17 @@ struct ViewerView: View {
                         adjustments.isRulerMode = false
                     } else if adjustments.isCropEditing {
                         adjustments.exitCropEditing()
+                    } else if !model.selection.isEmpty {
+                        model.clearSelection()
                     } else {
                         onClose()
                     }
                 }
                     .keyboardShortcut(.escape, modifiers: [])
+                    .hidden()
+                // CHAIN-7d: select every tile in the strip.
+                Button("") { model.selectAll() }
+                    .keyboardShortcut("a", modifiers: [.command])
                     .hidden()
                 Button("") { adjustments.isCollapsed.toggle() }
                     .keyboardShortcut("a", modifiers: [.command, .option])

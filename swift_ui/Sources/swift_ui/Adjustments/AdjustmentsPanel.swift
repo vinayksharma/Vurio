@@ -168,14 +168,17 @@ struct AdjustmentsPanel: View {
                 saveRecipeShown = true
             }
             .disabled(!hasImage || !model.hasEdits)
-            Menu("Replace with recipe") {
+            // CHAIN-7d: with two or more strip tiles selected the recipe
+            // goes onto every one of them.
+            let batch = model.isBatch ? " (\(model.batchPaths.count) photos)" : ""
+            Menu("Replace with recipe" + batch) {
                 if recipes.recipes.isEmpty { Text("No recipes yet") }
                 ForEach(recipes.recipes) { recipe in
                     Button(recipe.name) { model.applyRecipe(recipe.id, mode: "replace") }
                 }
             }
             .disabled(!hasImage)
-            Menu("Add recipe to chain") {
+            Menu("Add recipe to chain" + batch) {
                 if recipes.recipes.isEmpty { Text("No recipes yet") }
                 ForEach(recipes.recipes) { recipe in
                     Button(recipe.name) { model.applyRecipe(recipe.id, mode: "append") }
@@ -194,7 +197,7 @@ struct AdjustmentsPanel: View {
                 .disabled(!hasImage)
             Divider()
             // CHAIN-6 (docs §9.2): the same sheet the viewer's ⇧⌘E opens.
-            Button("Export…") { model.isExportPresented = true }
+            Button("Export…" + (model.isBatch ? " (\(model.batchPaths.count) photos)" : "")) { model.isExportPresented = true }
                 .disabled(!hasImage)
         } label: {
             Image(systemName: "book.closed")

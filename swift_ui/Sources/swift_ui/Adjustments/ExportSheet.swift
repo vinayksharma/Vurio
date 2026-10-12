@@ -68,6 +68,13 @@ struct ExportSheet: View {
     @State private var isRunning = false
     @State private var error: String?
     @State private var written: Vurio_Dedup_ExportResponse?
+    // CHAIN-7d: a batch over the strip selection.
+    @State private var progress = 0
+    @State private var batchResults: [(path: String, result: Result<Vurio_Dedup_ExportResponse, Error>)] = []
+    @State private var batchDone = false
+
+    private var paths: [String] { model.batchTargets }
+    private var isBatch: Bool { paths.count > 1 }
 
     private static let formats: [(id: String, label: String)] = [
         ("jpeg", "JPEG"), ("png", "PNG"), ("tiff", "TIFF 16-bit"),
@@ -82,7 +89,9 @@ struct ExportSheet: View {
     }
     private var cleanSuffix: String {
         let trimmed = suffix.trimmingCharacters(in: CharacterSet(charactersIn: " ."))
-        return trimmed.isEmpty ? "edit" : trimmed
+        // A batch with no suffix lets the server name each file after its
+        // own latest recipe (or "edit").
+        return trimmed.isEmpty ? (isBatch ? "" : "edit") : trimmed
     }
     private var maxSide: Int { Int(maxSideText.trimmingCharacters(in: .whitespaces)) ?? 0 }
     private var canExport: Bool {
@@ -91,10 +100,12 @@ struct ExportSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Export")
+            Text(isBatch ? "Export \(paths.count) photos" : "Export")
                 .font(.system(size: 13, weight: .semibold))
             if let written {
                 resultView(written)
+            } else if batchDone {
+                batchResultView
             } else {
                 form
             }
@@ -104,7 +115,7 @@ struct ExportSheet: View {
         .onAppear {
             format = ExportSettings.format(fallback: model.exportDefaults.format)
             quality = ExportSettings.quality(fallback: model.exportDefaults.quality)
-            suffix = model.defaultExportSuffix
+            suffix = isBatch ? "" : model.defaultExportSuffix
         }
     }
 
@@ -164,10 +175,15 @@ struct ExportSheet: View {
                     .truncationMode(.middle)
                     .frame(maxWidth: 150, alignment: .trailing)
                     .fixedSize(horizontal: true, vertical: false)
-                TextField("edit", text: $suffix)
+                TextField(isBatch ? "each photo's recipe, or edit" : "edit", text: $suffix)
                     .textFieldStyle(.roundedBorder)
                     .frame(minWidth: 80)
                 Text(".\(extensionText)")
+            }
+            if isBatch {
+                Text("\(paths.count) photos from the strip selection, each rendered with its own chain.")
+                    .font(.caption)
+                    .foregroundColor(Theme.textSecondary)
             }
             Text("A new file in the chosen folder. The original is never changed, and an existing name gets “ (2)”, “ (3)”… instead of being replaced. Camera metadata travels along, upright and without the embedded thumbnail.")
                 .font(.caption)
@@ -182,7 +198,7 @@ struct ExportSheet: View {
             HStack {
                 if isRunning {
                     ProgressView().controlSize(.small)
-                    Text("Rendering at full resolution…")
+                    Text(isBatch ? "Exporting \(progress) of \(paths.count)…" : "Rendering at full resolution…")
                         .font(.caption)
                         .foregroundColor(Theme.textSecondary)
                 }
@@ -225,19 +241,27 @@ struct ExportSheet: View {
         }
     }
 
-    private func run() {
-        error = nil
-        isRunning = true
-        ExportSettings.folder = folder
-        ExportSettings.remember(format: format, quality: quality, limitEnabled: limitEnabled, maxSide: maxSide)
-        let request = Vurio_Dedup_ExportRequest.with {
-            $0.filePath = model.filePath ?? ""
+    private func request(for path: String) -> Vurio_Dedup_ExportRequest {
+        Vurio_Dedup_ExportRequest.with {
+            $0.filePath = path
             $0.folder = folder
             $0.format = format
             $0.quality = Int32(format == "jpeg" ? quality : 0)
             $0.maxSide = Int32(limitEnabled ? maxSide : 0)
             $0.nameSuffix = cleanSuffix
         }
+    }
+
+    private func run() {
+        error = nil
+        isRunning = true
+        ExportSettings.folder = folder
+        ExportSettings.remember(format: format, quality: quality, limitEnabled: limitEnabled, maxSide: maxSide)
+        if isBatch {
+            runBatch()
+            return
+        }
+        let request = request(for: model.filePath ?? "")
         Task {
             let result = await model.exportRendered(request)
             isRunning = false
@@ -247,6 +271,63 @@ struct ExportSheet: View {
                 MessageCenter.shared.post("Exported \(URL(fileURLWithPath: response.writtenPath).lastPathComponent)")
             case .failure(let failure):
                 error = failure.localizedDescription
+            }
+        }
+    }
+
+    /// CHAIN-7d: one export per selected photo, in strip order; the sheet
+    /// counts them up and then lists what was written and what failed.
+    private func runBatch() {
+        let targets = paths
+        progress = 0
+        batchResults = []
+        Task {
+            for path in targets {
+                progress += 1
+                let result = await model.exportRendered(request(for: path))
+                batchResults.append((path, result))
+            }
+            isRunning = false
+            batchDone = true
+            let ok = batchResults.filter { if case .success = $0.result { return true } else { return false } }.count
+            MessageCenter.shared.post(ok == targets.count ? "Exported \(ok) photos" : "Exported \(ok) of \(targets.count) photos")
+        }
+    }
+
+    private var batchResultView: some View {
+        let successes = batchResults.compactMap { r -> Vurio_Dedup_ExportResponse? in
+            if case .success(let v) = r.result { return v } else { return nil }
+        }
+        let failures = batchResults.compactMap { r -> (String, String)? in
+            if case .failure(let e) = r.result { return (URL(fileURLWithPath: r.path).lastPathComponent, e.localizedDescription) }
+            return nil
+        }
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: failures.isEmpty ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundColor(failures.isEmpty ? Theme.success : Theme.warning)
+                Text("Exported \(successes.count) of \(batchResults.count) photos to \((folder as NSString).abbreviatingWithTildeInPath)")
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+            }
+            ForEach(failures.prefix(5), id: \.0) { name, why in
+                Text("\(name): \(why)")
+                    .font(.caption)
+                    .foregroundColor(Theme.error)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if failures.count > 5 {
+                Text("… and \(failures.count - 5) more").font(.caption).foregroundColor(Theme.textSecondary)
+            }
+            HStack {
+                Spacer()
+                Button("Show in Finder") {
+                    let urls = successes.map { URL(fileURLWithPath: $0.writtenPath) }
+                    if urls.isEmpty { NSWorkspace.shared.open(URL(fileURLWithPath: folder, isDirectory: true)) }
+                    else { NSWorkspace.shared.activateFileViewerSelecting(urls) }
+                }
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
             }
         }
     }
