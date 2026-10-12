@@ -49,7 +49,8 @@ The server is built with a modular, layered architecture:
 - **yaml-cpp** (YAML configuration parsing)
 - **ImageMagick++** (Image processing and RAW file support)
 - **LibRaw** (RAW image file validation)
-- **libtiff** (TIFF file validation)
+- **libtiff** (TIFF file validation, 16-bit TIFF export)
+- **libexif** (EXIF carried into exports; CHAIN-6)
 - **pkg-config** (for dependency detection)
 - **Python 3** (for ONNX model downloading)
 - **huggingface_hub** Python package (for automatic model downloads)
@@ -73,7 +74,7 @@ The server is built with a modular, layered architecture:
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
 # Install all required dependencies
-brew install cmake poco sqlite3 pkg-config imagemagick libraw libtiff yaml-cpp
+brew install cmake poco sqlite3 pkg-config imagemagick libraw libtiff libexif yaml-cpp
 
 # Install Python dependencies for ONNX models
 pip3 install huggingface_hub
@@ -90,7 +91,7 @@ pip3 install huggingface_hub
 ```bash
 sudo apt update
 sudo apt install build-essential cmake libpoco-dev libsqlite3-dev \
-    pkg-config libyaml-cpp-dev libmagick++-dev libraw-dev libtiff-dev \
+    pkg-config libyaml-cpp-dev libmagick++-dev libraw-dev libtiff-dev libexif-dev \
     python3-pip
 pip3 install huggingface_hub
 ```
@@ -99,7 +100,7 @@ pip3 install huggingface_hub
 
 ```bash
 sudo yum install gcc-c++ cmake3 poco-devel sqlite-devel pkgconfig \
-    yaml-cpp-devel ImageMagick-c++-devel libraw-devel libtiff-devel \
+    yaml-cpp-devel ImageMagick-c++-devel libraw-devel libtiff-devel libexif-devel \
     python3-pip
 pip3 install huggingface_hub
 ```
@@ -390,7 +391,7 @@ eval "$(/opt/homebrew/bin/brew shellenv)"  # Apple Silicon
 eval "$(/usr/local/bin/brew shellenv)"     # Intel
 
 # Verify dependencies are installed
-brew list | grep -E "(poco|yaml-cpp|imagemagick|libraw|libtiff)"
+brew list | grep -E "(poco|yaml-cpp|imagemagick|libraw|libtiff|libexif)"
 ```
 
 **Issue: "ImageMagick not found"**
