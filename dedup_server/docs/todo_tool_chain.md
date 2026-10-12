@@ -988,8 +988,17 @@ op is ignored). Client: one editor per component, component rows with
 op/source pickers, add/remove, pins for the selected component; the lane
 row summarises "radial − luminance".
 
-- [ ] View model keyed per component; `LaneInspector` component list
-- [ ] `MaskComponent` round-trips `version` and unknown keys
+- [x] View model keyed per component; `LaneInspector` component list
+- [x] `MaskComponent` round-trips `version` and unknown keys
+
+7b implemented 2026-10-12 (client only): `maskTools` keyed per lane hold one
+editor per component, `selectedMaskComponent` picks the one the inspector
+and the pins edit; `MaskComponentRow` (op picker from the second row, source
+picker, remove), a "Combine with…" menu (Subtract / Intersect / Add × every
+source), the lane row summarises "prompt ∩ radial". Verified: a radial
+component intersecting the SAM-refined prompt mask, its pins live on the
+picture, the mask stopping at the ellipse edge. Also fixed on the way: the
+node shortcuts (⌘⌫, ⌘D, ⌘E, ⌥↑/↓) read the selection when the key fires.
 
 **7c — Brush mask.** Procedural source `brush`: `strokes` (new
 `ParamSpec::Kind::Strokes`, wire kind `"strokes"`: `[{r, e, p:[[x,y],…]}]`,
