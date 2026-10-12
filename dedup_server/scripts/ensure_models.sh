@@ -86,9 +86,17 @@ ASSETS=(
 #       export on library photos at ~80 ms vs ~105 ms (CPU).
 #   MediaPipe selfie segmentation ... onnx-community/mediapipe_selfie_segmentation
 #       (Apache-2.0); input pixel_values (256², [0,1]), output alphas.
+#   SlimSAM-77 (CHAIN-5b) ... Xenova/slimsam-77-uniform (Apache-2.0), the
+#       ONNX export of the pruned SAM ViT-B; fp32 (the int8 export disagreed
+#       with it on 3 of 10 library photos). Encoder: pixel_values (1024²
+#       padded, ImageNet mean/std) -> image_embeddings + positional
+#       embeddings; decoder: input_points/input_labels (box corners as
+#       labels 2/3, clicks as 1) -> pred_masks (3 × 256²) + iou_scores.
 OPTIONAL_ASSETS=(
   "Prompt mask model (CLIPSeg int8)|clipseg-rd64-refined-q8.onnx|135000000|08|049010b152839f339d6115e668d560860d0031f7b750b24828c07167ba68812a|$HF/Xenova/clipseg-rd64-refined/resolve/main/onnx/model_quantized.onnx"
   "People mask model (MediaPipe selfie segmentation)|selfie-segmentation.onnx|450000|08|3241ac4ad8aa35bdaf33946776db29f7c283a413aa0b0dacb9483594b4531aad|$HF/onnx-community/mediapipe_selfie_segmentation/resolve/main/onnx/model.onnx"
+  "Mask sharpening encoder (SlimSAM-77)|slimsam-encoder.onnx|22500000|08|9f8433273a6750b587779baa0cf5508111001bf7e7acfcf585d370139fd366d0|$HF/Xenova/slimsam-77-uniform/resolve/main/onnx/vision_encoder.onnx"
+  "Mask sharpening decoder (SlimSAM-77)|slimsam-decoder.onnx|16000000|08|f4514391764fbd56e08e119060d874ecd7d52994bfb1968af159e12d4943b5bb|$HF/Xenova/slimsam-77-uniform/resolve/main/onnx/prompt_encoder_mask_decoder.onnx"
 )
 
 file_size() { stat -f%z "$1" 2>/dev/null || stat -c%s "$1" 2>/dev/null || echo 0; }

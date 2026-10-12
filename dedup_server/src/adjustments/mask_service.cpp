@@ -249,6 +249,20 @@ namespace MediaDedup::Adjustments
             s.note = prompt.available ? "CLIPSeg rd64-refined (int8)" : prompt.note;
             out.push_back(s);
         }
+        {
+            // CHAIN-5b: not a source of its own; the sharpener behind the
+            // prompt, people and portable subject masks.
+            auto refine = MaskDetectors::refineStatus();
+            SourceStatus s;
+            s.id = "refine";
+            s.backend = "onnx";
+            s.model_path = refine.model_path;
+            s.model_present = refine.model_present;
+            s.loaded = refine.loaded;
+            s.available = enabled && refine.available;
+            s.note = refine.available ? "SlimSAM-77 sharpens prompt, people and portable subject masks" : refine.note;
+            out.push_back(s);
+        }
         if (!enabled)
             for (auto &s : out)
                 s.note = "detected masks disabled (media.adjustments.masks.enabled)";
@@ -468,6 +482,9 @@ namespace MediaDedup::Adjustments
         }
         if (test)
             return test(job.source, job.params, base, out, error);
+        bool wants_refine = job.params.is_object() && job.params.contains("_refine");
+        bool platform = false;
+        cv::Mat coarse;
         if (job.source == "prompt")
         {
             std::string text = job.params.is_object() && job.params.contains("text") && job.params["text"].is_string()
@@ -478,14 +495,42 @@ namespace MediaDedup::Adjustments
                 out = cv::Mat(base.rows, base.cols, CV_32FC1, cv::Scalar(0.0f));
                 return true;
             }
-            return MaskDetectors::prompt(base, text, out, &error);
+            if (!MaskDetectors::prompt(base, text, coarse, &error))
+                return false;
         }
-        if (job.source == "people")
-            return MaskDetectors::people(base, out, &error);
-        if (job.source == "subject")
-            return MaskDetectors::subject(base, out, &error);
-        error = "unknown detected source " + job.source;
-        return false;
+        else if (job.source == "people")
+        {
+            if (!MaskDetectors::people(base, coarse, &error))
+                return false;
+        }
+        else if (job.source == "subject")
+        {
+            if (!MaskDetectors::subject(base, coarse, &error, &platform))
+                return false;
+        }
+        else
+        {
+            error = "unknown detected source " + job.source;
+            return false;
+        }
+        // CHAIN-5b: SAM sharpens the coarse coverage; a failure keeps it.
+        if (wants_refine && !platform)
+        {
+            MaskDetectors::RefineReport report;
+            std::string refine_error;
+            cv::Mat refined;
+            if (MaskDetectors::refine(base, coarse, refined, &refine_error, &report))
+            {
+                logger().information("Mask %s refined for %s: %d regions, %d sharpened, %d kept, encoder %.0f ms, total %.0f ms",
+                                     job.source, job.file_path, report.components, report.refined, report.kept_coarse,
+                                     report.encoder_ms, report.total_ms);
+                out = refined;
+                return true;
+            }
+            logger().warning("Mask %s for %s stays coarse: %s", job.source, job.file_path, refine_error);
+        }
+        out = coarse;
+        return true;
     }
 
     MaskService::Status MaskService::runOrWait(const Job &job, cv::Mat &out)
@@ -538,11 +583,35 @@ namespace MediaDedup::Adjustments
         return Status::Unavailable;
     }
 
+    nlohmann::json MaskService::effectiveParams(const std::string &source, const nlohmann::json &canonical_params) const
+    {
+        // CHAIN-5b: the key says whether SAM will refine, so a mask cached
+        // before the model arrived is not mistaken for a refined one.
+        if (source != "prompt" && source != "people" && source != "subject")
+            return canonical_params;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (test_detector_)
+                return canonical_params;
+        }
+        if (canonical_params.is_object() && canonical_params.contains("refine") &&
+            canonical_params["refine"].is_boolean() && !canonical_params["refine"].get<bool>())
+            return canonical_params;
+        if (source == "subject" && MaskDetectors::subjectBackendRegistered())
+            return canonical_params; // Vision's mask is sharp already
+        if (!MaskDetectors::refineAvailable())
+            return canonical_params;
+        nlohmann::json effective = canonical_params.is_object() ? canonical_params : nlohmann::json::object();
+        effective["_refine"] = "slimsam";
+        return effective;
+    }
+
     MaskService::Status MaskService::coverage(const std::string &file_path, const std::string &source,
-                                              const nlohmann::json &canonical_params, bool inline_compute, cv::Mat &out)
+                                              const nlohmann::json &params, bool inline_compute, cv::Mat &out)
     {
         if (!available(source))
             return Status::Unavailable;
+        nlohmann::json canonical_params = effectiveParams(source, params);
         std::string key = cacheKey(file_path, source, canonical_params);
         {
             std::lock_guard<std::mutex> lock(mutex_);

@@ -173,6 +173,8 @@ void GrpcServerCore::start(const std::string& instance_dir,
             mc.cache_dir = (std::filesystem::path(cache_root) / "masks").string();
             mc.models.prompt_model = cfg ? cfg->getPropertyValue<std::string>("media.adjustments.masks.promptModelPath", "models/clipseg-rd64-refined-q8.onnx") : "models/clipseg-rd64-refined-q8.onnx";
             mc.models.people_model = cfg ? cfg->getPropertyValue<std::string>("media.adjustments.masks.peopleModelPath", "models/selfie-segmentation.onnx") : "models/selfie-segmentation.onnx";
+            mc.models.refine_encoder = cfg ? cfg->getPropertyValue<std::string>("media.adjustments.masks.refineEncoderPath", "models/slimsam-encoder.onnx") : "models/slimsam-encoder.onnx";
+            mc.models.refine_decoder = cfg ? cfg->getPropertyValue<std::string>("media.adjustments.masks.refineDecoderPath", "models/slimsam-decoder.onnx") : "models/slimsam-decoder.onnx";
             mc.models.use_coreml = cfg ? cfg->getPropertyValue<bool>("media.adjustments.masks.useCoreML", false) : false;
             std::filesystem::path model_dir = std::filesystem::path(mc.models.prompt_model).parent_path();
             if (model_dir.empty()) model_dir = "models";

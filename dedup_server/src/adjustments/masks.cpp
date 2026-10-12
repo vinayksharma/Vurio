@@ -266,6 +266,19 @@ namespace MediaDedup::Adjustments
                 schema_.number("threshold", "Threshold", 0, 1, 0.5, 0.01);
                 schema_.number("softness", "Softness", 0, 0.5, 0.15, 0.01);
             }
+
+            // CHAIN-5b: SAM sharpening of a model's coarse coverage. Part of
+            // the detector params (off = a different mask), ignored when the
+            // model is not installed.
+            void refineParam()
+            {
+                schema_.flag("refine", "Sharpen edges (SAM)", true);
+            }
+            static nlohmann::json withRefine(nlohmann::json j, const ParamState &s)
+            {
+                j["refine"] = s.number("refine", 1) != 0;
+                return j;
+            }
         };
 
         class SubjectMask final : public DetectedMask
@@ -278,7 +291,14 @@ namespace MediaDedup::Adjustments
                 descriptor_.category = ToolCategory::Mask;
                 descriptor_.icon = "person.crop.rectangle";
                 descriptor_.summary = "subject";
+                refineParam();
                 shapeParams();
+            }
+
+        protected:
+            nlohmann::json detectorParams(const ParamState &s) const override
+            {
+                return withRefine(nlohmann::json::object(), s);
             }
         };
 
@@ -292,7 +312,14 @@ namespace MediaDedup::Adjustments
                 descriptor_.category = ToolCategory::Mask;
                 descriptor_.icon = "person.2";
                 descriptor_.summary = "people";
+                refineParam();
                 shapeParams();
+            }
+
+        protected:
+            nlohmann::json detectorParams(const ParamState &s) const override
+            {
+                return withRefine(nlohmann::json::object(), s);
             }
         };
 
@@ -329,6 +356,7 @@ namespace MediaDedup::Adjustments
                 descriptor_.icon = "text.magnifyingglass";
                 descriptor_.summary = "{text}";
                 schema_.text("text", "Describe it", "");
+                refineParam();
                 shapeParams();
             }
 
@@ -351,7 +379,7 @@ namespace MediaDedup::Adjustments
                     space = false;
                     norm += static_cast<char>(std::tolower(c));
                 }
-                return nlohmann::json{{"text", norm}};
+                return withRefine(nlohmann::json{{"text", norm}}, s);
             }
         };
     }

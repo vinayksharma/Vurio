@@ -271,9 +271,10 @@ TEST_F(ServiceFixture, UnavailableSourcesAndDisabledMasksRenderLanesAsNoOps)
 TEST_F(ServiceFixture, DetectedMaskFollowsThePictureThroughGeometryAboveTheSplit)
 {
     configure();
-    // Prime the mask inline so the render finds it.
+    // Prime the mask inline so the render finds it, under the detector
+    // params the registry serialises (CHAIN-5b added `refine` to them).
     cv::Mat prime;
-    ASSERT_EQ(MaskService::instance().coverage("/p/a.jpg", "subject", json::object(), true, prime), MaskService::Status::Ready);
+    ASSERT_EQ(MaskService::instance().coverage("/p/a.jpg", "subject", json{{"refine", true}}, true, prime), MaskService::Status::Ready);
 
     // Crop the left half, turn clockwise, then a split whose lane blacks
     // out the subject. The feature at base (100,100) lands at (100,100)
@@ -399,4 +400,117 @@ TEST(MaskDetectorsTest, ClipSegFindsAColouredSquareWhenTheModelIsPresent)
     EXPECT_TRUE(MaskDetectors::promptStatus().loaded);
     MaskDetectors::unload();
     EXPECT_FALSE(MaskDetectors::promptStatus().loaded);
+}
+
+// ---- CHAIN-5b: SAM refinement -------------------------------------------
+
+TEST(MaskDetectorsTest, RefinePromptsComeFromTheCoarseMasksRegions)
+{
+    // Two things and a speck: a soft disc, a smaller square, a 3×3 dot.
+    cv::Mat coarse(300, 500, CV_32FC1, cv::Scalar(0.0f));
+    cv::circle(coarse, cv::Point(150, 150), 80, cv::Scalar(1.0f), cv::FILLED);
+    cv::GaussianBlur(coarse, coarse, cv::Size(0, 0), 12);
+    coarse(cv::Rect(380, 60, 60, 60)).setTo(0.9f);
+    coarse(cv::Rect(470, 280, 3, 3)).setTo(1.0f);
+    auto prompts = MaskDetectors::refinePrompts(coarse);
+    ASSERT_EQ(prompts.size(), 2u) << "the speck is below the area floor";
+    EXPECT_GT(prompts[0].area, prompts[1].area) << "largest first";
+    EXPECT_TRUE(prompts[0].box.contains(cv::Point(150, 150)));
+    EXPECT_TRUE(prompts[0].box.contains(cv::Point(150 - 70, 150)));
+    EXPECT_FALSE(prompts[0].box.contains(cv::Point(400, 90)));
+    EXPECT_TRUE(prompts[1].box.contains(cv::Point(410, 90)));
+    ASSERT_FALSE(prompts[0].positives.empty());
+    EXPECT_LT(cv::norm(prompts[0].positives[0] - cv::Point(150, 150)), 12.0) << "the deepest interior point is the centre";
+    EXPECT_EQ(prompts[0].region.type(), CV_8UC1);
+    EXPECT_NE(prompts[0].region.at<uint8_t>(150, 150), 0);
+    EXPECT_EQ(prompts[0].region.at<uint8_t>(90, 410), 0);
+    for (const auto &p : prompts)
+        for (const cv::Point &q : p.positives)
+            EXPECT_NE(p.region.at<uint8_t>(q), 0) << "positives lie inside their region";
+    // Faint everywhere: noise, nothing to refine.
+    cv::Mat faint(300, 500, CV_32FC1, cv::Scalar(0.0f));
+    faint(cv::Rect(100, 100, 100, 100)).setTo(0.2f);
+    EXPECT_TRUE(MaskDetectors::refinePrompts(faint).empty());
+    // Many blobs: capped.
+    cv::Mat many(300, 500, CV_32FC1, cv::Scalar(0.0f));
+    for (int i = 0; i < 10; ++i)
+        many(cv::Rect(10 + i * 48, 100, 30, 30)).setTo(1.0f);
+    EXPECT_EQ(MaskDetectors::refinePrompts(many, 4).size(), 4u);
+}
+
+TEST(MaskDetectorsTest, EffectiveParamsCarryTheRefineMarkerOnlyWhenSamCanRun)
+{
+    MaskDetectors::Models none;
+    MaskDetectors::configure(none);
+    auto &svc = MaskService::instance();
+    svc.setDetectorForTest(nullptr);
+    json p{{"text", "the sky"}, {"refine", true}};
+    EXPECT_EQ(svc.effectiveParams("prompt", p), p) << "no model: the key is the component's params";
+    EXPECT_EQ(svc.effectiveParams("faces", p), p);
+    MaskDetectors::Models m;
+    m.refine_encoder = "models/slimsam-encoder.onnx";
+    m.refine_decoder = "models/slimsam-decoder.onnx";
+    if (!std::filesystem::exists(m.refine_encoder) || !std::filesystem::exists(m.refine_decoder))
+        GTEST_SKIP() << "SlimSAM model not present (dedup_server/scripts/ensure_models.sh)";
+    MaskDetectors::configure(m);
+    EXPECT_TRUE(MaskDetectors::refineAvailable());
+    json with = svc.effectiveParams("prompt", p);
+    EXPECT_NE(with, p);
+    EXPECT_EQ(with.value("_refine", ""), "slimsam");
+    EXPECT_NE(MaskService::cacheKey("/p/a.jpg", "prompt", with), MaskService::cacheKey("/p/a.jpg", "prompt", p))
+        << "a mask cached before the model arrived is not mistaken for a refined one";
+    json off{{"text", "the sky"}, {"refine", false}};
+    EXPECT_EQ(svc.effectiveParams("prompt", off), off) << "the lane's toggle wins";
+    EXPECT_EQ(svc.effectiveParams("faces", p), p) << "faces are never refined";
+    MaskDetectors::configure(none);
+    EXPECT_FALSE(MaskDetectors::refineAvailable());
+}
+
+TEST(MaskDetectorsTest, SlimSamSharpensABlurryMaskWhenTheModelIsPresent)
+{
+    MaskDetectors::Models m;
+    m.refine_encoder = "models/slimsam-encoder.onnx";
+    m.refine_decoder = "models/slimsam-decoder.onnx";
+    if (!std::filesystem::exists(m.refine_encoder) || !std::filesystem::exists(m.refine_decoder))
+        GTEST_SKIP() << "SlimSAM model not present (dedup_server/scripts/ensure_models.sh)";
+    MaskDetectors::configure(m);
+    EXPECT_TRUE(MaskDetectors::refineStatus().available);
+    // A red rectangle on green grass, and the kind of coarse mask CLIPSeg
+    // gives: the right place, soft and overflowing.
+    cv::Mat img(512, 768, CV_8UC3, cv::Scalar(40, 140, 40));
+    cv::Rect truth_rect(420, 150, 220, 200);
+    img(truth_rect).setTo(cv::Scalar(30, 30, 220));
+    cv::Mat truth(img.size(), CV_8UC1, cv::Scalar(0));
+    truth(truth_rect).setTo(255);
+    cv::Mat coarse(img.size(), CV_32FC1, cv::Scalar(0.0f));
+    coarse(cv::Rect(380, 120, 300, 260)).setTo(0.9f);
+    cv::GaussianBlur(coarse, coarse, cv::Size(0, 0), 25);
+    cv::Mat refined;
+    std::string error;
+    MaskDetectors::RefineReport report;
+    ASSERT_TRUE(MaskDetectors::refine(img, coarse, refined, &error, &report)) << error;
+    ASSERT_EQ(refined.size(), img.size());
+    EXPECT_EQ(refined.type(), CV_32FC1);
+    EXPECT_EQ(report.components, 1);
+    EXPECT_EQ(report.refined, 1);
+    EXPECT_EQ(report.kept_coarse, 0);
+    auto iou = [&](const cv::Mat &cov) {
+        cv::Mat b = cov > 0.5f;
+        return static_cast<double>(cv::countNonZero(b & truth)) / cv::countNonZero(b | truth);
+    };
+    double before = iou(coarse), after = iou(refined);
+    EXPECT_GT(after, before) << "coarse " << before << " refined " << after;
+    EXPECT_GT(after, 0.9) << "SAM finds the rectangle's real edges";
+    EXPECT_LT(refined.at<float>(100, 100), 0.05f) << "nothing invented elsewhere";
+    EXPECT_GT(refined.at<float>(250, 530), 0.95f);
+    EXPECT_TRUE(MaskDetectors::refineStatus().loaded);
+    // Nothing found: the coarse mask comes back untouched.
+    cv::Mat faint(img.size(), CV_32FC1, cv::Scalar(0.1f));
+    cv::Mat same;
+    ASSERT_TRUE(MaskDetectors::refine(img, faint, same, &error, &report)) << error;
+    EXPECT_EQ(report.components, 0);
+    EXPECT_FLOAT_EQ(same.at<float>(10, 10), 0.1f);
+    MaskDetectors::unload();
+    EXPECT_FALSE(MaskDetectors::refineStatus().loaded);
+    MaskDetectors::configure(MaskDetectors::Models{});
 }

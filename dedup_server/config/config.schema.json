@@ -679,6 +679,14 @@
     "type": "string",
     "default": "models/selfie-segmentation.onnx"
   },
+  "media.adjustments.masks.refineEncoderPath": {
+    "type": "string",
+    "default": "models/slimsam-encoder.onnx"
+  },
+  "media.adjustments.masks.refineDecoderPath": {
+    "type": "string",
+    "default": "models/slimsam-decoder.onnx"
+  },
   "media.adjustments.masks.useCoreML": {
     "type": "bool",
     "default": false

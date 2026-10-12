@@ -73,6 +73,10 @@ namespace MediaDedup::Adjustments
         Status coverage(const std::string &file_path, const std::string &source,
                         const nlohmann::json &canonical_params, bool inline_compute, cv::Mat &out);
 
+        // CHAIN-5b: the params the cache really keys on — the component's,
+        // plus `_refine` when SAM will sharpen this source here and now.
+        nlohmann::json effectiveParams(const std::string &source, const nlohmann::json &canonical_params) const;
+
         // Whether the source can run at all in this build/config (the
         // catalogue hides the ones that cannot).
         bool available(const std::string &source) const;

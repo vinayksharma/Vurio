@@ -1308,6 +1308,20 @@
       "text": "The person-segmentation ONNX model (MediaPipe selfie segmentation) behind the People mask. Missing file: the People source is hidden."
     }
   ],
+  "media.adjustments.masks.refineEncoderPath": "Mask Sharpening Model (Encoder)",
+  "media.adjustments.masks.refineEncoderPath.long": [
+    {
+      "type": "paragraph",
+      "text": "The SlimSAM image encoder (ONNX). With both SAM files present, the Prompt, People and portable Subject masks are sharpened: every region the coarse model found is handed to SAM as a box plus interior points, and the sharp answer replaces it. Missing file: masks keep the coarse model's edge-aware upsample."
+    }
+  ],
+  "media.adjustments.masks.refineDecoderPath": "Mask Sharpening Model (Decoder)",
+  "media.adjustments.masks.refineDecoderPath.long": [
+    {
+      "type": "paragraph",
+      "text": "The SlimSAM prompt encoder and mask decoder (ONNX), the second half of the sharpening model."
+    }
+  ],
   "media.adjustments.masks.useCoreML": "Mask Models on CoreML",
   "media.adjustments.masks.useCoreML.long": [
     {
