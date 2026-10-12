@@ -728,6 +728,8 @@ three stacked regions:
 | `media.adjustments.history.maxEntries` | 100 | persisted undo steps per photo |
 | `media.adjustments.history.maxSnapshots` | 20 | named snapshots per photo (CHAIN-7e) |
 | `media.adjustments.export.defaultFormat` / `defaultQuality` | jpeg / 92 | export sheet defaults |
+| `media.adjustments.export.denoiseModelPath` / `upscaleModelPath` | `models/nafnet-sidd-w32.onnx` / `models/realesrgan-x2.onnx` | AI finishing at export (CHAIN-7h), optional |
+| `media.adjustments.export.useCoreML` | true | the upscale model on CoreML where available (12× faster, identical output) |
 
 ## 12. Phasing and progress tracking
 
@@ -1101,25 +1103,32 @@ building both below and above the split.
 
 **7g — Docs, memory, merges.** Done 2026-10-12 with the sub-steps above.
 
-**7h — AI denoise, Upscale.** Assessed 2026-10-12, not implemented; both
-need a decision before the work (§14):
+**7h — AI denoise, Upscale.** Implemented 2026-10-12 as export-time
+finishing (the user re-asked for CHAIN-7 after the assessment; the
+export-time option keeps the render chain live and puts the minutes-long
+work in the one place that is already a separate operation, §8):
 
-- Each is a model sub-project the size of CHAIN-5b: pick an open-source
-  network, find or produce a permissive ONNX export (there is no Python
-  ONNX toolchain on the build machine, so an export means a new dependency
-  or a vetted download), verify it against the fp32 reference, add the
-  download to `ensure_models.sh`, tile the inference (a 24 MP frame does
-  not fit a UNet in one pass) and measure. Candidates: NAFNet (MIT) or
-  SCUNet (Apache-2.0) for denoise; Real-ESRGAN (BSD-3; the published ONNX
-  exports on the Hub carry other licences and need checking) for upscale.
-- Neither fits the live envelope (§5.4): a CNN denoise on a 2560 px preview
-  is seconds on CPU, an ×4 upscale of a 24 MP base is minutes and 400 MP of
-  output. They would be export-time or cached-once operations, not nodes
-  the preview re-runs on every drag — a different composition from every
-  other tool, so the user should say which they want: an export option
-  ("upscale ×2/×4 on export", "AI denoise on export"), a cached raster node
-  that renders a placeholder until its result arrives (like detected
-  masks), or neither.
+- `adjustments/export_models.{hpp,cpp}`: NAFNet-SIDD-width32 (megvii, MIT;
+  the emulsion ONNX export, sha256 pinned) for denoise and Real-ESRGAN
+  x2plus (xinntao, BSD-3; the SceneWorks ONNX export) for ×2 upscale, both
+  optional assets in `ensure_models.sh`, both tiled at 512 px with a 32 px
+  reflected overlap so any size fits. Measured on a 512² tile: NAFNet
+  0.54 s on 4 CPU threads (CoreML partitions it badly: 2.4 s, so it stays
+  on the CPU); Real-ESRGAN 6.9 s on the CPU, 0.6 s through CoreML with
+  identical output (PSNR 89 dB), so CoreML is tried first
+  (`media.adjustments.export.useCoreML`). About a minute per 24 MP each.
+- `ExportRequest.denoise` (strength) and `.upscale` (1 or 2): the chain
+  renders, the long-side limit applies, denoise runs, then the upscale, so
+  "limit to 2048 and ×2" gives 4096, the models only see the pixels that
+  stay, and noise is removed before it could be enlarged. An upscaled export is capped at 100 MP (`kMaxUpscaledPixels`)
+  with a message to limit the long side first. A missing model refuses
+  the request naming the path; `DescribeTools` flags which models are
+  installed so the sheet shows only usable controls.
+- Client: a "Finish" row in the export sheet (AI denoise + strength,
+  Upscale ×2) remembered in `UserDefaults`, a 1800 s deadline when either
+  is on; Settings › Advanced lists Denoise and Upscale beside the mask
+  models. Test: `ExportTest.AiFinishing…` (refusals ungated; the runs
+  gated on the files).
 
 ## 13. Decisions recorded 2026-10-11 (user's answers to the first round)
 
@@ -1164,11 +1173,12 @@ Second round (same day):
 
 ## 14. Questions open
 
-1. (CHAIN-7h) AI denoise and Upscale: export-time option, cached node, or
-   left out? And which model licences count as acceptable (the Hub's ONNX
-   exports of Real-ESRGAN are under their exporters' terms, not BSD-3).
-
-Otherwise none. Residual choices the design took on its own and that the user can
+None. (CHAIN-7h was taken as export-time finishing when the user asked for
+CHAIN-7 again after the assessment; the ONNX exports used are the
+SceneWorks Real-ESRGAN export, which states BSD-3 following upstream, and
+the emulsion NAFNet export, MIT upstream, sha256 pinned in
+`ensure_models.sh`. Overturn at review if a cached in-chain node is wanted
+instead.) Residual choices the design took on its own and that the user can
 overturn at review time: history snapshots rather than deltas and the cap
 of 100; the 5-IoU-point exit clause for the Vision backend; JPEG q92 and
 the `<stem>-<recipe>` export name.
