@@ -865,6 +865,14 @@ private struct LaneMaskInspector: View {
                                               set: { tool.strings[p.id] = $0 }),
                                 onCommit: { model.laneMaskChanged(laneID, label: "Mask prompt", interactive: false) })
                         .disabled(!hasImage)
+                case .bool:
+                    // CHAIN-5b: "Sharpen edges (SAM)" on the model-backed masks.
+                    Toggle(p.label, isOn: Binding(get: { (tool.numbers[p.id] ?? p.defaultValue) != 0 },
+                                                  set: { tool.numbers[p.id] = $0 ? 1 : 0
+                                                         model.laneMaskChanged(laneID, label: "Mask \(p.label)", interactive: false) }))
+                        .toggleStyle(.checkbox)
+                        .font(.system(size: 11))
+                        .disabled(!hasImage)
                 default:
                     EmptyView()
                 }
