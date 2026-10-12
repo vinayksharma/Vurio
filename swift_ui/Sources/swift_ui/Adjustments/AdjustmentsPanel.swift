@@ -644,8 +644,18 @@ private struct LaneRow: View {
 
     private var summary: String {
         var parts: [String] = []
-        let source = model.maskTool(for: lane.id)?.summary()
-            ?? model.maskSource(lane.mask.primary.source)?.summary ?? lane.mask.primary.source
+        let editors = model.maskTools(for: lane.id)
+        var source: String
+        if lane.mask.components.count <= 1 {
+            source = editors.first??.summary()
+                ?? model.maskSource(lane.mask.primary.source)?.summary ?? lane.mask.primary.source
+        } else {
+            // CHAIN-7b: "prompt − luminance ∩ radial"
+            source = lane.mask.components.enumerated().map { i, c in
+                let label = (model.maskSource(c.source)?.label ?? c.source).lowercased()
+                return i == 0 ? label : MaskComponentRow.opSymbol(c.op) + " " + label
+            }.joined(separator: " ")
+        }
         parts.append(lane.mask.invert ? "¬" + source : source)
         if lane.blend != "normal" { parts.append(GenericToolUI.readable(lane.blend)) }
         if lane.strength < 0.9999 { parts.append(String(format: "%.0f%%", lane.strength * 100)) }
@@ -746,19 +756,41 @@ private struct LaneInspector: View {
             .padding(.vertical, 6)
 
             VStack(alignment: .leading, spacing: 6) {
+                // CHAIN-7b: the mask is a list of components combined left
+                // to right; the selected row's controls show below.
+                let selected = model.selectedMaskComponentIndex(lane.id)
+                ForEach(Array(lane.mask.components.enumerated()), id: \.offset) { i, component in
+                    MaskComponentRow(model: model, laneID: lane.id, index: i, component: component,
+                                     selected: i == selected, removable: lane.mask.components.count > 1,
+                                     hasImage: hasImage)
+                }
                 HStack {
-                    Text("Mask").font(.system(size: 11)).foregroundColor(Theme.textSecondary)
-                    Spacer()
-                    Picker("", selection: Binding(get: { lane.mask.primary.source },
-                                                  set: { model.setLaneMaskSource(lane.id, $0) })) {
-                        ForEach(model.maskSources, id: \.id) { source in
-                            Label(source.label, systemImage: source.icon).tag(source.id)
+                    Menu {
+                        ForEach(MaskComponent.ops.dropFirst(), id: \.self) { op in
+                            Section(GenericToolUI.readable(op)) {
+                                ForEach(model.maskSources, id: \.id) { source in
+                                    Button { model.addMaskComponent(lane.id, source: source.id, op: op) } label: {
+                                        Label(source.label, systemImage: source.icon)
+                                    }
+                                }
+                            }
                         }
+                        Section("Add") {
+                            ForEach(model.maskSources, id: \.id) { source in
+                                Button { model.addMaskComponent(lane.id, source: source.id, op: "add") } label: {
+                                    Label(source.label, systemImage: source.icon)
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("Combine with…", systemImage: "plus.circle")
+                            .font(.system(size: 10))
                     }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .frame(maxWidth: 170)
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
                     .disabled(!hasImage)
+                    .help("Add a component: subtract or intersect another mask, or add to this one")
+                    Spacer()
                 }
                 if let editor = model.maskTool(for: lane.id) {
                     LaneMaskInspector(model: model, tool: editor, laneID: lane.id, hasImage: hasImage)
@@ -829,6 +861,71 @@ private struct LaneInspector: View {
         }
         .disabled(!lane.enabled)
         .opacity(lane.enabled ? 1 : 0.6)
+    }
+}
+
+/// CHAIN-7b: one mask component — its op (hidden on the first, which the
+/// engine takes as the starting coverage), its source and a remove button.
+/// Clicking the row selects the component the inspector and pins edit.
+private struct MaskComponentRow: View {
+    @ObservedObject var model: AdjustmentsViewModel
+    let laneID: String
+    let index: Int
+    let component: MaskComponent
+    let selected: Bool
+    let removable: Bool
+    let hasImage: Bool
+
+    static func opSymbol(_ op: String) -> String {
+        switch op {
+        case "subtract": return "−"
+        case "intersect": return "∩"
+        default: return "+"
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if index == 0 {
+                Text("Mask").font(.system(size: 11)).foregroundColor(Theme.textSecondary)
+            } else {
+                Picker("", selection: Binding(get: { component.op },
+                                              set: { model.setMaskComponentOp(laneID, at: index, $0) })) {
+                    ForEach(MaskComponent.ops, id: \.self) { op in
+                        Text(Self.opSymbol(op) + " " + GenericToolUI.readable(op)).tag(op)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(width: 96)
+                .disabled(!hasImage)
+                .help("How this component combines with the coverage above it")
+            }
+            Spacer(minLength: 2)
+            Picker("", selection: Binding(get: { component.source },
+                                          set: { model.setLaneMaskSource(laneID, $0, component: index) })) {
+                ForEach(model.maskSources, id: \.id) { source in
+                    Label(source.label, systemImage: source.icon).tag(source.id)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(maxWidth: 150)
+            .disabled(!hasImage)
+            if removable {
+                Button(action: { model.removeMaskComponent(laneID, at: index) }) {
+                    Image(systemName: "minus.circle")
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(Theme.textSecondary)
+                .help("Remove this component")
+            }
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
+        .background(RoundedRectangle(cornerRadius: 4).fill(selected && removable ? Theme.surfaceElevated : Color.clear))
+        .contentShape(Rectangle())
+        .onTapGesture { model.selectMaskComponent(laneID, index) }
     }
 }
 

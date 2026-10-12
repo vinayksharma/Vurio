@@ -94,8 +94,11 @@ final class AdjustmentsViewModel: ObservableObject {
 
     /// Node id → its tool UI (known tools only), trunk and lane steps alike.
     private var tools: [String: any AdjustmentToolUI] = [:]
-    /// Lane id → the generic editor of its primary mask component.
-    private var maskTools: [String: GenericToolUI] = [:]
+    /// Lane id → one generic editor per mask component (CHAIN-7b), in
+    /// component order.
+    private var maskTools: [String: [GenericToolUI]] = [:]
+    /// Lane id → the component the inspector and the pins edit (0 = first).
+    @Published private(set) var selectedMaskComponent: [String: Int] = [:]
     private var commitTask: Task<Void, Never>?
     private var loadGeneration = 0
     private var descriptorsLoaded = false
@@ -175,7 +178,26 @@ final class AdjustmentsViewModel: ObservableObject {
     func maskSource(_ id: String) -> ToolDescriptor? { maskSources.first { $0.id == id } }
     var selectedNode: ChainNode? { selectedNodeID.flatMap(document.node) }
     var selectedLane: Lane? { selectedNodeID.flatMap(document.lane)?.lane }
-    func maskTool(for laneID: String) -> GenericToolUI? { maskTools[laneID] }
+    /// The editor of the lane's selected mask component.
+    func maskTool(for laneID: String) -> GenericToolUI? {
+        let editors = maskTools[laneID] ?? []
+        let i = min(selectedMaskComponent[laneID] ?? 0, max(editors.count - 1, 0))
+        return editors.indices.contains(i) ? editors[i] : nil
+    }
+    /// Every component's editor, in component order (nil for a component
+    /// whose source this build does not know).
+    func maskTools(for laneID: String) -> [GenericToolUI?] {
+        guard let lane = document.lane(laneID)?.lane else { return [] }
+        let editors = maskTools[laneID] ?? []
+        return lane.mask.components.indices.map { i in editors.indices.contains(i) ? editors[i] : nil }
+    }
+    func selectedMaskComponentIndex(_ laneID: String) -> Int {
+        let n = document.lane(laneID)?.lane.mask.components.count ?? 0
+        return min(selectedMaskComponent[laneID] ?? 0, max(n - 1, 0))
+    }
+    func selectMaskComponent(_ laneID: String, _ index: Int) {
+        selectedMaskComponent[laneID] = index
+    }
 
     /// The lane an "add" lands in: the selected lane, or the lane that
     /// holds the selected step.
@@ -370,21 +392,32 @@ final class AdjustmentsViewModel: ObservableObject {
         guard descriptorsLoaded else { return }
         var next: [String: any AdjustmentToolUI] = [:]
         var subs: [String: AnyCancellable] = [:]
-        // Lane masks: one generic editor per lane for its primary component.
-        var nextMasks: [String: GenericToolUI] = [:]
-        for node in document.nodes {
+        // Lane masks: one generic editor per component (CHAIN-7b). An
+        // unknown source gets a placeholder editor of the "full" descriptor
+        // so indices stay aligned; `maskTools(for:)` hides it.
+        var nextMasks: [String: [GenericToolUI]] = [:]
+        for node in document.allNodes {
             for lane in node.lanes ?? [] {
-                guard let source = maskSource(lane.mask.primary.source) else { continue }
-                let editor: GenericToolUI
-                if let existing = maskTools[lane.id], existing.descriptor.id == source.id {
-                    editor = existing
-                } else {
-                    editor = GenericToolUI(descriptor: source)
+                var editors: [GenericToolUI] = []
+                let existing = maskTools[lane.id] ?? []
+                for (i, component) in lane.mask.components.enumerated() {
+                    guard let source = maskSource(component.source) else {
+                        if let full = maskSource("full") { editors.append(GenericToolUI(descriptor: full)) }
+                        continue
+                    }
+                    let editor: GenericToolUI
+                    if existing.indices.contains(i), existing[i].descriptor.id == source.id {
+                        editor = existing[i]
+                    } else {
+                        editor = GenericToolUI(descriptor: source)
+                    }
+                    editor.load(params: component.params)
+                    editors.append(editor)
+                    let key = "mask:" + lane.id + "#" + String(i)
+                    subs[key] = (editor === (existing.indices.contains(i) ? existing[i] : nil) ? toolSubscriptions[key] : nil)
+                        ?? editor.changes.sink { [weak self] _ in self?.objectWillChange.send() }
                 }
-                editor.load(params: lane.mask.primary.params)
-                nextMasks[lane.id] = editor
-                subs["mask:" + lane.id] = toolSubscriptions["mask:" + lane.id] ?? editor.changes
-                    .sink { [weak self] _ in self?.objectWillChange.send() }
+                nextMasks[lane.id] = editors
             }
         }
         maskTools = nextMasks
@@ -422,12 +455,12 @@ final class AdjustmentsViewModel: ObservableObject {
                 doc.update(node.id) { $0.params = params }
             }
         }
-        for (laneID, editor) in maskTools {
-            if let params = editor.encode() {
-                doc.updateLane(laneID) { lane in
-                    var primary = lane.mask.primary
-                    primary.params = params
-                    lane.mask.primary = primary
+        for (laneID, editors) in maskTools {
+            doc.updateLane(laneID) { lane in
+                for (i, editor) in editors.enumerated() where lane.mask.components.indices.contains(i) {
+                    // A placeholder editor (unknown source) keeps the stored params.
+                    guard editor.descriptor.id == lane.mask.components[i].source, let params = editor.encode() else { continue }
+                    lane.mask.components[i].params = params
                 }
             }
         }
@@ -526,13 +559,55 @@ final class AdjustmentsViewModel: ObservableObject {
         chainChanged(label: enabled ? "Enable lane" : "Bypass lane")
     }
 
-    func setLaneMaskSource(_ laneID: String, _ sourceID: String) {
-        guard let source = maskSource(sourceID), document.lane(laneID)?.lane.mask.primary.source != sourceID else { return }
+    /// Change the source of one mask component (defaults for the new source).
+    func setLaneMaskSource(_ laneID: String, _ sourceID: String, component index: Int = 0) {
+        guard let source = maskSource(sourceID), let lane = document.lane(laneID)?.lane,
+              lane.mask.components.indices.contains(index), lane.mask.components[index].source != sourceID else { return }
         document = currentDocument()
         let defaults = GenericToolUI(descriptor: source).encode() ?? [:]
-        document.updateLane(laneID) { $0.mask.primary = MaskComponent(source: sourceID, params: defaults) }
+        document.updateLane(laneID) {
+            let op = $0.mask.components[index].op
+            $0.mask.components[index] = MaskComponent(source: sourceID, params: defaults, op: op)
+        }
         rebuildTools()
         chainChanged(label: "Mask: \(source.label)")
+    }
+
+    // CHAIN-7b: mask components combine left to right (add = union,
+    // subtract, intersect); the first component's op is ignored by the
+    // engine.
+    func addMaskComponent(_ laneID: String, source sourceID: String, op: String) {
+        guard let source = maskSource(sourceID), document.lane(laneID) != nil else { return }
+        document = currentDocument()
+        let defaults = GenericToolUI(descriptor: source).encode() ?? [:]
+        var count = 0
+        document.updateLane(laneID) {
+            $0.mask.components.append(MaskComponent(source: sourceID, params: defaults, op: op))
+            count = $0.mask.components.count
+        }
+        selectedMaskComponent[laneID] = count - 1
+        rebuildTools()
+        chainChanged(label: "Mask \(GenericToolUI.readable(op)) \(source.label)")
+    }
+
+    func removeMaskComponent(_ laneID: String, at index: Int) {
+        guard let lane = document.lane(laneID)?.lane, lane.mask.components.count > 1,
+              lane.mask.components.indices.contains(index) else { return }
+        document = currentDocument()
+        document.updateLane(laneID) {
+            $0.mask.components.remove(at: index)
+            $0.mask.components[0].op = "add"
+        }
+        selectedMaskComponent[laneID] = min(index, lane.mask.components.count - 2)
+        rebuildTools()
+        chainChanged(label: "Remove mask component")
+    }
+
+    func setMaskComponentOp(_ laneID: String, at index: Int, _ op: String) {
+        guard index > 0, let lane = document.lane(laneID)?.lane, lane.mask.components.indices.contains(index),
+              lane.mask.components[index].op != op else { return }
+        document.updateLane(laneID) { $0.mask.components[index].op = op }
+        chainChanged(label: "Mask \(GenericToolUI.readable(op))")
     }
 
     /// The lane's mask editor changed (a slider or a pin on the image).

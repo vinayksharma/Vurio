@@ -814,20 +814,24 @@ struct ViewerView: View {
                         .keyboardShortcut("e", modifiers: [.command, .shift])
                         .hidden()
                 }
-                if let selected = adjustments.selectedNodeID {
-                    Button("") { adjustments.removeNode(selected) }
+                if adjustments.selectedNodeID != nil {
+                    // The selection is read when the key fires, not when
+                    // this body was built: a row clicked just before ⌘⌫
+                    // must be the row that goes (seen 2026-10-12: a lane
+                    // removed in place of the node clicked after it).
+                    Button("") { if let id = adjustments.selectedNodeID { adjustments.removeNode(id) } }
                         .keyboardShortcut(.delete, modifiers: [.command])
                         .hidden()
-                    Button("") { adjustments.duplicateNode(selected) }
+                    Button("") { if let id = adjustments.selectedNodeID { adjustments.duplicateNode(id) } }
                         .keyboardShortcut("d", modifiers: [.command])
                         .hidden()
-                    Button("") { adjustments.toggleNodeEnabled(selected) }
+                    Button("") { if let id = adjustments.selectedNodeID { adjustments.toggleNodeEnabled(id) } }
                         .keyboardShortcut("e", modifiers: [.command])
                         .hidden()
-                    Button("") { adjustments.moveNode(selected, by: -1) }
+                    Button("") { if let id = adjustments.selectedNodeID { adjustments.moveNode(id, by: -1) } }
                         .keyboardShortcut(.upArrow, modifiers: [.option])
                         .hidden()
-                    Button("") { adjustments.moveNode(selected, by: 1) }
+                    Button("") { if let id = adjustments.selectedNodeID { adjustments.moveNode(id, by: 1) } }
                         .keyboardShortcut(.downArrow, modifiers: [.option])
                         .hidden()
                 }

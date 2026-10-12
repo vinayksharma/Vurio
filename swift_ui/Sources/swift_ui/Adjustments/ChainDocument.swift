@@ -89,6 +89,11 @@ struct MaskComponent: Equatable {
     var source: String
     var params: [String: Any]
     var op: String // add | subtract | intersect
+    /// Keys this build does not model (`version`, anything newer) round-trip
+    /// verbatim (docs §4).
+    var extras: [String: Any] = [:]
+
+    static let ops = ["add", "subtract", "intersect"]
 
     init(source: String = "full", params: [String: Any] = [:], op: String = "add") {
         self.source = source
@@ -100,10 +105,13 @@ struct MaskComponent: Equatable {
         source = json["source"] as? String ?? "full"
         params = json["params"] as? [String: Any] ?? [:]
         op = json["op"] as? String ?? "add"
+        extras = json.filter { !["source", "params", "op"].contains($0.key) }
     }
 
     func toJSON() -> [String: Any] {
-        var o: [String: Any] = ["source": source, "params": params]
+        var o = extras
+        o["source"] = source
+        o["params"] = params
         if op != "add" { o["op"] = op }
         return o
     }
