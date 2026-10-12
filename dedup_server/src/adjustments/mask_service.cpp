@@ -1,4 +1,5 @@
 #include "adjustments/mask_service.hpp"
+#include "adjustments/export_models.hpp"
 
 #include <Poco/Logger.h>
 #include <algorithm>
@@ -262,6 +263,23 @@ namespace MediaDedup::Adjustments
             s.available = enabled && refine.available;
             s.note = refine.available ? "SlimSAM-77 sharpens prompt, people and portable subject masks" : refine.note;
             out.push_back(s);
+        }
+        // CHAIN-7h: the export-time models, in the same list so Settings
+        // shows every optional model in one place.
+        {
+            for (const auto &[id, st] : {std::pair<const char *, ExportModels::Status>{"denoise", ExportModels::denoiseStatus()},
+                                          std::pair<const char *, ExportModels::Status>{"upscale", ExportModels::upscaleStatus()}})
+            {
+                SourceStatus s;
+                s.id = id;
+                s.backend = "onnx";
+                s.model_path = st.model_path;
+                s.model_present = st.model_present;
+                s.loaded = st.loaded;
+                s.available = st.available;
+                s.note = st.note;
+                out.push_back(s);
+            }
         }
         if (!enabled)
             for (auto &s : out)

@@ -330,6 +330,7 @@ add_executable(media_dedup_server
     src/adjustments/blend.cpp
     src/adjustments/masks.cpp
     src/adjustments/mask_detectors.cpp
+    src/adjustments/export_models.cpp
     src/adjustments/mask_service.cpp
     src/adjustments/tool_registry.cpp
     src/adjustments/render_plan.cpp

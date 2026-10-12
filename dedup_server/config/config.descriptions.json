@@ -1351,6 +1351,27 @@
       "text": "JPEG quality (1-100) the export sheet proposes. 92 is visually lossless for photographs at a fraction of the size of 100."
     }
   ],
+  "media.adjustments.export.denoiseModelPath": "Export Denoise Model",
+  "media.adjustments.export.denoiseModelPath.long": [
+    {
+      "type": "paragraph",
+      "text": "NAFNet-SIDD (MIT) ONNX model the export sheet's AI denoise runs once over the rendered photo, tiled, on the CPU (about half a second per 512 px tile). Fetched by scripts/ensure_models.sh; when the file is missing the control is hidden."
+    }
+  ],
+  "media.adjustments.export.upscaleModelPath": "Export Upscale Model",
+  "media.adjustments.export.upscaleModelPath.long": [
+    {
+      "type": "paragraph",
+      "text": "Real-ESRGAN x2plus (BSD-3) ONNX model the export sheet's ×2 upscale runs once over the rendered photo, tiled, after the long-side limit. Fetched by scripts/ensure_models.sh; when the file is missing the control is hidden. An upscaled export is capped at 100 megapixels."
+    }
+  ],
+  "media.adjustments.export.useCoreML": "Export Upscale on CoreML",
+  "media.adjustments.export.useCoreML.long": [
+    {
+      "type": "paragraph",
+      "text": "Run the upscale model through the CoreML execution provider where available: measured 0.6 s per tile against 6.9 s on the CPU with identical output. The denoise model always runs on the CPU, where it is faster."
+    }
+  ],
   "media.adjustments.sidecar.suffix": "Adjustment Sidecar Suffix",
   "media.adjustments.sidecar.suffix.long": [
     {

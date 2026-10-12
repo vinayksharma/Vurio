@@ -10,6 +10,7 @@
 #include "core/grpc_server/grpc_service_common.hpp"
 #include "adjustments/adjustment_document.hpp"
 #include "adjustments/adjustment_store.hpp"
+#include "adjustments/export_models.hpp"
 #include "adjustments/export_renderer.hpp"
 #include "adjustments/mask_service.hpp"
 #include "adjustments/preview_session.hpp"
@@ -51,6 +52,10 @@ public:
         auto defaults = MediaDedup::Adjustments::Exporter::instance().defaults();
         reply->set_export_default_format(defaults.format);
         reply->set_export_default_quality(defaults.quality);
+        // CHAIN-7h: the sheet shows the AI finishing controls only when
+        // their models are installed.
+        reply->set_export_denoise_available(MediaDedup::Adjustments::ExportModels::denoiseAvailable());
+        reply->set_export_upscale_available(MediaDedup::Adjustments::ExportModels::upscaleAvailable());
         return grpc::Status::OK;
     }
 
@@ -69,6 +74,8 @@ public:
         r.quality = request->quality();
         r.max_side = request->max_side();
         r.name_suffix = request->name_suffix().empty() ? defaultExportSuffix(request->file_path()) : request->name_suffix();
+        r.denoise = request->denoise();
+        r.upscale = request->upscale() == 0 ? 1 : request->upscale();
         auto plan = MediaDedup::Adjustments::AdjustmentStore::instance().planFor(request->file_path());
         ExportResult result = MediaDedup::Adjustments::Exporter::instance().run(r, plan);
         reply->set_written_path(result.written_path);

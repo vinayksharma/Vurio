@@ -703,6 +703,18 @@
     "type": "int",
     "default": 92
   },
+  "media.adjustments.export.denoiseModelPath": {
+    "type": "string",
+    "default": "models/nafnet-sidd-w32.onnx"
+  },
+  "media.adjustments.export.upscaleModelPath": {
+    "type": "string",
+    "default": "models/realesrgan-x2.onnx"
+  },
+  "media.adjustments.export.useCoreML": {
+    "type": "bool",
+    "default": true
+  },
   "thumbnail.qhd_preview.threshold_mb": {
     "type": "double",
     "default": 5.0

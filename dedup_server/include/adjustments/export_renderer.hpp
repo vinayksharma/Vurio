@@ -27,7 +27,13 @@ namespace MediaDedup::Adjustments
         int quality = 0;         // JPEG quality 1..100 (0 = the configured default)
         int max_side = 0;        // optional long-side limit in pixels (0 = native)
         std::string name_suffix; // `<stem>-<suffix>.<ext>`; "" = "edit"
+        // CHAIN-7h: AI finishing after the chain (export_models.hpp).
+        double denoise = 0;      // 0 = off, else the denoise strength (0, 1]
+        int upscale = 1;         // 1 = off, 2 = Real-ESRGAN ×2 (limit → denoise → upscale)
     };
+    // The largest export an upscale may produce (pixels): 24 MP ×2 fits,
+    // anything larger needs the long-side limit first.
+    constexpr long long kMaxUpscaledPixels = 100LL * 1000 * 1000;
 
     struct ExportResult
     {

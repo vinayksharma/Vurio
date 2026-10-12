@@ -18,6 +18,7 @@
 #include <sys/stat.h>
 #include "adjustments/adjustment_document.hpp"
 #include "adjustments/chain_engine.hpp"
+#include "adjustments/export_models.hpp"
 #include "adjustments/export_renderer.hpp"
 #include "adjustments/tool_registry.hpp"
 #include "filesmanager/file_scanner.hpp"
@@ -442,4 +443,78 @@ TEST_F(ExportTest, AnExportInsideARegisteredLocationIsJustANewFileForTheScan)
     // sidecar, no marker, no temp file.
     EXPECT_EQ(seen, std::set<std::string>({"IMG_0001.JPG", "IMG_0001-edit.jpg"}));
     EXPECT_EQ(listing(base_ / "lib"), seen);
+}
+
+// CHAIN-7h: the AI finishing steps. Refusals need no model; the runs are
+// gated on the optional files being installed (ensure_models.sh).
+TEST_F(ExportTest, AiFinishingRefusesBadRequestsAndRunsWhenTheModelsArePresent)
+{
+    ExportRequest r = request();
+    r.denoise = 1.5;
+    EXPECT_EQ(Exporter::instance().run(r, RenderPlan::identity()).outcome, ExportResult::Outcome::Invalid);
+    r = request();
+    r.upscale = 3;
+    EXPECT_EQ(Exporter::instance().run(r, RenderPlan::identity()).outcome, ExportResult::Outcome::Invalid);
+
+    ExportModels::Models models;
+    models.denoise_model = "models/nafnet-sidd-w32.onnx";
+    models.upscale_model = "models/realesrgan-x2.onnx";
+    ExportModels::configure(models);
+    if (!ExportModels::denoiseAvailable() || !ExportModels::upscaleAvailable())
+    {
+        // Without the files the request is refused with the path in the message.
+        r = request();
+        r.denoise = 0.5;
+        ExportResult missing = Exporter::instance().run(r, RenderPlan::identity());
+        if (!ExportModels::denoiseAvailable())
+        {
+            EXPECT_EQ(missing.outcome, ExportResult::Outcome::Invalid);
+            EXPECT_NE(missing.error.find("nafnet"), std::string::npos);
+        }
+        GTEST_SKIP() << "export models not installed";
+    }
+
+    // A noisy flat source: denoise at full strength cuts the noise, the
+    // half-strength run lands in between; ×2 doubles the dimensions.
+    cv::Mat noisy(240, 320, CV_8UC3, cv::Scalar(120, 110, 100));
+    cv::Mat noise(noisy.size(), CV_8SC3);
+    cv::RNG rng(7);
+    rng.fill(noise, cv::RNG::NORMAL, 0, 12);
+    cv::add(noisy, noise, noisy, cv::noArray(), CV_8UC3);
+    std::vector<uint8_t> bytes;
+    cv::imencode(".png", noisy, bytes);
+    const std::string noisy_path = (base_ / "lib" / "noisy.png").string();
+    writeAll(noisy_path, bytes);
+    auto stddev = [](const std::string &path) {
+        cv::Mat img = cv::imread(path);
+        cv::Scalar mean, sd;
+        cv::meanStdDev(img, mean, sd);
+        return sd[1];
+    };
+    const double before = stddev(noisy_path);
+    ASSERT_GT(before, 6.0);
+
+    r = request("png");
+    r.file_path = noisy_path;
+    r.denoise = 1.0;
+    ExportResult full = Exporter::instance().run(r, RenderPlan::identity());
+    ASSERT_EQ(full.outcome, ExportResult::Outcome::Ok) << full.error;
+    const double after_full = stddev(full.written_path);
+    EXPECT_LT(after_full, before * 0.5) << "the noise is mostly gone";
+    r.denoise = 0.5;
+    ExportResult half = Exporter::instance().run(r, RenderPlan::identity());
+    ASSERT_EQ(half.outcome, ExportResult::Outcome::Ok) << half.error;
+    const double after_half = stddev(half.written_path);
+    EXPECT_GT(after_half, after_full);
+    EXPECT_LT(after_half, before);
+
+    r = request();
+    r.upscale = 2;
+    r.max_side = 200;
+    ExportResult up = Exporter::instance().run(r, RenderPlan::identity());
+    ASSERT_EQ(up.outcome, ExportResult::Outcome::Ok) << up.error;
+    EXPECT_EQ(std::max(up.width, up.height), 400) << "limit first, then ×2";
+    cv::Mat written = cv::imread(up.written_path);
+    EXPECT_EQ(written.cols, up.width);
+    ExportModels::unload();
 }

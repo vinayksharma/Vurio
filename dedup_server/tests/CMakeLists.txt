@@ -121,6 +121,7 @@ set(ADJUSTMENTS_SOURCES
     ${CMAKE_SOURCE_DIR}/src/adjustments/blend.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/masks.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/mask_detectors.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/export_models.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/mask_service.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/text/clip_tokenizer.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tool_registry.cpp
@@ -857,6 +858,7 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/adjustments/blend.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/masks.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/mask_detectors.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/export_models.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/mask_service.cpp
     ${CMAKE_SOURCE_DIR}/src/media_processors/text/clip_tokenizer.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tool_registry.cpp

@@ -732,6 +732,9 @@ message ExportRequest {
   int32 quality = 4;      // JPEG 1..100 (0 = server default)
   int32 max_side = 5;     // long-side limit in pixels (0 = native)
   string name_suffix = 6; // <stem>-<suffix>.<ext>; "" = the applied recipe's name or "edit"
+  // CHAIN-7h: AI finishing, run once over the rendered frame.
+  double denoise = 7;     // 0 = off, else the strength (0, 1]
+  int32 upscale = 8;      // 1 = off, 2 = ×2 (applied after the long-side limit)
 }
 
 message ExportResponse {
@@ -991,6 +994,8 @@ message ToolDescriptors {
   repeated ToolDescriptor mask_sources = 4; // CHAIN-4: the lane mask sources (category "mask")
   string export_default_format = 5;  // CHAIN-6: media.adjustments.export.defaultFormat
   int32 export_default_quality = 6;  // CHAIN-6: media.adjustments.export.defaultQuality
+  bool export_denoise_available = 7; // CHAIN-7h: the denoise model is installed
+  bool export_upscale_available = 8; // CHAIN-7h: the upscale model is installed
 }
 
 message AdjustmentsFileRequest {

@@ -1,6 +1,7 @@
 #include "core/media_ready_bus.hpp"
 #include "database/faces_ops.hpp"
 #include "adjustments/mask_service.hpp"
+#include "adjustments/export_models.hpp"
 #include "adjustments/export_renderer.hpp"
 /*
  * AR-5: grpc_server_core.cpp is now ONLY server lifecycle (start/stop) —
@@ -217,6 +218,14 @@ void GrpcServerCore::start(const std::string& instance_dir,
             Exporter::Defaults defaults;
             defaults.format = cfg ? cfg->getPropertyValue<std::string>("media.adjustments.export.defaultFormat", "jpeg") : "jpeg";
             defaults.quality = cfg ? cfg->getPropertyValue<int>("media.adjustments.export.defaultQuality", 92) : 92;
+            // CHAIN-7h: the optional AI finishing models.
+            {
+                MediaDedup::Adjustments::ExportModels::Models em;
+                em.denoise_model = cfg ? cfg->getPropertyValue<std::string>("media.adjustments.export.denoiseModelPath", "models/nafnet-sidd-w32.onnx") : "models/nafnet-sidd-w32.onnx";
+                em.upscale_model = cfg ? cfg->getPropertyValue<std::string>("media.adjustments.export.upscaleModelPath", "models/realesrgan-x2.onnx") : "models/realesrgan-x2.onnx";
+                em.upscale_coreml = cfg ? cfg->getPropertyValue<bool>("media.adjustments.export.useCoreML", true) : true;
+                MediaDedup::Adjustments::ExportModels::configure(em);
+            }
             Exporter::instance().configure(
                 defaults,
                 [](const std::string& file_path) { return ThumbnailGenerator::decodeNativeBase(file_path); },

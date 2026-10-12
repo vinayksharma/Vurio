@@ -1,5 +1,6 @@
 // CHAIN-6 (docs/todo_tool_chain.md §8): export — see the header.
 #include "adjustments/export_renderer.hpp"
+#include "adjustments/export_models.hpp"
 #include "adjustments/chain_engine.hpp"
 
 #include <Poco/Logger.h>
@@ -784,6 +785,14 @@ namespace MediaDedup::Adjustments
             return finish(ExportResult::Outcome::Invalid, "quality must be between 1 and 100");
         if (request.max_side < 0)
             return finish(ExportResult::Outcome::Invalid, "the long-side limit cannot be negative");
+        if (request.denoise < 0 || request.denoise > 1)
+            return finish(ExportResult::Outcome::Invalid, "the denoise strength must be within [0, 1]");
+        if (request.upscale != 1 && request.upscale != ExportModels::kUpscaleFactor)
+            return finish(ExportResult::Outcome::Invalid, "upscale must be 1 (off) or 2");
+        if (request.denoise > 0 && !ExportModels::denoiseAvailable())
+            return finish(ExportResult::Outcome::Invalid, "the denoise model is not installed (" + ExportModels::denoiseStatus().model_path + ")");
+        if (request.upscale > 1 && !ExportModels::upscaleAvailable())
+            return finish(ExportResult::Outcome::Invalid, "the upscale model is not installed (" + ExportModels::upscaleStatus().model_path + ")");
         if (request.file_path.empty() || !fs::exists(request.file_path))
             return finish(ExportResult::Outcome::NotFound, "the source file does not exist");
         std::error_code ec;
@@ -806,8 +815,37 @@ namespace MediaDedup::Adjustments
             options.file_path = request.file_path;
             options.inline_masks = true; // an export waits for its masks
             plan.render(frame, 0, nullptr, options);
+            // CHAIN-7h: the long-side limit first, then denoise, then
+            // upscale: the models only see the pixels that stay ("limit to
+            // 2048 and ×2" gives 4096), and noise is removed before it
+            // could be enlarged.
             if (request.max_side > 0)
                 ChainEngine::fitFrame(frame, request.max_side);
+            std::string ai_error;
+            if (request.denoise > 0)
+            {
+                auto progress = [&](int done, int total) {
+                    if (done == total || done % 20 == 0)
+                        log().information("AI denoise of %s: tile %d/%d", request.file_path, done, total);
+                };
+                if (!ExportModels::denoise(frame.pixels, request.denoise, &ai_error, progress))
+                    return finish(ExportResult::Outcome::Internal, "AI denoise failed: " + ai_error);
+            }
+            if (request.upscale > 1)
+            {
+                long long pixels = static_cast<long long>(frame.width()) * request.upscale * frame.height() * request.upscale;
+                if (pixels > kMaxUpscaledPixels)
+                    return finish(ExportResult::Outcome::Invalid,
+                                  "the upscaled export would be " + std::to_string(pixels / 1000000) +
+                                      " megapixels; limit the long side first (at most " +
+                                      std::to_string(kMaxUpscaledPixels / 1000000) + " MP)");
+                auto progress = [&](int done, int total) {
+                    if (done == total || done % 20 == 0)
+                        log().information("AI upscale of %s: tile %d/%d", request.file_path, done, total);
+                };
+                if (!ExportModels::upscale(frame.pixels, &ai_error, progress))
+                    return finish(ExportResult::Outcome::Internal, "AI upscale failed: " + ai_error);
+            }
             result.width = frame.width();
             result.height = frame.height();
 

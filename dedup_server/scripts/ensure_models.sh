@@ -97,6 +97,12 @@ OPTIONAL_ASSETS=(
   "People mask model (MediaPipe selfie segmentation)|selfie-segmentation.onnx|450000|08|3241ac4ad8aa35bdaf33946776db29f7c283a413aa0b0dacb9483594b4531aad|$HF/onnx-community/mediapipe_selfie_segmentation/resolve/main/onnx/model.onnx"
   "Mask sharpening encoder (SlimSAM-77)|slimsam-encoder.onnx|22500000|08|9f8433273a6750b587779baa0cf5508111001bf7e7acfcf585d370139fd366d0|$HF/Xenova/slimsam-77-uniform/resolve/main/onnx/vision_encoder.onnx"
   "Mask sharpening decoder (SlimSAM-77)|slimsam-decoder.onnx|16000000|08|f4514391764fbd56e08e119060d874ecd7d52994bfb1968af159e12d4943b5bb|$HF/Xenova/slimsam-77-uniform/resolve/main/onnx/prompt_encoder_mask_decoder.onnx"
+  # CHAIN-7h: AI finishing at export. NAFNet-SIDD-width32 (megvii, MIT) as
+  # exported to ONNX (dynamic H/W, input "image", output "out") in the
+  # emulsion release below; Real-ESRGAN x2plus (xinntao, BSD-3) as the
+  # SceneWorks ONNX export (input "input", output "output", 2× out).
+  "Export denoise model (NAFNet-SIDD-width32)|nafnet-sidd-w32.onnx|110000000|08|5ff072283fe8c86b7c990aa7331cdb26183e20b08961769c70057b82260b133d|https://github.com/AlfredWei/emulsion/releases/download/denoise-model-nafnet-sidd-w32-v1/nafnet_sidd_w32.onnx"
+  "Export upscale model (Real-ESRGAN x2plus)|realesrgan-x2.onnx|60000000|08|7115ba92e8a1bfa63d68558ef006ef3d91273a068d321b1439f8bb1c9179002c|$HF/SceneWorks/real-esrgan-onnx/resolve/main/real_esrgan_x2.onnx"
 )
 
 file_size() { stat -f%z "$1" 2>/dev/null || stat -c%s "$1" 2>/dev/null || echo 0; }

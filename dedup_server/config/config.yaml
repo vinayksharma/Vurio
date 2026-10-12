@@ -143,6 +143,10 @@ media.adjustments.masks.useCoreML: false
 # CHAIN-6 (docs/todo_tool_chain.md §8): export sheet defaults
 media.adjustments.export.defaultFormat: jpeg
 media.adjustments.export.defaultQuality: 92
+# CHAIN-7h: optional AI finishing at export (models fetched by ensure_models.sh)
+media.adjustments.export.denoiseModelPath: models/nafnet-sidd-w32.onnx
+media.adjustments.export.upscaleModelPath: models/realesrgan-x2.onnx
+media.adjustments.export.useCoreML: true
 scheduler.backoff.maxMs: 30000
 scheduler.maxConsecutiveFailures: 5
 media.video.mkv: false
