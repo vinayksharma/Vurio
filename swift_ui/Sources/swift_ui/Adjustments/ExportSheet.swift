@@ -170,7 +170,8 @@ struct ExportSheet: View {
                     NumericReadout(value: Binding(get: { Double(quality) }, set: { quality = Int($0.rounded()) }),
                                    range: 1...100, step: 1, defaultValue: Double(model.exportDefaults.quality),
                                    format: { String(Int($0.rounded())) }, decimals: 0)
-                    Slider(value: Binding(get: { Double(quality) }, set: { quality = Int($0.rounded()) }), in: 1...100, step: 1)
+                    TickSlider(value: Binding(get: { Double(quality) }, set: { quality = Int($0.rounded()) }),
+                               range: 1...100, step: 1, defaultValue: Double(model.exportDefaults.quality))
                 }
             }
             // Size
@@ -194,7 +195,7 @@ struct ExportSheet: View {
                         NumericReadout(value: $denoiseStrength, range: 0.1...1, step: 0.05, defaultValue: 0.7,
                                        format: { String(format: "%.0f%%", $0 * 100) }, decimals: 0,
                                        displayScale: 100, isEnabled: denoiseOn)
-                        Slider(value: $denoiseStrength, in: 0.1...1, step: 0.05)
+                        TickSlider(value: $denoiseStrength, range: 0.1...1, step: 0.05, defaultValue: 0.7)
                             .frame(width: 120)
                             .disabled(!denoiseOn)
                         Spacer()

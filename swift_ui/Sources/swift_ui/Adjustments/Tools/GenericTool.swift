@@ -362,13 +362,8 @@ struct ParamSlider: View {
                 NumericReadout(value: $value, range: range, step: step, defaultValue: defaultValue,
                                format: { Self.text($0, in: range) }, decimals: Self.decimals(for: range),
                                isEnabled: isEnabled, onEditing: onEditing)
-                if step > 0 {
-                    Slider(value: $value, in: range, step: step, onEditingChanged: onEditing)
-                        .controlSize(.small)
-                } else {
-                    Slider(value: $value, in: range, onEditingChanged: onEditing)
-                        .controlSize(.small)
-                }
+                TickSlider(value: $value, range: range, step: step, defaultValue: defaultValue,
+                           onEditing: onEditing)
             }
         }
     }
