@@ -930,7 +930,7 @@ private struct LaneInspector: View {
                 ParamSlider(label: "Feather",
                             value: Binding(get: { lane.mask.feather },
                                            set: { model.setLaneFeather(lane.id, $0, interactive: true) }),
-                            range: 0...0.5, step: 0.005,
+                            range: 0...0.5, step: 0.005, defaultValue: 0,
                             onEditing: { editing in
                                 if !editing { model.setLaneFeather(lane.id, lane.mask.feather, interactive: false) }
                             })
@@ -958,7 +958,7 @@ private struct LaneInspector: View {
                 ParamSlider(label: "Strength",
                             value: Binding(get: { lane.strength },
                                            set: { model.setLaneStrength(lane.id, $0, interactive: true) }),
-                            range: 0...1, step: 0.01,
+                            range: 0...1, step: 0.01, defaultValue: 1,
                             onEditing: { editing in
                                 if !editing { model.setLaneStrength(lane.id, lane.strength, interactive: false) }
                             })
@@ -1056,7 +1056,7 @@ private struct LaneMaskInspector: View {
                     ParamSlider(label: p.label, value: Binding(get: { tool.numbers[p.id] ?? p.defaultValue },
                                                                set: { tool.numbers[p.id] = $0
                                                                       model.paramDragged() }),
-                                range: p.min...p.max, step: p.step,
+                                range: p.min...p.max, step: p.step, defaultValue: p.defaultValue,
                                 onEditing: { editing in
                                     model.laneMaskChanged(laneID, label: "Mask \(p.label)", interactive: editing)
                                 })
@@ -1112,7 +1112,8 @@ private struct LaneMaskInspector: View {
                         .disabled((tool.strokes["strokes"] ?? []).isEmpty)
                 }
                 .disabled(!hasImage)
-                ParamSlider(label: "Brush size", value: $model.brushRadius, range: 0.005...0.2, step: 0.005, onEditing: { _ in })
+                ParamSlider(label: "Brush size", value: $model.brushRadius, range: 0.005...0.2, step: 0.005,
+                            defaultValue: 0.03, onEditing: { _ in })
                     .disabled(!hasImage)
                 let count = (tool.strokes["strokes"] ?? []).count
                 Text(painting ? "Drag on the picture to paint; Esc when done." : (count == 1 ? "1 stroke" : "\(count) strokes"))
@@ -1292,7 +1293,7 @@ private struct BlendStrengthHeader: View {
             ParamSlider(label: "Strength",
                         value: Binding(get: { node.strength ?? 1 },
                                        set: { model.setStrength($0, nodeID: node.id, interactive: true) }),
-                        range: 0...1, step: 0.01,
+                        range: 0...1, step: 0.01, defaultValue: 1,
                         onEditing: { editing in
                             if !editing { model.setStrength(node.strength ?? 1, nodeID: node.id, interactive: false) }
                         })
@@ -1478,17 +1479,6 @@ private struct RotateSection: View {
     @ObservedObject var tool: RotateToolUI
     let hasImage: Bool
 
-    /// The readout's two-click reset: one click arms it (red) and opens it
-    /// for typing, a second click resets the rotation. Scrolling or
-    /// dragging the value disarms. The editing flag itself is the model's
-    /// `isEditingReadout`, so the viewer's Esc can cancel it.
-    @State private var resetArmed = false
-    @State private var editText = ""
-    @FocusState private var editFocused: Bool
-    /// Where the pointer was at the last drag update, in points along the
-    /// axis being dragged, so each update nudges by the movement since.
-    @State private var dragLast: CGFloat?
-
     /// What the rotation currently amounts to: quarter turns and the
     /// straighten angle as one number, since that is what the image is
     /// actually turned by. Fixed-width so the buttons beside it do not shift
@@ -1498,11 +1488,6 @@ private struct RotateSection: View {
     /// A pointer move of this many points changes the angle by one degree,
     /// so a drag across the panel is a few degrees, like a few wheel notches.
     private static let degreesPerPoint = 0.05
-    /// Movement under this is a click, not a drag.
-    private static let dragThreshold: CGFloat = 3
-
-    private static let armedBorder = Color(hex: "#4A0F0F")
-    private static let armedSelectionBackground = NSColor(Color(hex: "#4A0F0F"))
 
     var body: some View {
         HStack(alignment: .center, spacing: 4) {
@@ -1532,154 +1517,25 @@ private struct RotateSection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// The readout wears the advanced-overlay look (Menlo, muted green, a
-    /// faint glow) on a well darker than the section card, at the same
-    /// height, corner radius and border as the buttons beside it. It is a
-    /// control: scroll or drag to nudge the straighten angle; click once (or
-    /// press F2) to arm it and type a value, Return to apply, Esc to cancel;
-    /// click again while armed to reset the rotation to zero.
+    /// The shared readout (NumericReadout) with Rotate's own semantics: a
+    /// drag or wheel notch nudges the straighten angle through the model
+    /// (which schedules its commit), a typed value is the total rotation
+    /// (split into quarter turns and the remainder), and the second click
+    /// resets the node. The total is unbounded, so no range clamps it.
     private var degreesReadout: some View {
-        let tint = resetArmed ? Theme.error : Theme.success
-        let border = resetArmed ? Self.armedBorder : Theme.borderActive.opacity(0.35)
-        return ZStack {
-            if model.isEditingReadout {
-                TextField("", text: $editText)
-                    .textFieldStyle(.plain)
-                    .font(.custom("Menlo", size: 9))
-                    .foregroundColor(tint)
-                    .multilineTextAlignment(.center)
-                    .focused($editFocused)
-                    .onSubmit { commitEdit() }
-                    .onExitCommand { cancelEdit() }
-                    .onAppear { editFocused = true }
-                    .onChange(of: editFocused) { _, focused in
-                        if focused {
-                            // Once the field editor is really ours (focus
-                            // lands a beat after the flag): select the whole
-                            // value so typing replaces it, and draw that
-                            // selection on very dark red — the system
-                            // highlight would swallow the red digits.
-                            // `disarm()` puts the window's field editor back.
-                            DispatchQueue.main.async {
-                                guard let editor = NSApp.keyWindow?.firstResponder as? NSTextView else { return }
-                                editor.selectedTextAttributes = [
-                                    .backgroundColor: Self.armedSelectionBackground,
-                                    .foregroundColor: NSColor(Theme.error),
-                                ]
-                                editor.insertionPointColor = NSColor(Theme.error)
-                                editor.selectAll(nil)
-                            }
-                        } else if model.isEditingReadout {
-                            // Focus taken away: apply what was typed, like
-                            // any macOS field.
-                            commitEdit()
-                        }
-                    }
-            } else {
-                Text(String(format: "%+.1f°", totalDegrees))
-                    .font(.custom("Menlo", size: 9))
-                    .foregroundColor(tint)
-                    .shadow(color: tint.opacity(0.75), radius: 2.5)
-            }
-        }
-        .frame(width: 44, height: 24)
-        .background(RoundedRectangle(cornerRadius: 6).fill(Theme.background))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(border, lineWidth: 1))
-        // The click/drag catcher sits above the field too: a second click
-        // is the reset, not a caret placement, and a drag is a nudge. The
-        // field is reached through focus, so it still takes the keyboard.
-        .overlay(
-            Color.clear
-                .contentShape(RoundedRectangle(cornerRadius: 6))
-                // High priority: the readout sits in the panel's ScrollView,
-                // which would otherwise claim the drag and leave only the click.
-                .highPriorityGesture(clickOrDrag)
-        )
-        .overlay(
-            ScrollWheelCatcher { deltaY, _, isPrecise in
-                // A mouse notch is a half degree; trackpad deltas are
-                // many and small, so they scale instead of stepping.
-                let step = isPrecise ? Double(deltaY) * 0.02 : (deltaY > 0 ? 0.5 : -0.5)
-                disarm()
-                model.nudgeAngle(by: step)
-            }
-        )
-        .overlay(EditKeyCatcher(isEnabled: hasImage && !model.isEditingReadout) { beginEdit() })
-        .animation(.easeInOut(duration: 0.15), value: resetArmed)
-        .onChange(of: model.isEditingReadout) { _, editing in
-            // Cancelled from outside (Esc in the viewer, a new photo).
-            if !editing { resetArmed = false }
-        }
-        .help(resetArmed
-              ? "Type a rotation and press Return, or click again to reset to 0°"
-              : "Total rotation: quarter turns plus straighten. Scroll or drag to adjust; click or F2 to type a value; click twice to reset.")
-    }
-
-    private func beginEdit() {
-        guard hasImage else { return }
-        editText = String(format: "%.1f", totalDegrees)
-        resetArmed = true
-        model.isEditingReadout = true
-    }
-
-    private func commitEdit() {
-        guard model.isEditingReadout else { return }
-        let cleaned = editText.replacingOccurrences(of: "°", with: "").trimmingCharacters(in: .whitespaces)
-        // "inf", "nan" and overflowing exponents parse as Doubles; they are
-        // not rotations, so they cancel like any other invalid entry.
-        if let value = Double(cleaned), value.isFinite, abs(value - totalDegrees) > 1e-9 {
-            model.setTotalDegrees(value)
-        }
-        disarm()
-    }
-
-    private func cancelEdit() { disarm() }
-
-    private func disarm() {
-        resetArmed = false
-        model.isEditingReadout = false
-        // The field editor is shared by every text field in the window.
-        if let editor = NSApp.keyWindow?.fieldEditor(false, for: nil) as? NSTextView {
-            editor.selectedTextAttributes = [
-                .backgroundColor: NSColor.selectedTextBackgroundColor,
-                .foregroundColor: NSColor.selectedTextColor,
-            ]
-            editor.insertionPointColor = NSColor.textColor
-        }
-    }
-
-    /// One gesture for both: a press that moves under the threshold is a
-    /// click (decided on mouse up), anything further is a drag that nudges
-    /// the angle by the movement since the previous update. Right or up
-    /// increases, matching wheel-up on the scroll path.
-    private var clickOrDrag: some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { value in
-                let t = value.translation
-                let along = abs(t.width) >= abs(t.height) ? t.width : -t.height
-                if let last = dragLast {
-                    let moved = along - last
-                    if moved != 0 { model.nudgeAngle(by: Double(moved) * Self.degreesPerPoint) }
-                    dragLast = along
-                } else if abs(along) >= Self.dragThreshold {
-                    // The drag has begun: it cancels an armed reset and
-                    // starts counting from here, so the threshold itself
-                    // does not jump the value.
-                    disarm()
-                    dragLast = along
-                }
-            }
-            .onEnded { _ in
-                let wasDrag = dragLast != nil
-                dragLast = nil
-                guard !wasDrag, hasImage else { return }
-                if resetArmed {
-                    disarm()
-                    if let id = model.activeRotateID { model.resetNode(id) }
-                } else {
-                    beginEdit()
-                }
-            }
+        NumericReadout(value: Binding(get: { totalDegrees }, set: { _ in }),
+                       range: -Double.infinity...Double.infinity,
+                       defaultValue: 0,
+                       format: { String(format: "%+.1f°", $0) },
+                       decimals: 1,
+                       dragStep: Self.degreesPerPoint,
+                       wheelStep: 0.5,
+                       editKey: true,
+                       isEnabled: hasImage,
+                       onNudge: { delta in model.nudgeAngle(by: delta) },
+                       onCommit: { value in model.setTotalDegrees(value) },
+                       onReset: { if let id = model.activeRotateID { model.resetNode(id) } },
+                       externalEditing: $model.isEditingReadout)
     }
 }
 
@@ -1745,60 +1601,3 @@ private struct CropSection: View {
     static func label(_ option: String) -> String { CropToolUI.aspectLabel(option) }
 }
 
-/// Begins editing the Rotate readout on the OS edit key (F2; Fn+F2 on a
-/// keyboard whose F-keys default to media functions). A local key monitor,
-/// since SwiftUI has no key equivalent for function keys; hit-test
-/// transparent like the other catchers so the pointer is never affected.
-private struct EditKeyCatcher: NSViewRepresentable {
-    var isEnabled: Bool
-    var onEditKey: () -> Void
-
-    func makeNSView(context: Context) -> CatcherView {
-        let view = CatcherView()
-        view.isEnabled = isEnabled
-        view.onEditKey = onEditKey
-        return view
-    }
-
-    func updateNSView(_ view: CatcherView, context: Context) {
-        view.isEnabled = isEnabled
-        view.onEditKey = onEditKey
-    }
-
-    static func dismantleNSView(_ view: CatcherView, coordinator: ()) {
-        view.stopMonitoring()
-    }
-
-    final class CatcherView: NSView {
-        var isEnabled = false
-        var onEditKey: (() -> Void)?
-        private var monitor: Any?
-        private static let f2KeyCode: UInt16 = 120
-
-        override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            window == nil ? stopMonitoring() : startMonitoring()
-        }
-
-        deinit { stopMonitoring() }
-
-        private func startMonitoring() {
-            guard monitor == nil else { return }
-            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                guard let self, self.isEnabled, let window = self.window, event.window === window,
-                      event.keyCode == Self.f2KeyCode,
-                      event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty
-                else { return event }
-                self.onEditKey?()
-                return nil
-            }
-        }
-
-        func stopMonitoring() {
-            if let monitor { NSEvent.removeMonitor(monitor) }
-            monitor = nil
-        }
-    }
-}

@@ -28,9 +28,11 @@ struct ExportSettings {
         return (1...100).contains(q) ? q : fallback
     }
     static var limitEnabled: Bool { UserDefaults.standard.bool(forKey: limitKey) }
+    /// The long side the limit starts at: a web-size export.
+    static let defaultMaxSide = 2048
     static var maxSide: Int {
         let v = UserDefaults.standard.integer(forKey: maxSideKey)
-        return v > 0 ? v : 2048
+        return v > 0 ? v : defaultMaxSide
     }
 
     static func remember(format: String, quality: Int, limitEnabled: Bool, maxSide: Int) {
@@ -72,7 +74,7 @@ struct ExportSheet: View {
     @State private var format = "jpeg"
     @State private var quality = 92
     @State private var limitEnabled = ExportSettings.limitEnabled
-    @State private var maxSideText = String(ExportSettings.maxSide)
+    @State private var maxSideValue = Double(ExportSettings.maxSide)
     @State private var suffix = ""
     // CHAIN-7h
     @State private var denoiseOn = ExportSettings.denoise > 0
@@ -106,7 +108,10 @@ struct ExportSheet: View {
         // own latest recipe (or "edit").
         return trimmed.isEmpty ? (isBatch ? "" : "edit") : trimmed
     }
-    private var maxSide: Int { Int(maxSideText.trimmingCharacters(in: .whitespaces)) ?? 0 }
+    private var maxSide: Int { Int(maxSideValue.rounded()) }
+    /// The long side the server accepts: a few pixels up to a size no
+    /// camera reaches.
+    private static let maxSideRange: ClosedRange<Double> = 16...30000
     private var canExport: Bool {
         !isRunning && !folder.isEmpty && (!limitEnabled || maxSide >= 16)
     }
@@ -162,10 +167,10 @@ struct ExportSheet: View {
             if format == "jpeg" {
                 HStack(spacing: 8) {
                     Text("Quality").frame(width: 56, alignment: .trailing)
+                    NumericReadout(value: Binding(get: { Double(quality) }, set: { quality = Int($0.rounded()) }),
+                                   range: 1...100, step: 1, defaultValue: Double(model.exportDefaults.quality),
+                                   format: { String(Int($0.rounded())) }, decimals: 0)
                     Slider(value: Binding(get: { Double(quality) }, set: { quality = Int($0.rounded()) }), in: 1...100, step: 1)
-                    Text("\(quality)")
-                        .font(.custom("Menlo", size: 11))
-                        .frame(width: 28, alignment: .trailing)
                 }
             }
             // Size
@@ -173,10 +178,10 @@ struct ExportSheet: View {
                 Text("").frame(width: 56)
                 Toggle("Limit long side to", isOn: $limitEnabled)
                     .toggleStyle(.checkbox)
-                TextField("px", text: $maxSideText)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 64)
-                    .disabled(!limitEnabled)
+                NumericReadout(value: $maxSideValue, range: Self.maxSideRange, step: 1,
+                               defaultValue: Double(ExportSettings.defaultMaxSide),
+                               format: { String(Int($0.rounded())) }, decimals: 0,
+                               dragStep: 4, wheelStep: 16, width: 52, isEnabled: limitEnabled)
                 Text("px").foregroundColor(Theme.textSecondary)
                 Spacer()
             }
@@ -186,13 +191,12 @@ struct ExportSheet: View {
                     HStack(spacing: 8) {
                         Text("Finish").frame(width: 56, alignment: .trailing)
                         Toggle("AI denoise", isOn: $denoiseOn).toggleStyle(.checkbox).fixedSize()
+                        NumericReadout(value: $denoiseStrength, range: 0.1...1, step: 0.05, defaultValue: 0.7,
+                                       format: { String(format: "%.0f%%", $0 * 100) }, decimals: 0,
+                                       displayScale: 100, isEnabled: denoiseOn)
                         Slider(value: $denoiseStrength, in: 0.1...1, step: 0.05)
                             .frame(width: 120)
                             .disabled(!denoiseOn)
-                        Text(String(format: "%.0f%%", denoiseStrength * 100))
-                            .font(.custom("Menlo", size: 11))
-                            .foregroundColor(denoiseOn ? Theme.textPrimary : Theme.textSecondary)
-                            .frame(width: 36, alignment: .trailing)
                         Spacer()
                     }
                 }

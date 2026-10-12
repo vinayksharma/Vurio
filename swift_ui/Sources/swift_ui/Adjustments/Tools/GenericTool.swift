@@ -230,24 +230,31 @@ struct GenericInspector: View {
             ParamSlider(label: p.label, value: Binding(get: { tool.numbers[p.id] ?? p.defaultValue },
                                                        set: { tool.numbers[p.id] = $0
                                                               model.paramDragged() }),
-                        range: p.min...p.max, step: p.step,
+                        range: p.min...p.max, step: p.step, defaultValue: p.defaultValue,
                         onEditing: { editing in
                             model.paramChanged(nodeID: nodeID, label: label(p), interactive: editing)
                         })
                 .disabled(!hasImage)
         case .integer:
-            HStack {
+            // The readout carries the value (drag, wheel, typing, reset);
+            // the stepper's arrows step it by one.
+            HStack(spacing: 6) {
                 Text(p.label).font(.system(size: 11)).foregroundColor(Theme.textSecondary)
                 Spacer()
-                Stepper(value: Binding(get: { Int((tool.numbers[p.id] ?? p.defaultValue).rounded()) },
-                                       set: { tool.numbers[p.id] = Double($0)
-                                              model.paramChanged(nodeID: nodeID, label: label(p), interactive: false) }),
-                        in: Int(p.min)...Int(p.max)) {
-                    Text("\(Int((tool.numbers[p.id] ?? p.defaultValue).rounded()))")
-                        .font(.custom("Menlo", size: 10))
-                        .foregroundColor(Theme.textPrimary)
-                }
-                .disabled(!hasImage)
+                NumericReadout(value: Binding(get: { tool.numbers[p.id] ?? p.defaultValue },
+                                              set: { tool.numbers[p.id] = $0.rounded() }),
+                               range: p.min...p.max, step: 1, defaultValue: p.defaultValue,
+                               format: { String(Int($0.rounded())) }, decimals: 0,
+                               isEnabled: hasImage,
+                               onEditing: { editing in
+                                   if !editing { model.paramChanged(nodeID: nodeID, label: label(p), interactive: false) }
+                               })
+                Stepper("", value: Binding(get: { Int((tool.numbers[p.id] ?? p.defaultValue).rounded()) },
+                                           set: { tool.numbers[p.id] = Double($0)
+                                                  model.paramChanged(nodeID: nodeID, label: label(p), interactive: false) }),
+                        in: Int(p.min)...Int(p.max))
+                    .labelsHidden()
+                    .disabled(!hasImage)
             }
         case .enum:
             HStack {
@@ -336,39 +343,47 @@ struct GroupChips: View {
     }
 }
 
-/// A labelled slider with a Menlo readout; reports the drag's start and end
-/// so the model can ask for drag-size frames and commit once on release.
+/// A labelled slider with the shared numeric readout to its left: the
+/// readout drags, scrolls, types and resets (second click → `defaultValue`)
+/// within the slider's own range and step.
 struct ParamSlider: View {
     let label: String
     @Binding var value: Double
     let range: ClosedRange<Double>
     let step: Double
+    var defaultValue: Double? = nil
     let onEditing: (Bool) -> Void
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text(label).font(.system(size: 11)).foregroundColor(Theme.textSecondary)
-                Spacer()
-                Text(readout)
-                    .font(.custom("Menlo", size: 10))
-                    .foregroundColor(Theme.success)
-            }
-            if step > 0 {
-                Slider(value: $value, in: range, step: step, onEditingChanged: onEditing)
-                    .controlSize(.small)
-            } else {
-                Slider(value: $value, in: range, onEditingChanged: onEditing)
-                    .controlSize(.small)
+            Text(label).font(.system(size: 11)).foregroundColor(Theme.textSecondary)
+            HStack(spacing: 6) {
+                NumericReadout(value: $value, range: range, step: step, defaultValue: defaultValue,
+                               format: { Self.text($0, in: range) }, decimals: Self.decimals(for: range),
+                               isEnabled: isEnabled, onEditing: onEditing)
+                if step > 0 {
+                    Slider(value: $value, in: range, step: step, onEditingChanged: onEditing)
+                        .controlSize(.small)
+                } else {
+                    Slider(value: $value, in: range, onEditingChanged: onEditing)
+                        .controlSize(.small)
+                }
             }
         }
     }
 
-    private var readout: String {
+    /// Signed with two decimals for a small symmetric range (−1…1 EV),
+    /// two decimals up to a span of 20, whole numbers beyond.
+    static func text(_ value: Double, in range: ClosedRange<Double>) -> String {
         let span = range.upperBound - range.lowerBound
         if span <= 2.5 { return String(format: "%+.2f", value) }
         if span <= 20 { return String(format: "%.2f", value) }
         return String(format: "%.0f", value)
+    }
+
+    static func decimals(for range: ClosedRange<Double>) -> Int {
+        range.upperBound - range.lowerBound <= 20 ? 2 : 0
     }
 }
 
