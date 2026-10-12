@@ -121,6 +121,83 @@ namespace MediaDedup::Adjustments
             }
         };
 
+        // CHAIN-7c: painted strokes in base space. Each stroke is a
+        // polyline of radius r (fraction of the base's shorter side), add
+        // or erase (`e`), applied in order: consecutive strokes of one kind
+        // are rasterised together (anti-aliased lines and round caps on an
+        // 8-bit sheet), softened by a Gaussian of softness × radius, then
+        // united with (add) or cut out of (erase) the coverage so far.
+        class BrushMask final : public MaskSource
+        {
+        public:
+            BrushMask()
+            {
+                descriptor_.id = "brush";
+                descriptor_.label = "Brush";
+                descriptor_.category = ToolCategory::Mask;
+                descriptor_.icon = "paintbrush.pointed";
+                descriptor_.summary = "{strokes}";
+                schema_.strokes("strokes", "Strokes");
+                schema_.number("softness", "Softness", 0, 1, 0.25, 0.01);
+            }
+            void coverage(const ToolState &state, const Frame &fork, cv::Mat &out, const MaskContext &) const override
+            {
+                const ParamState &s = as(state);
+                const nlohmann::json &strokes = s.array("strokes");
+                const double softness = std::clamp(s.number("softness", 0.25), 0.0, 1.0);
+                const double scale = fork.affineScale();
+                out = cv::Mat::zeros(fork.height(), fork.width(), CV_32FC1);
+                if (!strokes.is_array() || strokes.empty())
+                    return;
+                // Runs of consecutive strokes of one kind and similar radius.
+                size_t i = 0;
+                while (i < strokes.size())
+                {
+                    const bool erase = strokes[i].value("e", false);
+                    const double r0 = strokes[i].value("r", 0.03);
+                    cv::Mat sheet = cv::Mat::zeros(fork.height(), fork.width(), CV_8UC1);
+                    double radius_px_sum = 0;
+                    int n = 0;
+                    while (i < strokes.size() && strokes[i].value("e", false) == erase &&
+                           std::fabs(strokes[i].value("r", 0.03) - r0) <= 0.2 * r0)
+                    {
+                        const nlohmann::json &st = strokes[i++];
+                        double radius_px = std::max(0.5, st.value("r", 0.03) * scale);
+                        radius_px_sum += radius_px;
+                        ++n;
+                        std::vector<cv::Point> pts;
+                        for (const auto &pt : st["p"])
+                            if (pt.is_array() && pt.size() == 2)
+                            {
+                                cv::Point2d q = fork.project(pt[0].get<double>(), pt[1].get<double>());
+                                pts.emplace_back(static_cast<int>(std::lround(q.x)), static_cast<int>(std::lround(q.y)));
+                            }
+                        if (pts.empty())
+                            continue;
+                        int thickness = std::max(1, static_cast<int>(std::lround(2 * radius_px)));
+                        int rad = std::max(1, static_cast<int>(std::lround(radius_px)));
+                        cv::circle(sheet, pts.front(), rad, cv::Scalar(255), cv::FILLED, cv::LINE_AA);
+                        for (size_t k = 1; k < pts.size(); ++k)
+                        {
+                            cv::line(sheet, pts[k - 1], pts[k], cv::Scalar(255), thickness, cv::LINE_AA);
+                            cv::circle(sheet, pts[k], rad, cv::Scalar(255), cv::FILLED, cv::LINE_AA);
+                        }
+                    }
+                    cv::Mat soft;
+                    sheet.convertTo(soft, CV_32FC1, 1.0 / 255.0);
+                    double sigma = n > 0 ? softness * (radius_px_sum / n) : 0;
+                    if (sigma > 0.3)
+                        soft = ChainEngine::gaussianBlur(soft, sigma);
+                    if (erase)
+                        out = out.mul(1.0f - soft);
+                    else
+                        cv::max(out, soft, out);
+                }
+                cv::min(out, 1.0f, out);
+                cv::max(out, 0.0f, out);
+            }
+        };
+
         // Luma within [lo, hi], soft knees of `knee`.
         class LuminanceMask final : public MaskSource
         {
@@ -389,6 +466,7 @@ namespace MediaDedup::Adjustments
         owned_.push_back(std::make_unique<FullMask>());
         owned_.push_back(std::make_unique<LinearMask>());
         owned_.push_back(std::make_unique<RadialMask>());
+        owned_.push_back(std::make_unique<BrushMask>());
         owned_.push_back(std::make_unique<LuminanceMask>());
         owned_.push_back(std::make_unique<ColorRangeMask>());
         owned_.push_back(std::make_unique<SubjectMask>());

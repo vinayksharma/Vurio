@@ -61,7 +61,7 @@ namespace
 TEST(MaskSourceTest, RegistryServesFiveProceduralSourcesFirst)
 {
     const auto &sources = MaskRegistry::instance().sources();
-    ASSERT_EQ(sources.size(), 9u) << "five procedural, four detected (CHAIN-5)";
+    ASSERT_EQ(sources.size(), 10u) << "six procedural (brush since CHAIN-7c), four detected (CHAIN-5)";
     EXPECT_EQ(sources[0]->id(), "full");
     EXPECT_NE(MaskRegistry::instance().find("radial"), nullptr);
     for (size_t i = 0; i < 5; ++i)
@@ -160,6 +160,54 @@ TEST(MaskSourceTest, GeometryAboveTheSplitCarriesTheMaskWithThePicture)
     // Radius: 0.1 of the base's shorter side (200 px) = 20 px.
     EXPECT_FLOAT_EQ(cov.at<float>(100, 115), 1.0f);
     EXPECT_FLOAT_EQ(cov.at<float>(100, 125), 0.0f);
+}
+
+TEST(MaskSourceTest, BrushStrokesFollowThePictureAndEraseInOrder)
+{
+    // CHAIN-7c. A horizontal stroke through the feature at base (0.25, 0.5),
+    // radius 0.05 of the short side; then an erase dab on its right end.
+    Frame f = solid(0.2f, 0.2f, 0.2f, 400, 200);
+    json strokes = json::array({
+        {{"r", 0.05}, {"p", json::array({{0.15, 0.5}, {0.35, 0.5}})}},
+        {{"r", 0.05}, {"e", true}, {"p", json::array({{0.35, 0.5}})}}});
+    LaneMask brush;
+    std::string error;
+    ASSERT_TRUE(LaneMask::parse(json{{"components", json::array({{{"source", "brush"}, {"params", {{"strokes", strokes}, {"softness", 0.0}}}}})}}, brush, error)) << error;
+    cv::Mat cov;
+    brush.coverage(f, cov);
+    EXPECT_FLOAT_EQ(cov.at<float>(100, 100), 1.0f) << "on the stroke (base 0.25,0.5 = px 100,100)";
+    EXPECT_FLOAT_EQ(cov.at<float>(100, 80), 1.0f) << "stroke start (base 0.15 → 60 px) is inside";
+    EXPECT_FLOAT_EQ(cov.at<float>(100, 140), 0.0f) << "the erase dab removed the right end";
+    EXPECT_FLOAT_EQ(cov.at<float>(150, 100), 0.0f) << "radius 0.05 × 200 = 10 px: 50 px below is clear";
+    EXPECT_FLOAT_EQ(cov.at<float>(104, 100), 1.0f);
+    EXPECT_FLOAT_EQ(cov.at<float>(120, 100), 0.0f);
+
+    // Through geometry above the split (crop the left half, quarter turn)
+    // the stroke lands where the feature went: base (0.25, 0.5) → (100, 100).
+    RenderPlan geometry = compile(json::array({
+        node("crop", {{"version", 1}, {"left", 0}, {"top", 0}, {"width", 0.5}, {"height", 1}}),
+        node("rotate", {{"version", 1}, {"quarter_turns", 1}})}));
+    geometry.render(f);
+    brush.coverage(f, cov);
+    EXPECT_FLOAT_EQ(cov.at<float>(100, 100), 1.0f) << "still on the feature after crop + turn";
+    EXPECT_FLOAT_EQ(cov.at<float>(60, 100), 1.0f) << "the stroke now runs vertically (row 60, col 100)";
+    EXPECT_FLOAT_EQ(cov.at<float>(180, 100), 0.0f);
+    EXPECT_FLOAT_EQ(cov.at<float>(140, 100), 0.0f) << "the erase dab went with it";
+
+    // Softness blurs the edge; the strokes param is validated.
+    LaneMask soft;
+    ASSERT_TRUE(LaneMask::parse(json{{"components", json::array({{{"source", "brush"}, {"params", {{"strokes", strokes}, {"softness", 1.0}}}}})}}, soft, error));
+    Frame g = solid(0.2f, 0.2f, 0.2f, 400, 200);
+    soft.coverage(g, cov);
+    EXPECT_GT(cov.at<float>(112, 100), 0.05f);
+    EXPECT_LT(cov.at<float>(112, 100), 0.95f);
+    EXPECT_FALSE(LaneMask::parse(json{{"components", json::array({{{"source", "brush"}, {"params", {{"strokes", json::array({{{"r", 5.0}, {"p", json::array({{0.5, 0.5}})}}})}}}}})}}, soft, error));
+    EXPECT_NE(error.find("radius"), std::string::npos);
+    // An empty brush is identity (no strokes) and covers nothing.
+    LaneMask empty;
+    ASSERT_TRUE(LaneMask::parse(json{{"components", json::array({{{"source", "brush"}}})}}, empty, error));
+    empty.coverage(g, cov);
+    EXPECT_FLOAT_EQ(cov.at<float>(100, 100), 0.0f);
 }
 
 // ------------------------------------------------------------------ lanes
