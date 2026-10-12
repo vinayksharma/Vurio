@@ -1,7 +1,9 @@
 #include "adjustments/tool_registry.hpp"
 #include "adjustments/tools/crop_tool.hpp"
+#include "adjustments/tools/detail_tools.hpp"
 #include "adjustments/tools/layer_tools.hpp"
 #include "adjustments/tools/rotate_tool.hpp"
+#include "adjustments/tools/tone_tools.hpp"
 
 namespace MediaDedup::Adjustments
 {
@@ -25,8 +27,15 @@ namespace MediaDedup::Adjustments
         owned_.push_back(std::make_unique<ColorFilterTool>());
         owned_.push_back(std::make_unique<GammaTool>());
         owned_.push_back(std::make_unique<VignetteTool>());
+        // CHAIN-7a
+        owned_.push_back(std::make_unique<LevelsTool>());
+        owned_.push_back(std::make_unique<CurvesTool>());
+        owned_.push_back(std::make_unique<HslTool>());
+        owned_.push_back(std::make_unique<GrainTool>());
         owned_.push_back(std::make_unique<SharpenTool>());
         owned_.push_back(std::make_unique<DenoiseTool>());
+        owned_.push_back(std::make_unique<ClarityTool>());
+        owned_.push_back(std::make_unique<DehazeTool>());
         for (const auto &t : owned_)
             order_.push_back(t.get());
     }

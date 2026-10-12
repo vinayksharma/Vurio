@@ -19,7 +19,11 @@ namespace MediaDedup::Adjustments
             Integer, // integer within [min, max]
             Enum,    // one of `options`
             Bool,    // true/false; `def` != 0 means true
-            Text     // free text (prompt masks); `default_option` is the default
+            Text,    // free text (prompt masks); `default_option` is the default
+            // CHAIN-7: array-valued kinds. The value is JSON; `default_json`
+            // holds the default and the limits live in the kind:
+            Curve,   // [[x, y], …], 2..16 points, x strictly increasing in [0,1], y in [0,1]
+            Strokes  // [{r, e, p: [[x, y], …]}, …], ≤ 200 strokes in base space (brush mask)
         };
 
         std::string id;    // "angle"
@@ -31,6 +35,14 @@ namespace MediaDedup::Adjustments
         double def = 0;                   // Number/Integer/Bool default
         std::string default_option;       // Enum/Text default
         std::vector<std::string> options; // Enum choices
+        std::string default_json;         // Curve/Strokes default, serialised
+        // CHAIN-7: params sharing a group are shown one group at a time
+        // behind a chip row (HSL's bands, Curves' channels); empty = none.
+        std::string group;
+
+        static constexpr int kCurveMaxPoints = 16;
+        static constexpr int kStrokesMax = 200;
+        static constexpr int kStrokePointsMax = 2000;
 
         static const char *kindName(Kind k)
         {
@@ -41,6 +53,8 @@ namespace MediaDedup::Adjustments
             case Kind::Enum: return "enum";
             case Kind::Bool: return "bool";
             case Kind::Text: return "text";
+            case Kind::Curve: return "curve";
+            case Kind::Strokes: return "strokes";
             }
             return "number";
         }

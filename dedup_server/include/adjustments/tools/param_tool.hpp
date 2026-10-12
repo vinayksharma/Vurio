@@ -17,6 +17,7 @@ namespace MediaDedup::Adjustments
     {
         std::map<std::string, double> numbers;      // Number, Integer, Bool (0/1)
         std::map<std::string, std::string> strings; // Enum, Text
+        std::map<std::string, nlohmann::json> arrays; // Curve, Strokes (validated JSON)
         std::unique_ptr<ToolState> clone() const override { return std::make_unique<ParamState>(*this); }
 
         double number(const std::string &id, double def = 0.0) const
@@ -30,6 +31,27 @@ namespace MediaDedup::Adjustments
             auto it = strings.find(id);
             return it == strings.end() ? empty : it->second;
         }
+        const nlohmann::json &array(const std::string &id) const
+        {
+            static const nlohmann::json empty = nlohmann::json::array();
+            auto it = arrays.find(id);
+            return it == arrays.end() ? empty : it->second;
+        }
+    };
+
+    // CHAIN-7: a Curve value as points, and the monotone cubic through
+    // them (Fritsch–Carlson), evaluated on [0,1] with the end values held
+    // outside the first/last point. Shared by Curves and anything else
+    // that takes a curve.
+    struct CurvePoints
+    {
+        std::vector<std::pair<double, double>> points; // sorted by x
+        static CurvePoints fromJson(const nlohmann::json &value);
+        static nlohmann::json identityJson() { return nlohmann::json::array({{0.0, 0.0}, {1.0, 1.0}}); }
+        bool isIdentity() const;
+        double evaluate(double x) const;
+        // A `size`-entry LUT over [0,1] (CV_32FC1, 1 × size).
+        void lut(int size, std::vector<float> &out) const;
     };
 
     // The parameter machinery on its own, so a mask source (CHAIN-4) can
@@ -49,9 +71,19 @@ namespace MediaDedup::Adjustments
         void choice(const char *id, const char *label, std::vector<std::string> options, const char *def);
         void flag(const char *id, const char *label, bool def);
         void text(const char *id, const char *label, const char *def);
+        // CHAIN-7: array-valued params.
+        void curve(const char *id, const char *label);
+        void strokes(const char *id, const char *label);
+        // Params declared after this call carry `group` (nullptr ends it).
+        void group(const char *name);
+
+        // Validate one Curve / Strokes value; false with `error` set.
+        static bool validateCurve(const nlohmann::json &v, std::string &error);
+        static bool validateStrokes(const nlohmann::json &v, std::string &error);
 
     private:
         ToolDescriptor &descriptor_;
+        std::string group_;
     };
 
     class ParamTool : public AdjustmentTool
@@ -87,5 +119,7 @@ namespace MediaDedup::Adjustments
         }
         void flag(const char *id, const char *label, bool def) { schema_.flag(id, label, def); }
         void text(const char *id, const char *label, const char *def) { schema_.text(id, label, def); }
+        void curve(const char *id, const char *label) { schema_.curve(id, label); }
+        void group(const char *name) { schema_.group(name); }
     };
 }

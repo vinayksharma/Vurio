@@ -133,6 +133,8 @@ public:
                 ps->set_default_value(p.def);
                 ps->set_default_option(p.default_option);
                 for (const auto& o : p.options) ps->add_options(o);
+                ps->set_default_json(p.default_json);
+                ps->set_group(p.group);
             }
         }
     }

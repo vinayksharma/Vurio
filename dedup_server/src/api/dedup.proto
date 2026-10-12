@@ -934,13 +934,20 @@ message HistoryStep {
 message ParamSpec {
   string id = 1;
   string label = 2;
-  string kind = 3; // "number" | "integer" | "enum" | "bool" | "text"
+  string kind = 3; // "number" | "integer" | "enum" | "bool" | "text" | "curve" | "strokes" (CHAIN-7)
   double min = 4;
   double max = 5;
   double step = 6;          // 0 = continuous
   double default_value = 7; // number/integer
   string default_option = 8; // enum
   repeated string options = 9;
+  // CHAIN-7: array-valued kinds carry their default as JSON — "curve" is
+  // [[x, y], …] (2..16 points, x strictly increasing in [0,1]), "strokes" is
+  // [{r, e, p: [[x, y], …]}, …] in base space (≤ 200 strokes).
+  string default_json = 10;
+  // CHAIN-7: params sharing a group are shown one group at a time behind a
+  // chip row (HSL's bands, Curves' channels); empty = ungrouped.
+  string group = 11;
 }
 
 message ToolDescriptor {
