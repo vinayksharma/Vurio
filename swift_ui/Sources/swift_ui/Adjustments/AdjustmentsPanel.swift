@@ -515,9 +515,11 @@ private struct ChainListView: View {
                     .listRowInsets(EdgeInsets(top: 2, leading: 6, bottom: 2, trailing: 6))
                     .listRowBackground(Color.clear)
                 }
-                .onMove { source, destination in model.moveRows(fromOffsets: source, toOffset: destination) }
+                // Rows drag as "vurio-node:<id>" (the List's own reorder
+                // drag goes dead once rows have been added, so the rows
+                // provide their own item); the drop lands in onInsert.
                 .onInsert(of: [.plainText]) { index, providers in
-                    _ = insertDropped(providers, at: trunkIndex(forRow: index, rows: rows))
+                    _ = insertDropped(providers, atRow: index, rows: rows)
                 }
             }
             .listStyle(.plain)
@@ -571,9 +573,21 @@ private struct ChainListView: View {
         return model.document.index(of: rows[i].id) ?? model.document.nodes.count
     }
 
+    static let nodeDragPrefix = "vurio-node:"
+
     /// A catalogue chip is dragged as "vurio-tool:<id>"; a recipe as
-    /// "vurio-recipe:<id>" (inserted at the drop line, docs §7.1).
+    /// "vurio-recipe:<id>" (inserted at the drop line, docs §7.1); a chain
+    /// row as "vurio-node:<id>" (moved to the drop line, into whichever
+    /// container it falls in).
     private func insertDropped(_ providers: [NSItemProvider], at index: Int) -> Bool {
+        insertDropped(providers, atRow: nil, trunkIndex: index)
+    }
+
+    private func insertDropped(_ providers: [NSItemProvider], atRow row: Int, rows: [ChainRowItem]) -> Bool {
+        insertDropped(providers, atRow: row, trunkIndex: trunkIndex(forRow: row, rows: rows))
+    }
+
+    private func insertDropped(_ providers: [NSItemProvider], atRow row: Int?, trunkIndex index: Int) -> Bool {
         guard let provider = providers.first else { return false }
         provider.loadObject(ofClass: NSString.self) { object, _ in
             guard let text = object as? String else { return }
@@ -583,6 +597,9 @@ private struct ChainListView: View {
             } else if text.hasPrefix(CatalogueView.recipeDragPrefix) {
                 let recipeID = String(text.dropFirst(CatalogueView.recipeDragPrefix.count))
                 Task { @MainActor in model.applyRecipe(recipeID, mode: "insert", index: index) }
+            } else if text.hasPrefix(ChainListView.nodeDragPrefix) {
+                let nodeID = String(text.dropFirst(ChainListView.nodeDragPrefix.count))
+                Task { @MainActor in model.moveRow(id: nodeID, before: row ?? 0) }
             }
         }
         return true
@@ -648,6 +665,7 @@ private struct ChainRow: View {
         .opacity(node.enabled ? 1 : 0.6)
         .contentShape(Rectangle())
         .onTapGesture { model.selectedNodeID = node.id }
+        .onDrag { NSItemProvider(object: NSString(string: ChainListView.nodeDragPrefix + node.id)) }
     }
 
     private var compositionText: String {
@@ -731,6 +749,7 @@ private struct LaneRow: View {
         .opacity(lane.enabled ? 1 : 0.6)
         .contentShape(Rectangle())
         .onTapGesture { model.selectedNodeID = lane.id }
+        .onDrag { NSItemProvider(object: NSString(string: ChainListView.nodeDragPrefix + lane.id)) }
     }
 
     private var summary: String {

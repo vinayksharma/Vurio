@@ -700,13 +700,59 @@ final class AdjustmentsViewModel: ObservableObject {
 
     /// Rows of the chain list reordered by drag: only a move inside one
     /// container (the trunk, a split's lanes, a lane's steps) is honoured.
+    /// List.onMove: `source` is the dragged row, `destination` the row it
+    /// is dropped before, counted with the dragged row still in place.
+    /// Dropped among the rows of its own container the node just shifts;
+    /// dropped among another's (the trunk, or a lane's steps) it moves
+    /// there — the recompose a drag is for. A lane stays in its split and
+    /// a split on the trunk; a tool the server keeps off lanes (geometry)
+    /// is refused with a message.
     func moveRows(fromOffsets source: IndexSet, toOffset destination: Int) {
+        guard let from = source.first else { return }
+        moveRow(at: from, before: destination)
+    }
+
+    /// A chain row dragged (as "vurio-node:<id>") and dropped before
+    /// `destination`, the index List.onInsert reports — counted with the
+    /// dragged row still in place, as List.onMove counts it.
+    func moveRow(id movedID: String, before destination: Int) {
+        guard let from = document.rows.firstIndex(where: { $0.id == movedID }) else { return }
+        moveRow(at: from, before: destination)
+    }
+
+    private func moveRow(at from: Int, before destination: Int) {
         let rows = document.rows
-        guard let from = source.first, from < rows.count else { return }
+        guard from < rows.count else { return }
         let movedID = rows[from].id
-        let container: ChainLocation? = document.locate(movedID)
-        // The row that will follow the moved one after the move.
+        guard let origin = document.locate(movedID) else { return }
+        // The row index the node lands at once it is taken out.
         let targetIndex = destination > from ? destination - 1 : destination
+        var remaining = rows
+        remaining.remove(at: from)
+        let prev: ChainRowItem? = targetIndex > 0 ? remaining[targetIndex - 1] : nil
+        let next: ChainRowItem? = targetIndex < remaining.count ? remaining[targetIndex] : nil
+
+        let isSplit = document.node(movedID)?.isSplit ?? false
+        if case .lane = origin {
+            // Lanes and splits keep their container: shift by the rows of
+            // that container the drag passed over.
+            moveWithinContainer(movedID, from: from, to: targetIndex, rows: rows)
+            return
+        }
+        if isSplit {
+            moveWithinContainer(movedID, from: from, to: targetIndex, rows: rows)
+            return
+        }
+        let target = dropTarget(prev: prev, next: next, origin: origin, targetIndex: targetIndex, remaining: remaining)
+        if sameContainer(origin, target) {
+            moveWithinContainer(movedID, from: from, to: targetIndex, rows: rows)
+        } else {
+            moveAcross(movedID, to: target)
+        }
+    }
+
+    private func moveWithinContainer(_ id: String, from: Int, to targetIndex: Int, rows: [ChainRowItem]) {
+        let container = document.locate(id)
         var delta = 0
         var i = from
         while i != targetIndex {
@@ -716,8 +762,69 @@ final class AdjustmentsViewModel: ObservableObject {
             if sameContainer(container, document.locate(rows[i].id)) { delta += step }
         }
         guard delta != 0 else { return }
-        document.moveAny(id: movedID, by: delta)
+        document.moveAny(id: id, by: delta)
         chainChanged(label: "Reorder")
+    }
+
+    /// Where a node dropped between `prev` and `next` lands. Right under a
+    /// lane's name is that lane's first step; between two steps of a lane
+    /// is that lane; after a lane's last step is the lane when the node
+    /// already lives there and the trunk (after the split) otherwise, since
+    /// the two read the same on screen. Anywhere else is the trunk, before
+    /// the next trunk node.
+    private func dropTarget(prev: ChainRowItem?, next: ChainRowItem?, origin: ChainLocation,
+                            targetIndex: Int, remaining: [ChainRowItem]) -> ChainLocation {
+        if let prev, case .lane(_, let splitID, let li) = prev.kind {
+            return .laneStep(splitID: splitID, laneIndex: li, index: 0)
+        }
+        if let prev, case .laneStep(let s, let li, let si) = document.locate(prev.id) {
+            var nextInLane = false
+            if let next, case .laneStep(let s2, let li2, _) = document.locate(next.id) {
+                nextInLane = s2 == s && li2 == li
+            }
+            var originInLane = false
+            if case .laneStep(let s2, let li2, _) = origin { originInLane = s2 == s && li2 == li }
+            if nextInLane || originInLane {
+                return .laneStep(splitID: s, laneIndex: li, index: si + 1)
+            }
+        }
+        var i = targetIndex
+        while i < remaining.count, remaining[i].depth > 0 { i += 1 }
+        guard i < remaining.count, let index = document.index(of: remaining[i].id) else {
+            return .trunk(index: document.nodes.count)
+        }
+        return .trunk(index: index)
+    }
+
+    /// Take a node out of its container and put it into another at
+    /// `target`. Indices in the target are unaffected by the removal, since
+    /// the two containers are different.
+    private func moveAcross(_ id: String, to target: ChainLocation) {
+        document = currentDocument()
+        guard let node = document.node(id), !node.isSplit else { return }
+        let label = descriptor(for: node.tool)?.label ?? node.tool
+        switch target {
+        case .trunk(let index):
+            document.removeAny(id: id)
+            document.insert(node, at: index)
+            rebuildTools()
+            selectedNodeID = id
+            chainChanged(label: "Move \(label) to the trunk")
+        case .laneStep(let splitID, let li, let index):
+            guard descriptor(for: node.tool)?.laneAllowed ?? false else {
+                MessageCenter.shared.post("\(label) changes the canvas and cannot go in a lane")
+                return
+            }
+            guard let lanes = document.node(splitID)?.lanes, li < lanes.count else { return }
+            let lane = lanes[li]
+            document.removeAny(id: id)
+            document.insert(node, inLane: lane.id, at: index)
+            rebuildTools()
+            selectedNodeID = id
+            chainChanged(label: "Move \(label) to \(lane.name)")
+        case .lane:
+            return
+        }
     }
 
     private func sameContainer(_ a: ChainLocation?, _ b: ChainLocation?) -> Bool {
