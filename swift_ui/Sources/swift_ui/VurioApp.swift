@@ -595,6 +595,20 @@ final class CalloutState: ObservableObject {
     @Published var segment: HoverSegment = .none
     @Published var point: CGPoint = .zero
     @Published var showRepair = false
+    /// A plain text callout raised by any control (`View.hoverCallout`),
+    /// drawn with the same frame as the status bar's; nil when none.
+    @Published var text: String?
+
+    func show(_ text: String, at point: CGPoint) {
+        self.text = text
+        self.point = point
+    }
+
+    /// Hides the text callout only if it is still the caller's, so a
+    /// control the pointer just left cannot dismiss its neighbour's.
+    func hide(_ text: String) {
+        if self.text == text { self.text = nil }
+    }
 }
 
 /// Window-level host for the status bar's callout: drawn above both
@@ -606,8 +620,8 @@ struct StatusCalloutHost: View {
 
     var body: some View {
         GeometryReader { geo in
+            let origin = geo.frame(in: .global).origin
             if callout.segment != .none {
-                let origin = geo.frame(in: .global).origin
                 CalloutOverlayView(
                     segment: callout.segment,
                     appState: appState,
@@ -616,6 +630,21 @@ struct StatusCalloutHost: View {
                     totalWidth: geo.size.width,
                     showRepair: callout.showRepair
                 )
+                .allowsHitTesting(false)
+            } else if let text = callout.text {
+                CalloutFrame(hoverX: callout.point.x - origin.x,
+                             hoverY: callout.point.y - origin.y,
+                             totalWidth: geo.size.width) {
+                    Text(text)
+                        .font(.custom("Menlo", size: 10))
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: true, vertical: true)
+                }
+                // A different text is a different callout: no slide or
+                // crossfade from the control the pointer just left.
+                .id(text)
                 .allowsHitTesting(false)
             }
         }
@@ -766,58 +795,69 @@ struct CalloutOverlayView: View {
         }
     }
 
-    /// Measured size of the rendered callout content (plain text or the
-    /// stats panel) — drives the elbow line length and vertical centering,
-    /// replacing the old line-count * 14 height estimate the panel broke.
+    var body: some View {
+        CalloutFrame(hoverX: hoverX, hoverY: hoverY, totalWidth: totalWidth) {
+            if segment == .statusDot && appState.isOnline {
+                dotStatsPanel
+            } else {
+                Text(calloutText)
+                    .font(.custom("Menlo", size: 10))
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: true, vertical: true)
+            }
+        }
+    }
+}
+
+/// The callout's frame, shared by the status bar's panel and the plain
+/// text callouts (`View.hoverCallout`): an elbow line rising from the hover
+/// point with the content stacked above it. Drawn at window level
+/// (StatusCalloutHost), so totalWidth is the whole window: the panel
+/// escapes the pane it was raised from and only clamps at the window edges.
+struct CalloutFrame<Content: View>: View {
+    let hoverX: CGFloat
+    let hoverY: CGFloat
+    let totalWidth: CGFloat
+    @ViewBuilder let content: () -> Content
+
+    /// Measured size of the rendered content — drives the elbow line length
+    /// and vertical centering, replacing the old line-count * 14 height
+    /// estimate the stats panel broke.
     @State private var measuredSize = CGSize(width: 80, height: 14)
 
     var body: some View {
-        // The callout rises straight up from the hover point with the panel
-        // stacked above it. Drawn at window level (StatusCalloutHost), so
-        // totalWidth is the whole window: the panel escapes the narrow
-        // navigation pane and only clamps at the window edges.
         let startPoint = CGPoint(x: hoverX, y: hoverY - 6)
         let elbowPoint = CGPoint(x: hoverX, y: startPoint.y - 12)
         let halfW = measuredSize.width / 2
         let panelX = min(max(halfW + 4, hoverX), max(halfW + 4, totalWidth - halfW - 4))
-        
+        // A control near the top of the window keeps its panel inside it.
+        let panelY = max(measuredSize.height / 2 + 4, elbowPoint.y - (measuredSize.height / 2) - 4)
+
         ZStack(alignment: .topLeading) {
             Path { path in
                 path.move(to: startPoint)
                 path.addLine(to: elbowPoint)
             }
             .stroke(Color.gray.opacity(0.8), lineWidth: 1.5)
-            
-            Group {
-                if segment == .statusDot && appState.isOnline {
-                    dotStatsPanel
-                } else {
-                    Text(calloutText)
-                        .font(.custom("Menlo", size: 10))
-                        .foregroundColor(.white)
-                        .multilineTextAlignment(.leading)
-                        .lineLimit(nil)
-                        .fixedSize(horizontal: true, vertical: true)
-                }
-            }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
-            .background(
-                GeometryReader { geo in
-                    Color.black.opacity(0.8)
-                        .cornerRadius(4)
-                        .onAppear {
-                            DispatchQueue.main.async { self.measuredSize = geo.size }
-                        }
-                        .onChange(of: geo.size) { _, size in
-                            DispatchQueue.main.async { self.measuredSize = size }
-                        }
-                }
-            )
-            .position(
-                x: panelX,
-                y: elbowPoint.y - (measuredSize.height / 2) - 4
-            )
+
+            content()
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .background(
+                    GeometryReader { geo in
+                        Color.black.opacity(0.8)
+                            .cornerRadius(4)
+                            .onAppear {
+                                DispatchQueue.main.async { self.measuredSize = geo.size }
+                            }
+                            .onChange(of: geo.size) { _, size in
+                                DispatchQueue.main.async { self.measuredSize = size }
+                            }
+                    }
+                )
+                .position(x: panelX, y: panelY)
         }
         .animation(.easeOut(duration: 0.15), value: hoverX)
         .animation(.easeOut(duration: 0.15), value: measuredSize)

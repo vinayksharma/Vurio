@@ -103,12 +103,17 @@ final class AdjustmentsViewModel: ObservableObject {
     @Published var isCatalogueCollapsed: Bool {
         didSet { UserDefaults.standard.set(isCatalogueCollapsed, forKey: Self.catalogueKey) }
     }
+    /// The recipes pane inside the catalogue; collapsed until opened.
+    @Published var isRecipesCollapsed: Bool {
+        didSet { UserDefaults.standard.set(isRecipesCollapsed, forKey: Self.recipesKey) }
+    }
 
     let preview = PreviewRenderer()
 
     static let collapsedKey = "adjustmentsPanelCollapsed"
     static let widthKey = "adjustmentsPanelWidth"
     static let catalogueKey = "adjustmentsCatalogueCollapsed"
+    static let recipesKey = "adjustmentsRecipesCollapsed"
     static let minWidth: CGFloat = 280
     static let maxWidth: CGFloat = 440
     static let railWidth: CGFloat = 28
@@ -137,6 +142,7 @@ final class AdjustmentsViewModel: ObservableObject {
         let storedWidth = UserDefaults.standard.object(forKey: Self.widthKey) as? Double
         panelWidth = min(max(CGFloat(storedWidth ?? Double(Self.minWidth)), Self.minWidth), Self.maxWidth)
         isCatalogueCollapsed = UserDefaults.standard.object(forKey: Self.catalogueKey) as? Bool ?? false
+        isRecipesCollapsed = UserDefaults.standard.object(forKey: Self.recipesKey) as? Bool ?? true
         previewSubscription = preview.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         frameSubscription = preview.$frame.sink { [weak self] frame in
             // The server knows the true full-resolution base; the bitmap the

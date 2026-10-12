@@ -1334,30 +1334,44 @@ private struct CatalogueView: View {
                         }
                     }
                     // CHAIN-3: recipes sit in the catalogue like tools —
-                    // click appends, drag inserts at the drop line.
+                    // click appends, drag inserts at the drop line. They
+                    // keep their names, one full-width row each, in a pane
+                    // that stays collapsed until opened.
                     if !recipes.recipes.isEmpty {
-                        HStack(alignment: .top, spacing: 6) {
-                            Text("Recipes")
-                                .font(.system(size: 10))
-                                .foregroundColor(Theme.textSecondary)
-                                .frame(width: 56, alignment: .leading)
-                                .padding(.top, 4)
-                            FlowLayout(spacing: 4) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Button(action: { withAnimation { model.isRecipesCollapsed.toggle() } }) {
+                                HStack(spacing: 6) {
+                                    Text("Recipes")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(Theme.textSecondary)
+                                    Spacer()
+                                    Image(systemName: model.isRecipesCollapsed ? "chevron.right" : "chevron.down")
+                                        .font(.system(size: 9))
+                                        .foregroundColor(Theme.textSecondary)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.top, 4)
+                            .help(model.isRecipesCollapsed ? "Show recipes" : "Hide recipes")
+                            if !model.isRecipesCollapsed {
                                 ForEach(recipes.recipes) { recipe in
                                     Button(action: { model.applyRecipe(recipe.id, mode: "append") }) {
                                         HStack(spacing: 4) {
                                             Image(systemName: "book.closed")
                                             Text(recipe.name)
+                                                .lineLimit(1)
+                                                .truncationMode(.tail)
+                                            Spacer(minLength: 0)
                                         }
                                         .font(.system(size: 10))
                                         .padding(.horizontal, 7)
                                         .padding(.vertical, 3)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
                                     }
                                     .vurioButtonStyle(tint: Theme.textAccent)
                                     .disabled(!hasImage)
-                                    .help(recipe.description.isEmpty
-                                          ? "Add \(recipe.name) to the chain (drag to place it)"
-                                          : "\(recipe.description) — click to add, drag to place")
+                                    .hoverCallout(recipe.description.uppercased())
                                     .onDrag { NSItemProvider(object: NSString(string: CatalogueView.recipeDragPrefix + recipe.id)) }
                                 }
                             }
@@ -1383,20 +1397,18 @@ private struct WrappingChips: View {
         FlowLayout(spacing: 4) {
             ForEach(tools, id: \.id) { tool in
                 let refused = intoLane && !tool.laneAllowed
+                // Icon only: the name comes up in the app's callout on
+                // hover, so the catalogue stays a compact grid.
                 Button(action: { onAdd(tool) }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: tool.icon)
-                        Text(tool.label)
-                    }
-                    .font(.system(size: 10))
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
+                    Image(systemName: tool.icon)
+                        .font(.system(size: 11))
+                        .frame(width: 18, height: 14)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
                 }
                 .vurioButtonStyle(tint: Theme.textPrimary)
                 .disabled(!hasImage || refused)
-                .help(refused ? "\(tool.label) changes the canvas and cannot go in a lane"
-                              : intoLane ? "Add \(tool.label) to the selected lane (drag to place it on the trunk)"
-                                         : "Add \(tool.label) after the selection (drag to place it)")
+                .hoverCallout(tool.label.uppercased())
                 .onDrag { NSItemProvider(object: NSString(string: CatalogueView.dragPrefix + tool.id)) }
             }
         }
