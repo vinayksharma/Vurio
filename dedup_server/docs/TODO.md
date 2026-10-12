@@ -13,37 +13,6 @@ Completed tasks move to Done as one-liners; their spec documents are deleted
 
 ## Open
 
-- **CHAIN-1..7 — tool chain: user-ordered processing nodes with bypass and
-  per-photo persisted undo/redo, layer tools with blend + strength, splits into
-  masked lanes (gradients, luminance/colour range, subject, people, faces,
-  text prompt) merged back with blend + strength, recipes validated and
-  stored in the DB with file export/import, export of a new rendered file,
-  and one in-process OpenCV engine in the server that renders thumbnails,
-  full-size views and every live preview frame (the client has no pixel
-  code).**
-  *Designed 2026-10-11, revised twice the same day after the user's answers;
-  all questions resolved (spec §13). CHAIN-1 implemented 2026-10-11 on
-  `feature/image_adjustments` (engine, format 2 + history, preview session,
-  chain UI), live-verified in the app. CHAIN-2 implemented 2026-10-11 (eleven
-  layer/raster tools, sixteen blend modes, generic inspector). CHAIN-3
-  implemented 2026-10-11 (recipes table and service, viewer menu and
-  catalogue, Settings › Recipes with file export/import). CHAIN-4
-  implemented 2026-10-11 (split nodes, masked lanes with five procedural
-  sources, merge blend/strength, solo and mask overlay, gradient pins).
-  CHAIN-5 implemented 2026-10-11 (detected masks: subject via Vision with a
-  CLIPSeg fallback, people via MediaPipe selfie segmentation, faces from
-  the library, text prompts via CLIPSeg; mask service with disk cache and
-  a "mask" event; prompt field, person picker, Settings status); CHAIN-6
-  implemented 2026-10-11 (export: full-res render to a new JPEG/PNG/TIFF-16
-  file, EXIF carried over upright via libexif, never overwrites, export
-  sheet + ⇧⌘E); CHAIN-5b implemented 2026-10-11 (SlimSAM-77 sharpens
-  the prompt, people and portable subject masks; per-lane toggle); CHAIN-7a–7f implemented 2026-10-12 (Levels, Curves, HSL, Grain, Clarity, Dehaze; mask component combination UI; brush mask; strip multi-select with batch recipe apply and export; history snapshots; homography transport + Perspective); CHAIN-7h implemented 2026-10-12 as export-time AI finishing (NAFNet denoise, Real-ESRGAN ×2 upscale, optional models).* CHAIN-1 (engine, document
-  format 2, preview session, chain UI) first; CHAIN-2 (tools) and CHAIN-3
-  (recipes) in parallel; CHAIN-4 (splits, procedural masks); CHAIN-5
-  (detected masks); CHAIN-6 (export); CHAIN-7 (second wave). Progress
-  checkboxes live in the spec §12.
-  Spec: [todo_tool_chain.md](todo_tool_chain.md).
-
 - **PLACE-4 — setting facts: "waterfront", "beach", "lake", "mountain" as
   geo filters with at/near distance semantics, backed by GeoNames feature
   codes plus Natural Earth shoreline distance.**
@@ -65,6 +34,21 @@ Completed tasks move to Done as one-liners; their spec documents are deleted
 
 ## Done
 
+- **CHAIN-1..7 — tool chain: user-ordered processing nodes with bypass and
+  per-photo persisted undo/redo, twenty tools (geometry, layer with blend +
+  strength, raster), splits into masked lanes (gradients, luminance/colour
+  range, brush, subject, people, faces, text prompt, SlimSAM refinement)
+  merged back with blend + strength, recipes in the DB with file
+  export/import, history snapshots, strip multi-select with batch recipe
+  apply and export, export of a new JPEG/PNG/TIFF-16 file with EXIF carried
+  over and optional AI denoise + ×2 upscale, all rendered by one in-process
+  OpenCV engine in the server (the client has no pixel code).** Completed
+  2026-10-12 on `feature/image_adjustments` (CHAIN-1..6 and 5b on
+  2026-10-11, CHAIN-7a–7h on 2026-10-12), each step live-verified in the
+  app. Kept decisions: spec §13; 7h shipped as export-time finishing
+  (overturn at review if an in-chain node is wanted). The spec stays as the
+  tool catalogue and licence record and is cited from the source headers.
+  Spec: [todo_tool_chain.md](todo_tool_chain.md).
 - **ADJ-1/2/4 — non-destructive crop + rotate (sidecar JSON beside the
   asset or in a per-location edits folder, `image_adjustments` table,
   render chain in `buildMagickArgs`/`computeDisplayDimensions`, viewer
