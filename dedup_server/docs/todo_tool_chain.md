@@ -926,11 +926,121 @@ Implemented 2026-10-11. Notes:
   (`media.adjustments.export.*`).
 - Batch export over a strip selection stays in CHAIN-7 (needs multi-select).
 
-### CHAIN-7 — Second wave (small addenda here as they come)
+### CHAIN-7 — Second wave
 
-Curves, HSL, Levels, Grain, Clarity/Dehaze, AI denoise, Perspective, Upscale,
-Brush mask, mask component combination UI, batch apply/export over a strip
-selection, history snapshots beyond the session stack.
+Scoped 2026-10-12 into seven sub-steps, each committed on its own. The two
+items that need a new model (AI denoise, Upscale) are assessed last and
+recorded under 7h; everything else is portable OpenCV or client work.
+
+**7a — Tools.** Four layer tools and two raster tools in `layer_tools.cpp`,
+formulas in the header, golden tests in `test_layer_tools.cpp`:
+
+- [x] Levels `levels`: `in_black`, `in_white`, `gamma`, `out_black`,
+  `out_white`; `t = ((in − ib)/(iw − ib))^(1/γ)`, `out = ob + t·(ow − ob)`;
+  `validate` refuses `in_black ≥ in_white`.
+- [x] Curves `curves`: four curves (`rgb`, `red`, `green`, `blue`), monotone
+  cubic (Fritsch–Carlson) through 2–16 points, end values held outside the
+  first/last point; `out_c = C_c(RGB(in_c))` through a 4096-entry LUT. New
+  `ParamSpec::Kind::Curve` (wire kind `"curve"`, value `[[x,y],…]` with x
+  strictly increasing in [0,1], default `[[0,0],[1,1]]`); `ParamState`
+  gains a JSON slot for array-valued params.
+- [x] HSL `hsl`: eight bands (red 0°, orange 30°, yellow 60°, green 120°,
+  aqua 180°, blue 240°, purple 280°, magenta 320°) × `hue` [−45°, 45°],
+  `sat` [−1, 1], `lum` [−1, 1]; band weights are the piecewise-linear
+  partition of unity over the band centres, scaled by the pixel's
+  saturation so greys are untouched; applied in HSV. The 24 params carry a
+  `group` (new `ParamSpec::group`, wire field) so the generic inspector
+  shows one band at a time behind a chip row — no tool-specific Swift.
+- [x] Grain `grain`: `amount`, `size` (fraction of the short side),
+  `color`, `seed`; Gaussian noise drawn by `cv::RNG(seed)` on a grid of
+  `size`-sized cells (so every working size sees the same pattern),
+  upsampled bicubic, weighted toward the midtones:
+  `out = in + amount·0.2·n·(1 − 0.5·L)`; `color` mixes per-channel noise
+  into the monochrome grain. `isIdentity` is `amount == 0` regardless of
+  the seed.
+- [x] Clarity `clarity` (raster): local contrast on luma,
+  `out = in + amount·2·(L − blur(L, radius))·4L(1 − L)`; negative amount
+  softens.
+- [x] Dehaze `dehaze` (raster): dark-channel prior — min over channels,
+  min-filtered at 1.5 % of the short side; atmospheric light = mean of the
+  brightest 0.1 % dark-channel pixels; `t = 1 − 0.95·amount·dark/A_L`
+  refined with a guided filter against luma; `out = (in − A)/max(t, 0.1) + A`.
+  Negative amount adds haze: `out = in + (A − in)·(−amount)·0.5`.
+- [x] Generic inspector: `curve` kind → curve editor (drag points, click to
+  add, drag out to remove, per-channel chips); `group` → chip row; summary
+  placeholder for a curve renders its label when edited.
+- [x] Fix: generic sliders refresh the preview on every drag tick (they
+  previewed only at drag start and release).
+
+7a implemented 2026-10-12: `tools/tone_tools.cpp` (Levels, Curves, HSL),
+`tools/detail_tools.cpp` (Grain, Clarity, Dehaze); `ParamState::arrays`
+holds the Curve/Strokes JSON, `CurvePoints` is the shared monotone cubic;
+`ParamSpec.default_json` and `.group` ride on the wire. Client:
+`GenericToolUI.curves/strokes`, `GroupChips`, `CurveEditor`, `MonotoneCurve`
+(the same cubic, so the editor draws the line the engine applies);
+`AdjustmentsViewModel.paramDragged()` previews every slider tick. Verified
+on the lighthouse RAF: curve point dragged with the frame following
+mid-drag, HSL Blue hue mid-drag, Dehaze +0.81.
+
+**7b — Mask component combination UI.** The engine already combines
+components (`max`, `a·(1−b)`, `a·b`, left to right; the first component's
+op is ignored). Client: one editor per component, component rows with
+op/source pickers, add/remove, pins for the selected component; the lane
+row summarises "radial − luminance".
+
+- [ ] View model keyed per component; `LaneInspector` component list
+- [ ] `MaskComponent` round-trips `version` and unknown keys
+
+**7c — Brush mask.** Procedural source `brush`: `strokes` (new
+`ParamSpec::Kind::Strokes`, wire kind `"strokes"`: `[{r, e, p:[[x,y],…]}]`,
+radius `r` in short-side units, `e` erase flag, points in base space, ≤ 200
+strokes) and `softness`. Rasterised on the fork through `Frame::project`
+(anti-aliased polylines, erase strokes paint 0, then a Gaussian of
+`softness × radius`). Client paint mode: brush size, erase, Esc to leave,
+the lane's overlay shown while painting, points decimated to 0.003.
+
+- [ ] Server source + tests (stroke follows the picture through geometry)
+- [ ] Client paint overlay and inspector controls
+
+**7d — Batch over a strip selection.** The filmstrip gains a multi-selection
+(⌘-click toggles, ⇧-click extends from the current tile, ⌘A all, Esc clears)
+drawn as a second ring. With two or more selected, "Replace with recipe" and
+"Add recipe to chain" apply to every selected photo in turn (one history
+step per photo), and the export sheet exports them all with a progress
+count and a summary of failures. RPCs stay per file; the loops are client
+orchestration.
+
+- [ ] Strip selection model and tile ring
+- [ ] Batch recipe apply; batch export sheet
+
+**7e — History snapshots.** `history.snapshots: [{id, name, at, chain}]` in
+the document (persisted with the history column and the sidecar, excluded
+from the hash, capped by `media.adjustments.history.maxSnapshots`, default
+20). New `SnapshotHistory(SnapshotRequest{file_path, action save|restore|
+rename|delete, name, snapshot_id})`; restoring appends a history step
+"Restore snapshot <name>". `AdjustmentDocumentResponse` and
+`SetAdjustmentsResponse` carry `snapshots {id, name, at, node_count}`.
+History popover: Snapshots section, "Save snapshot…", restore on click,
+rename/delete in the context menu.
+
+- [ ] Server store + RPC + tests
+- [ ] Client popover
+
+**7f — Perspective.** The base→canvas transport becomes a 3×3 homography
+(`Frame::base_to_canvas`, `project` with the divide, detected masks via
+`warpPerspective`, radial/linear masks by per-pixel inverse mapping, proto
+`base_to_canvas` as 9 values, Swift `PreviewFrame` with a 3×3 inverse).
+Tool `perspective` (geometry, trunk only): `vertical`, `horizontal`
+[−1, 1] keystone (±1 pulls one edge's corners in by 25 %), `auto_fill`
+(default on) scales the largest inscribed rectangle of the warped content
+to the input canvas so no empty corners appear; canvas size unchanged.
+
+- [ ] Homography transport + tests (existing geometry tests hold)
+- [ ] Perspective tool + client
+
+**7g — Docs, memory, merges.**
+
+**7h — AI denoise, Upscale.** Assessed after 7a–7g; see the notes below.
 
 ## 13. Decisions recorded 2026-10-11 (user's answers to the first round)
 
