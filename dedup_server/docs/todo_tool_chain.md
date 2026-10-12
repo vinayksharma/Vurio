@@ -1008,8 +1008,19 @@ strokes) and `softness`. Rasterised on the fork through `Frame::project`
 `softness × radius`). Client paint mode: brush size, erase, Esc to leave,
 the lane's overlay shown while painting, points decimated to 0.003.
 
-- [ ] Server source + tests (stroke follows the picture through geometry)
-- [ ] Client paint overlay and inspector controls
+- [x] Server source + tests (stroke follows the picture through geometry)
+- [x] Client paint overlay and inspector controls
+
+7c implemented 2026-10-12: `BrushMask` in masks.cpp (runs of consecutive
+strokes of one kind rasterised on an 8-bit sheet with anti-aliased lines and
+round caps, softened by softness × radius, united or cut out in order);
+`test_lanes.cpp` pins the geometry transport and the erase order. Client:
+`BrushOverlay` on an AppKit `BrushSurface` (a SwiftUI DragGesture with a
+hover tracker on the same view never delivered its end, leaving the stroke
+uncommitted), brush size / erase / clear in the lane inspector, Esc leaves
+paint mode, the lane overlay is switched on when painting. Verified: a
+subtracting brush stroke cut a soft gap through the SAM lighthouse mask,
+committed on release.
 
 **7d — Batch over a strip selection.** The filmstrip gains a multi-selection
 (⌘-click toggles, ⇧-click extends from the current tile, ⌘A all, Esc clears)
