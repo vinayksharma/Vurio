@@ -670,7 +670,7 @@ message MediaPathResponse {
 
 message MediaReadyEvent {
   string file_path = 1;
-  string media_type = 2; // "thumbnail" | "preview" | "preview_full" | "adjustments" | "mask" (CHAIN-5: a detected mask finished)
+  string media_type = 2; // "thumbnail" | "preview" | "preview_full" | "adjustments" | "mask" (CHAIN-5: a detected mask finished) | "export" (CHAIN-6: an export finished; success says how)
   bool success = 3;
   string error_message = 4; // set when success == false
   // STRIP-2: pixel bucket of a finished thumbnail; 0 for previews and for
@@ -713,6 +713,31 @@ service AdjustmentsService {
   // CHAIN-5 (docs §9.3): detected-mask backends, models and cache.
   rpc MaskStatus(Empty) returns (MaskStatusResponse);
   rpc ClearMaskCache(Empty) returns (MaskStatusResponse);
+  // CHAIN-6 (docs §8): render the chain at full resolution and write a NEW
+  // file into `folder`. The source is never touched; an existing name is
+  // never reused (" (2)", " (3)"…); no sidecar, no embedded chain. Not
+  // registered: a folder inside a location is seen by the ordinary scan.
+  // INVALID_ARGUMENT: format/quality/folder; NOT_FOUND: unregistered or
+  // missing file; PERMISSION_DENIED: folder not writable; INTERNAL: decode
+  // or encode failed. A MediaReadyEvent "export" follows every attempt.
+  rpc ExportRendered(ExportRequest) returns (ExportResponse);
+}
+
+message ExportRequest {
+  string file_path = 1;
+  string folder = 2;      // destination directory the user picked
+  string format = 3;      // "jpeg" | "png" | "tiff" ("" = server default)
+  int32 quality = 4;      // JPEG 1..100 (0 = server default)
+  int32 max_side = 5;     // long-side limit in pixels (0 = native)
+  string name_suffix = 6; // <stem>-<suffix>.<ext>; "" = the applied recipe's name or "edit"
+}
+
+message ExportResponse {
+  string written_path = 1;
+  int32 width = 2;
+  int32 height = 3;
+  bool exif_copied = 4;
+  string warning = 5;     // why EXIF was not (fully) copied, when it was not
 }
 
 // ---------------------------------------------------------
@@ -938,6 +963,8 @@ message ToolDescriptors {
   int32 document_version = 2;        // the document format version this build writes
   repeated string blend_modes = 3;   // CHAIN-1: the blend names a layer node may carry
   repeated ToolDescriptor mask_sources = 4; // CHAIN-4: the lane mask sources (category "mask")
+  string export_default_format = 5;  // CHAIN-6: media.adjustments.export.defaultFormat
+  int32 export_default_quality = 6;  // CHAIN-6: media.adjustments.export.defaultQuality
 }
 
 message AdjustmentsFileRequest {

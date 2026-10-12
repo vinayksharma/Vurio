@@ -1,6 +1,7 @@
 #include "core/media_ready_bus.hpp"
 #include "database/faces_ops.hpp"
 #include "adjustments/mask_service.hpp"
+#include "adjustments/export_renderer.hpp"
 /*
  * AR-5: grpc_server_core.cpp is now ONLY server lifecycle (start/stop) —
  * pairing-secret publication, builder wiring, auth processor registration,
@@ -206,6 +207,26 @@ void GrpcServerCore::start(const std::string& instance_dir,
                     MediaDedup::MediaReadyBus::instance().publish(ev);
                 });
         }
+
+        // CHAIN-6 (docs §8): export. Native-resolution base through the
+        // existing decode paths; an "export" event closes every attempt.
+        {
+            using MediaDedup::Adjustments::Exporter;
+            Exporter::Defaults defaults;
+            defaults.format = cfg ? cfg->getPropertyValue<std::string>("media.adjustments.export.defaultFormat", "jpeg") : "jpeg";
+            defaults.quality = cfg ? cfg->getPropertyValue<int>("media.adjustments.export.defaultQuality", 92) : 92;
+            Exporter::instance().configure(
+                defaults,
+                [](const std::string& file_path) { return ThumbnailGenerator::decodeNativeBase(file_path); },
+                [](const std::string& file_path, bool success, const std::string& error) {
+                    MediaDedup::MediaReadyBus::Event ev;
+                    ev.file_path = file_path;
+                    ev.media_type = "export";
+                    ev.success = success;
+                    ev.error_message = error;
+                    MediaDedup::MediaReadyBus::instance().publish(ev);
+                });
+        }
     }
 
     duplicate_finder_ = duplicate_finder; // CC-6: for callback teardown in stop()
@@ -295,6 +316,7 @@ void GrpcServerCore::stop() {
         // held open.
         MediaDedup::Adjustments::PreviewSessionManager::instance().reset();
         MediaDedup::Adjustments::MaskService::instance().reset(); // CHAIN-5: stop the detector worker
+        MediaDedup::Adjustments::Exporter::instance().reset(); // CHAIN-6
         Poco::Logger::get("GrpcServerCore").information("gRPC Server stopped.");
     }
     if (!instance_dir_.empty()) {

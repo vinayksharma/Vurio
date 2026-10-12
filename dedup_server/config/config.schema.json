@@ -683,6 +683,14 @@
     "type": "bool",
     "default": false
   },
+  "media.adjustments.export.defaultFormat": {
+    "type": "string",
+    "default": "jpeg"
+  },
+  "media.adjustments.export.defaultQuality": {
+    "type": "int",
+    "default": 92
+  },
   "thumbnail.qhd_preview.threshold_mb": {
     "type": "double",
     "default": 5.0

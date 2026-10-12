@@ -135,6 +135,9 @@ media.adjustments.masks.size: 1024
 media.adjustments.masks.promptModelPath: models/clipseg-rd64-refined-q8.onnx
 media.adjustments.masks.peopleModelPath: models/selfie-segmentation.onnx
 media.adjustments.masks.useCoreML: false
+# CHAIN-6 (docs/todo_tool_chain.md §8): export sheet defaults
+media.adjustments.export.defaultFormat: jpeg
+media.adjustments.export.defaultQuality: 92
 scheduler.backoff.maxMs: 30000
 scheduler.maxConsecutiveFailures: 5
 media.video.mkv: false

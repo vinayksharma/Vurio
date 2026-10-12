@@ -130,6 +130,13 @@ if(LIBTIFF_FOUND)
     message(STATUS "libtiff found: ${LIBTIFF_VERSION}")
 endif()
 
+# CHAIN-6 (docs/todo_tool_chain.md §8): libexif carries a source's EXIF into
+# its exports (orientation and thumbnail removed, Software set).
+pkg_check_modules(LIBEXIF REQUIRED libexif)
+if(LIBEXIF_FOUND)
+    message(STATUS "libexif found: ${LIBEXIF_VERSION}")
+endif()
+
 # CHAIN-1 (docs/todo_tool_chain.md §5.1): OpenCV is the engine every edited
 # render goes through, so it is required. HAVE_OPENCV stays defined for the
 # older optional code paths.
@@ -330,6 +337,7 @@ add_executable(media_dedup_server
     src/adjustments/sidecar_store.cpp
     src/adjustments/adjustment_store.cpp
     src/adjustments/recipe_store.cpp
+    src/adjustments/export_renderer.cpp
     src/database/adjustments_ops.cpp
     src/database/recipes_ops.cpp
     src/utils/orphan_sweeper.cpp
@@ -449,6 +457,7 @@ target_link_libraries(media_dedup_server
     ${ImageMagick++_LIBRARIES}
     ${LIBRAW_LIBRARIES}
     ${LIBTIFF_LIBRARIES}
+    ${LIBEXIF_LIBRARIES}
     llama
 )
 
@@ -456,6 +465,7 @@ target_link_libraries(media_dedup_server
 target_include_directories(media_dedup_server PRIVATE
     ${LIBRAW_INCLUDE_DIRS}
     ${LIBTIFF_INCLUDE_DIRS}
+    ${LIBEXIF_INCLUDE_DIRS}
     ${SQLITE3_INCLUDE_DIRS}
     ${GRPC_INCLUDE_DIRS}
     ${PROTOBUF_INCLUDE_DIRS}
@@ -463,6 +473,7 @@ target_include_directories(media_dedup_server PRIVATE
 target_link_directories(media_dedup_server PRIVATE
     ${LIBRAW_LIBRARY_DIRS}
     ${LIBTIFF_LIBRARY_DIRS}
+    ${LIBEXIF_LIBRARY_DIRS}
     ${GRPC_LIBRARY_DIRS}
     ${PROTOBUF_LIBRARY_DIRS}
 )

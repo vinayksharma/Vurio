@@ -10,10 +10,12 @@
 #include "core/grpc_server/grpc_service_common.hpp"
 #include "adjustments/adjustment_document.hpp"
 #include "adjustments/adjustment_store.hpp"
+#include "adjustments/export_renderer.hpp"
 #include "adjustments/mask_service.hpp"
 #include "adjustments/preview_session.hpp"
 #include "adjustments/masks.hpp"
 #include "adjustments/tool_registry.hpp"
+#include <cstring>
 
 namespace MediaDedup {
 namespace Core {
@@ -45,7 +47,67 @@ public:
                 fillDescriptor(d, reply->add_mask_sources());
         reply->set_document_version(MediaDedup::Adjustments::AdjustmentDocument::kVersion);
         for (const auto& mode : MediaDedup::Adjustments::RenderPlan::blendModes()) reply->add_blend_modes(mode);
+        // CHAIN-6: the export sheet's defaults ride along with the catalogue.
+        auto defaults = MediaDedup::Adjustments::Exporter::instance().defaults();
+        reply->set_export_default_format(defaults.format);
+        reply->set_export_default_quality(defaults.quality);
         return grpc::Status::OK;
+    }
+
+    // CHAIN-6 (docs §8): a new file in the user's folder, nothing else.
+    grpc::Status ExportRendered(grpc::ServerContext*, const vurio::dedup::ExportRequest* request,
+                                vurio::dedup::ExportResponse* reply) override {
+        using MediaDedup::Adjustments::ExportResult;
+        if (request->file_path().empty())
+            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "file_path is required");
+        if (!db() || !MediaDedup::ScannedFilesOps::getByPath(*db(), request->file_path()))
+            return grpc::Status(grpc::StatusCode::NOT_FOUND, "not a registered file");
+        MediaDedup::Adjustments::ExportRequest r;
+        r.file_path = request->file_path();
+        r.folder = request->folder();
+        r.format = request->format();
+        r.quality = request->quality();
+        r.max_side = request->max_side();
+        r.name_suffix = request->name_suffix().empty() ? defaultExportSuffix(request->file_path()) : request->name_suffix();
+        auto plan = MediaDedup::Adjustments::AdjustmentStore::instance().planFor(request->file_path());
+        ExportResult result = MediaDedup::Adjustments::Exporter::instance().run(r, plan);
+        reply->set_written_path(result.written_path);
+        reply->set_width(result.width);
+        reply->set_height(result.height);
+        reply->set_exif_copied(result.exif_copied);
+        reply->set_warning(result.warning);
+        switch (result.outcome) {
+            case ExportResult::Outcome::Ok: return grpc::Status::OK;
+            case ExportResult::Outcome::Invalid: return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, result.error);
+            case ExportResult::Outcome::NotFound: return grpc::Status(grpc::StatusCode::NOT_FOUND, result.error);
+            case ExportResult::Outcome::Denied: return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, result.error);
+            case ExportResult::Outcome::Internal: break;
+        }
+        return grpc::Status(grpc::StatusCode::INTERNAL, result.error);
+    }
+
+    // `<stem>-<recipe>` when the photo's current state came from a recipe
+    // (the latest "Apply recipe"/"Add recipe" step at or before the current
+    // history index), `<stem>-edit` otherwise.
+    static std::string defaultExportSuffix(const std::string& file_path) {
+        auto row = MediaDedup::Adjustments::AdjustmentStore::instance().rowFor(file_path);
+        if (!row || row->history.empty()) return "edit";
+        MediaDedup::Adjustments::AdjustmentDocument doc;
+        try {
+            nlohmann::json h = nlohmann::json::parse(row->history);
+            if (h.is_object()) doc.history = h;
+        } catch (...) { return "edit"; }
+        auto steps = doc.historySteps();
+        int index = doc.historyIndex();
+        if (index < 0 || index >= static_cast<int>(steps.size())) index = static_cast<int>(steps.size()) - 1;
+        for (int i = index; i >= 0; --i) {
+            const std::string& label = steps[static_cast<size_t>(i)].first;
+            for (const char* prefix : {"Apply recipe ", "Add recipe "}) {
+                const size_t n = std::strlen(prefix);
+                if (label.compare(0, n, prefix) == 0 && label.size() > n) return label.substr(n);
+            }
+        }
+        return "edit";
     }
 
     static void fillDescriptor(const MediaDedup::Adjustments::ToolDescriptor& d, vurio::dedup::ToolDescriptor* t) {

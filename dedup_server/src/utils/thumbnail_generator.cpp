@@ -257,6 +257,47 @@ namespace MediaDedup
             return Adjustments::ChainEngine::decodeBgr8(path, 0);
         }
 
+        /// CHAIN-1/CHAIN-6: the engine's base from a resolved read path.
+        /// JPEG/PNG decode in-process (no larger than `target` needs);
+        /// everything else is decoded once by magick to a temp PNG at native
+        /// resolution, which is the one subprocess the exotic formats always
+        /// cost. Empty on failure (logged).
+        cv::Mat decodeEditBase(const std::string &read_path, const Adjustments::RenderPlan &plan, int target,
+                               int timeout_ms, Poco::Logger &logger, const std::string &source_for_log)
+        {
+            cv::Mat base;
+            std::string plain_path = read_path;
+            bool opencv_ok_format = false;
+            if (plain_path.rfind("jpeg:", 0) == 0)
+            {
+                plain_path = plain_path.substr(5);
+                opencv_ok_format = true;
+            }
+            else if (plain_path.rfind("png:", 0) == 0)
+            {
+                plain_path = plain_path.substr(4);
+                opencv_ok_format = true;
+            }
+            if (opencv_ok_format)
+                base = decodeBaseForTarget(plain_path, plan, target);
+            if (base.empty())
+            {
+                TempFileCleanup base_cleanup;
+                base_cleanup.path = makeTempFilePath("adj_base", ".png");
+                std::vector<std::string> args = {read_path, "-strip", "-depth", "8", "-auto-orient",
+                                                 "-colorspace", "sRGB", "png:" + base_cleanup.path};
+                SubprocessResult result = runProcessWithTimeout(ToolPaths::magickPath(), args, timeout_ms,
+                                                                ToolPaths::magickResourceEnv());
+                if (result.timed_out || result.exit_code != 0)
+                {
+                    logger.error("magick base decode failed for the edit chain: %s", source_for_log);
+                    return {};
+                }
+                base = Adjustments::ChainEngine::decodeBgr8(base_cleanup.path);
+            }
+            return base;
+        }
+
         /// Shared back half: run magick with a hard timeout to produce the
         /// output JPEG.
         bool runMagick(const std::string &read_path,
@@ -390,36 +431,7 @@ namespace MediaDedup
             // exotic formats always cost.
             if (!plan.isIdentity())
             {
-                cv::Mat base;
-                std::string plain_path = read_path;
-                bool opencv_ok_format = false;
-                if (plain_path.rfind("jpeg:", 0) == 0)
-                {
-                    plain_path = plain_path.substr(5);
-                    opencv_ok_format = true;
-                }
-                else if (plain_path.rfind("png:", 0) == 0)
-                {
-                    plain_path = plain_path.substr(4);
-                    opencv_ok_format = true;
-                }
-                if (opencv_ok_format)
-                    base = decodeBaseForTarget(plain_path, plan, size);
-                if (base.empty())
-                {
-                    TempFileCleanup base_cleanup;
-                    base_cleanup.path = makeTempFilePath("adj_base", ".png");
-                    std::vector<std::string> args = {read_path, "-strip", "-depth", "8", "-auto-orient",
-                                                     "-colorspace", "sRGB", "png:" + base_cleanup.path};
-                    SubprocessResult result = runProcessWithTimeout(ToolPaths::magickPath(), args, timeout_ms,
-                                                                    ToolPaths::magickResourceEnv());
-                    if (result.timed_out || result.exit_code != 0)
-                    {
-                        logger.error("magick base decode failed for the edit chain: %s", source_path);
-                        return false;
-                    }
-                    base = Adjustments::ChainEngine::decodeBgr8(base_cleanup.path);
-                }
+                cv::Mat base = decodeEditBase(read_path, plan, size, timeout_ms, logger, source_path);
                 if (base.empty())
                 {
                     logger.error("Base image could not be decoded for the edit chain: %s", source_path);
@@ -531,6 +543,43 @@ namespace MediaDedup
         }
 
         return closest;
+    }
+
+    cv::Mat ThumbnailGenerator::decodeNativeBase(const std::string &source_path, int timeout_ms)
+    {
+        Poco::Logger &logger = Poco::Logger::get("ThumbnailGenerator");
+        try
+        {
+            TempFileCleanup cleanup;
+            ResolvedInput input;
+            if (!resolveInputPath(source_path, kNativeResolution, input, cleanup, logger))
+                return {};
+            if (!input.demosaic_source.empty())
+            {
+                // Developed sensor data is the export's base; the intermediate
+                // JPEG is at quality 100 so it costs nothing visible.
+                Magick::Blob blob;
+                if (RawDemosaicRenderer::renderToBlob(input.demosaic_source, 100, timeout_ms, blob))
+                {
+                    std::vector<uint8_t> developed(static_cast<const uint8_t *>(blob.data()),
+                                                   static_cast<const uint8_t *>(blob.data()) + blob.length());
+                    cv::Mat base = Adjustments::ChainEngine::decodeBgr8(developed);
+                    if (!base.empty())
+                        return base;
+                }
+                if (input.fallback_read_path.empty())
+                    return {};
+                logger.warning("RAW demosaic failed, exporting from the embedded preview: %s", source_path);
+                input.read_path = input.fallback_read_path;
+            }
+            return decodeEditBase(input.read_path, Adjustments::RenderPlan::identity(), kNativeResolution, timeout_ms,
+                                  logger, source_path);
+        }
+        catch (const std::exception &e)
+        {
+            logger.error("native base decode failed for %s: %s", source_path, std::string(e.what()));
+            return {};
+        }
     }
 
 } // namespace MediaDedup

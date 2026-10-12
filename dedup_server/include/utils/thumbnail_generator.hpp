@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <opencv2/core.hpp>
 #include <cstdint>
 #include <vector>
 #include <Magick++.h>
@@ -74,6 +75,15 @@ namespace MediaDedup
          * query could never serve.
          */
         static constexpr int kNativeResolution = 0;
+
+        /**
+         * @brief CHAIN-6 (docs/todo_tool_chain.md §8): the file's pixels at
+         * native resolution, upright, 8-bit BGR, with no edit applied — the
+         * export's base. JPEG/PNG decode in-process; RAW sensor data is
+         * developed (quality 100 intermediate); everything else goes once
+         * through magick to a temp PNG. Empty on failure.
+         */
+        static cv::Mat decodeNativeBase(const std::string &source_path, int timeout_ms = DEFAULT_TIMEOUT_MS);
 
         /**
          * @brief Validate if a size is supported for CACHED thumbnails

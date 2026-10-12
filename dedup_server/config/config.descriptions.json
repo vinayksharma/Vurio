@@ -1315,6 +1315,21 @@
       "text": "Run the mask models through the CoreML execution provider where available. Off runs them on the CPU, which is where the quantised models are fastest to start."
     }
   ],
+  "media.adjustments.export.defaultFormat": "Export Format",
+  "media.adjustments.export.defaultFormat.options": "jpeg, png, tiff",
+  "media.adjustments.export.defaultFormat.long": [
+    {
+      "type": "paragraph",
+      "text": "The format the export sheet proposes: jpeg (quality below), png (8-bit, lossless) or tiff (16-bit, LZW). An export renders the photo's chain at full resolution into a new file in the folder you pick; the original is never modified and the export is not added to the library unless the folder is inside a registered location."
+    }
+  ],
+  "media.adjustments.export.defaultQuality": "Export JPEG Quality",
+  "media.adjustments.export.defaultQuality.long": [
+    {
+      "type": "paragraph",
+      "text": "JPEG quality (1-100) the export sheet proposes. 92 is visually lossless for photographs at a fraction of the size of 100."
+    }
+  ],
   "media.adjustments.sidecar.suffix": "Adjustment Sidecar Suffix",
   "media.adjustments.sidecar.suffix.long": [
     {
