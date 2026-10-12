@@ -247,6 +247,12 @@ foreach(test_source ${UNIT_TEST_SOURCES})
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
         )
+    elseif(${test_name} STREQUAL "test_mask_service")
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="ServiceFixture.*:MaskDetectorsTest.*:MaskServiceTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
     elseif(${test_name} STREQUAL "test_recipes")
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="RecipeStoreTest.*")
         set_tests_properties(${test_name} PROPERTIES
@@ -777,11 +783,15 @@ foreach(test_source ${UNIT_TEST_SOURCES})
     target_include_directories(${test_name} PRIVATE
         ${LIBRAW_INCLUDE_DIRS}
         ${LIBTIFF_INCLUDE_DIRS}
+        ${LIBEXIF_INCLUDE_DIRS}
     )
     target_link_directories(${test_name} PRIVATE
         ${LIBRAW_LIBRARY_DIRS}
         ${LIBTIFF_LIBRARY_DIRS}
+        ${LIBEXIF_LIBRARY_DIRS}
     )
+    # libexif: export_renderer.cpp (in ADJUSTMENTS_SOURCES) carries EXIF
+    # into exports, so every standalone test compiling it needs the library.
     target_link_libraries(${test_name} 
         ${GTEST_LIBRARIES} 
         pthread
@@ -794,6 +804,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         ${ImageMagick++_LIBRARIES}
         ${LIBRAW_LIBRARIES}
         ${LIBTIFF_LIBRARIES}
+        ${LIBEXIF_LIBRARIES}
     )
     add_test(NAME ${test_name} COMMAND ${test_name})
     set_tests_properties(${test_name} PROPERTIES
@@ -1077,6 +1088,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_layer_tools" AND
       NOT ${test_name} STREQUAL "test_recipes" AND
       NOT ${test_name} STREQUAL "test_export" AND
+      NOT ${test_name} STREQUAL "test_mask_service" AND
       NOT ${test_name} STREQUAL "test_lanes")
         add_dependencies(${test_name} ${TEST_DATA_DEPENDENCY})
     endif()
