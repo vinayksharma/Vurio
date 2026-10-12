@@ -204,6 +204,7 @@ App Constraints & Exceptions
 • The Media Deduplicator application operates strictly in a **READ-ONLY** mode regarding the user's source media files.
 • **EXCEPTION 1:** The "Eject Duplicates" feature. When ejecting duplicates, the system is allowed to copy the file to a designated ejection folder and subsequently delete the original source file.
 • **EXCEPTION 2 (ADJ-1):** Adjustment sidecars. The server may create, replace, move and delete **its own sidecar files** (`<asset file name>.vurio.json`, or the configured `media.adjustments.sidecar.suffix`) beside the assets or under a location's chosen edits folder, plus the empty mirrored directories it created under that folder, and nothing else. The source image itself is never modified; every edit is applied at render time (docs/todo_image_adjustments.md).
+• **EXCEPTION 3 (CHAIN-6):** Export. `ExportRendered` creates **new** image files in a folder the user chose, named `<source stem>-<recipe or edit>.<ext>` with ` (2)`, ` (3)`… appended rather than ever reusing a name. It never replaces or modifies an existing file, writes nothing beside the export (no sidecar) and embeds no chain in it; the source image is only read (docs/todo_tool_chain.md §8).
 
 ⸻
 

@@ -857,9 +857,44 @@ Notes from the implementation (2026-10-11):
 
 ### CHAIN-6 — Export
 
-- [ ] `ExportRendered` RPC: full-res engine render, format encoders (JPEG/PNG/TIFF-16), unique naming, EXIF copy minus orientation, progress event; `CURSOR_RULES.md` clarification
-- [ ] Client export sheet + `⇧⌘E`; Settings defaults
-- [ ] Tests: never overwrites; name sequence; EXIF orientation stripped; no sidecar beside the export; export into a registered location is picked up by the scan as a new asset and nothing else
+- [x] `ExportRendered` RPC: full-res engine render, format encoders (JPEG/PNG/TIFF-16), unique naming, EXIF copy minus orientation, progress event; `CURSOR_RULES.md` clarification
+- [x] Client export sheet + `⇧⌘E`; Settings defaults
+- [x] Tests: never overwrites; name sequence; EXIF orientation stripped; no sidecar beside the export; export into a registered location is picked up by the scan as a new asset and nothing else
+
+Implemented 2026-10-11. Notes:
+
+- **Exporter** (`adjustments/export_renderer`): the engine renders the
+  file's compiled plan over a native-resolution base (`ThumbnailGenerator::
+  decodeNativeBase`: JPEG/PNG in-process, RAW developed at quality 100,
+  everything else once through magick to a temp PNG), with detected masks
+  computed inline. The name is claimed with `O_CREAT|O_EXCL` — the
+  guarantee that nothing is ever overwritten is the file system's, not a
+  stat-then-write race — and the ` (n)` sequence skips whatever exists.
+- **EXIF transplant** with libexif (new required dependency, LGPL): the
+  source's EXIF is re-serialised with Orientation and the thumbnail (IFD1)
+  removed, the tags that describe the source's pixel layout (strip
+  offsets, compression, dimensions…) dropped, Software set to "Vurio" and
+  PixelX/YDimension set to the export. JPEG gets it as APP1 (maker note
+  dropped when the blob would exceed the 64 KB segment), PNG as an `eXIf`
+  chunk, TIFF as native IFD0 tags plus EXIF and GPS sub-IFDs written with
+  libtiff, entry by entry in the type libtiff expects. libexif reads
+  TIFF-structured sources (TIFF, DNG, CR2, NEF, ARW…) only behind an
+  `Exif\0\0` header, so the file is loaded that way (measured 0.2–0.5 s on
+  8–27 MB files); a Fujifilm RAF is read through its embedded JPEG (header
+  bytes 84..91); HEIC and other containers export without EXIF and the
+  response's `warning` says so.
+- **TIFF** is 16-bit RGB, LZW with the horizontal predictor; a RAW's
+  16-bit export is made from the 8-bit developed intermediate.
+- **RPC** is synchronous (the sheet awaits it with a 300 s deadline, the
+  client's defaults carry the session token) and an `"export"`
+  `MediaReadyEvent` closes every attempt. Defaults ride on
+  `DescribeTools` (`export_default_format/quality`).
+- **Client**: sheet from the control bar, the chain menu and `⇧⌘E`;
+  folder/format/quality/limit remembered in `UserDefaults`; name defaults
+  to the latest applied recipe or "edit"; Settings › Advanced holds the
+  default folder. Format and quality defaults are server config
+  (`media.adjustments.export.*`).
+- Batch export over a strip selection stays in CHAIN-7 (needs multi-select).
 
 ### CHAIN-7 — Second wave (small addenda here as they come)
 
