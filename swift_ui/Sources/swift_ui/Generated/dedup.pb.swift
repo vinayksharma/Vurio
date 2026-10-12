@@ -1914,7 +1914,7 @@ struct Vurio_Dedup_ParamSpec: Sendable {
 
   var label: String = String()
 
-  /// "number" | "integer" | "enum" | "bool" | "text"
+  /// "number" | "integer" | "enum" | "bool" | "text" | "curve" | "strokes" (CHAIN-7)
   var kind: String = String()
 
   var min: Double = 0
@@ -1931,6 +1931,15 @@ struct Vurio_Dedup_ParamSpec: Sendable {
   var defaultOption: String = String()
 
   var options: [String] = []
+
+  /// CHAIN-7: array-valued kinds carry their default as JSON — "curve" is
+  /// [[x, y], …] (2..16 points, x strictly increasing in [0,1]), "strokes" is
+  /// [{r, e, p: [[x, y], …]}, …] in base space (≤ 200 strokes).
+  var defaultJson: String = String()
+
+  /// CHAIN-7: params sharing a group are shown one group at a time behind a
+  /// chip row (HSL's bands, Curves' channels); empty = ungrouped.
+  var group: String = String()
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -6060,7 +6069,7 @@ extension Vurio_Dedup_HistoryStep: SwiftProtobuf.Message, SwiftProtobuf._Message
 
 extension Vurio_Dedup_ParamSpec: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".ParamSpec"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}kind\0\u{1}min\0\u{1}max\0\u{1}step\0\u{3}default_value\0\u{3}default_option\0\u{1}options\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}kind\0\u{1}min\0\u{1}max\0\u{1}step\0\u{3}default_value\0\u{3}default_option\0\u{1}options\0\u{3}default_json\0\u{1}group\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -6077,6 +6086,8 @@ extension Vurio_Dedup_ParamSpec: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
       case 7: try { try decoder.decodeSingularDoubleField(value: &self.defaultValue) }()
       case 8: try { try decoder.decodeSingularStringField(value: &self.defaultOption) }()
       case 9: try { try decoder.decodeRepeatedStringField(value: &self.options) }()
+      case 10: try { try decoder.decodeSingularStringField(value: &self.defaultJson) }()
+      case 11: try { try decoder.decodeSingularStringField(value: &self.group) }()
       default: break
       }
     }
@@ -6110,6 +6121,12 @@ extension Vurio_Dedup_ParamSpec: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
     if !self.options.isEmpty {
       try visitor.visitRepeatedStringField(value: self.options, fieldNumber: 9)
     }
+    if !self.defaultJson.isEmpty {
+      try visitor.visitSingularStringField(value: self.defaultJson, fieldNumber: 10)
+    }
+    if !self.group.isEmpty {
+      try visitor.visitSingularStringField(value: self.group, fieldNumber: 11)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -6123,6 +6140,8 @@ extension Vurio_Dedup_ParamSpec: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
     if lhs.defaultValue != rhs.defaultValue {return false}
     if lhs.defaultOption != rhs.defaultOption {return false}
     if lhs.options != rhs.options {return false}
+    if lhs.defaultJson != rhs.defaultJson {return false}
+    if lhs.group != rhs.group {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

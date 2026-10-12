@@ -847,7 +847,8 @@ private struct LaneMaskInspector: View {
                 switch p.kind {
                 case .number:
                     ParamSlider(label: p.label, value: Binding(get: { tool.numbers[p.id] ?? p.defaultValue },
-                                                               set: { tool.numbers[p.id] = $0 }),
+                                                               set: { tool.numbers[p.id] = $0
+                                                                      model.paramDragged() }),
                                 range: p.min...p.max, step: p.step,
                                 onEditing: { editing in
                                     model.laneMaskChanged(laneID, label: "Mask \(p.label)", interactive: editing)
@@ -1187,7 +1188,7 @@ private struct WrappingChips: View {
 
 /// Lays its children out left to right, wrapping to a new row when the
 /// width runs out; each child keeps its ideal size.
-private struct FlowLayout: Layout {
+struct FlowLayout: Layout {
     var spacing: CGFloat = 4
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {

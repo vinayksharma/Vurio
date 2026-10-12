@@ -621,6 +621,16 @@ final class AdjustmentsViewModel: ObservableObject {
         if wasInteracting { requestPreview() }
     }
 
+    /// CHAIN-7: a slider moved while its drag is in progress. The frame
+    /// follows every tick (docs §13.2: live update on every change); the
+    /// commit still waits for the release (`paramChanged(interactive:
+    /// false)`). Outside a drag this is a no-op, so a programmatic set
+    /// never leaves an uncommitted change behind.
+    func paramDragged() {
+        guard isInteracting else { return }
+        chainChanged(label: "", interactive: true)
+    }
+
     func setBlend(_ mode: String, nodeID: String) {
         guard let node = document.node(nodeID), node.blend ?? "normal" != mode else { return }
         document.update(nodeID) { $0.blend = mode == "normal" ? nil : mode }

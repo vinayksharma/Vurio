@@ -6,7 +6,9 @@ import SwiftUI
 /// describes it (`DescribeTools`). The client builds every control from
 /// this and never hard-codes a range.
 struct ToolParamSpec: Equatable {
-    enum Kind: String { case number, integer, `enum`, bool, text }
+    /// CHAIN-7: `curve` is `[[x, y], …]` (a curve editor), `strokes` is a
+    /// brush mask's stroke list (painted on the picture).
+    enum Kind: String { case number, integer, `enum`, bool, text, curve, strokes }
     let id: String
     let label: String
     let kind: Kind
@@ -16,6 +18,11 @@ struct ToolParamSpec: Equatable {
     let defaultValue: Double
     let defaultOption: String
     let options: [String]
+    /// CHAIN-7: the default of an array-valued kind, as JSON text.
+    let defaultJSON: String
+    /// CHAIN-7: params sharing a group are shown one group at a time behind
+    /// a chip row (HSL's bands, Curves' channels); empty = ungrouped.
+    let group: String
 
     init(_ p: Vurio_Dedup_ParamSpec) {
         id = p.id
@@ -27,6 +34,18 @@ struct ToolParamSpec: Equatable {
         defaultValue = p.defaultValue
         defaultOption = p.defaultOption
         options = p.options
+        defaultJSON = p.defaultJson
+        group = p.group
+    }
+
+    /// The default of a `curve` param as points (identity when unparsable).
+    var defaultCurve: [CGPoint] {
+        guard let data = defaultJSON.data(using: .utf8),
+              let any = try? JSONSerialization.jsonObject(with: data),
+              let pts = MonotoneCurve.points(from: any), pts.count >= 2 else {
+            return [CGPoint(x: 0, y: 0), CGPoint(x: 1, y: 1)]
+        }
+        return pts
     }
 }
 
