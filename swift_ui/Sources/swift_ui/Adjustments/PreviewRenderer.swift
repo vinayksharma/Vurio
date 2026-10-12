@@ -61,33 +61,57 @@ struct PreviewFrame {
     let truncateAtNodeID: String
     let before: Bool
     let renderMs: Int
-    /// CHAIN-4: normalised base coordinates → frame pixels (2×3 affine).
+    /// CHAIN-4: normalised base coordinates → frame pixels. A row-major
+    /// 3×3 homography (9 values, CHAIN-7f) or a 2×3 affine (6 values).
     let baseToCanvas: [Double]
     /// CHAIN-5: lanes whose detected mask was still computing; they
     /// rendered as no-ops and a "mask" event will follow.
     var pendingLaneIDs: [String] = []
 
+    /// The transform as a 3×3 (row-major), whatever was received.
+    private var matrix: [Double]? {
+        if baseToCanvas.count == 9 { return baseToCanvas }
+        if baseToCanvas.count == 6 { return baseToCanvas + [0, 0, 1] }
+        return nil
+    }
+
     func project(_ p: CGPoint) -> CGPoint {
-        guard baseToCanvas.count == 6 else { return CGPoint(x: p.x * size.width, y: p.y * size.height) }
-        let m = baseToCanvas
-        return CGPoint(x: m[0] * p.x + m[1] * p.y + m[2], y: m[3] * p.x + m[4] * p.y + m[5])
+        guard let m = matrix else { return CGPoint(x: p.x * size.width, y: p.y * size.height) }
+        var w = m[6] * p.x + m[7] * p.y + m[8]
+        if abs(w) < 1e-12 { w = 1e-12 }
+        return CGPoint(x: (m[0] * p.x + m[1] * p.y + m[2]) / w, y: (m[3] * p.x + m[4] * p.y + m[5]) / w)
     }
 
-    /// Frame pixels → normalised base coordinates (the inverse affine).
+    /// Frame pixels → normalised base coordinates (the inverse mapping).
     func unproject(_ q: CGPoint) -> CGPoint {
-        guard baseToCanvas.count == 6 else { return CGPoint(x: q.x / size.width, y: q.y / size.height) }
-        let m = baseToCanvas
-        let det = m[0] * m[4] - m[1] * m[3]
-        guard abs(det) > 1e-12 else { return .zero }
-        let x = q.x - m[2], y = q.y - m[5]
-        return CGPoint(x: (m[4] * x - m[1] * y) / det, y: (-m[3] * x + m[0] * y) / det)
+        guard let m = matrix, let inv = Self.invert3x3(m) else { return CGPoint(x: q.x / size.width, y: q.y / size.height) }
+        var w = inv[6] * q.x + inv[7] * q.y + inv[8]
+        if abs(w) < 1e-12 { w = 1e-12 }
+        return CGPoint(x: (inv[0] * q.x + inv[1] * q.y + inv[2]) / w, y: (inv[3] * q.x + inv[4] * q.y + inv[5]) / w)
     }
 
-    /// Pixels per normalised unit of the base's shorter side.
+    /// Pixels per normalised unit of the base's shorter side, measured at
+    /// the base's centre (exact for an affine transform).
     var affineScale: CGFloat {
-        guard baseToCanvas.count == 6 else { return min(size.width, size.height) }
-        let m = baseToCanvas
-        return CGFloat(min(hypot(m[0], m[3]), hypot(m[1], m[4])))
+        guard let m = matrix else { return min(size.width, size.height) }
+        let nx = 0.5, ny = 0.5
+        var w = m[6] * nx + m[7] * ny + m[8]
+        if abs(w) < 1e-12 { w = 1e-12 }
+        let u = m[0] * nx + m[1] * ny + m[2], v = m[3] * nx + m[4] * ny + m[5]
+        let w2 = w * w
+        let j00 = (m[0] * w - u * m[6]) / w2, j01 = (m[1] * w - u * m[7]) / w2
+        let j10 = (m[3] * w - v * m[6]) / w2, j11 = (m[4] * w - v * m[7]) / w2
+        return CGFloat(min(hypot(j00, j10), hypot(j01, j11)))
+    }
+
+    static func invert3x3(_ m: [Double]) -> [Double]? {
+        let a = m[0], b = m[1], c = m[2], d = m[3], e = m[4], f = m[5], g = m[6], h = m[7], i = m[8]
+        let det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g)
+        guard abs(det) > 1e-18 else { return nil }
+        let k = 1 / det
+        return [(e * i - f * h) * k, (c * h - b * i) * k, (b * f - c * e) * k,
+                (f * g - d * i) * k, (a * i - c * g) * k, (c * d - a * f) * k,
+                (d * h - e * g) * k, (b * g - a * h) * k, (a * e - b * d) * k]
     }
 }
 
