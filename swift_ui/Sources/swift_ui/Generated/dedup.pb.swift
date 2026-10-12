@@ -1416,7 +1416,7 @@ struct Vurio_Dedup_MediaReadyEvent: Sendable {
 
   var filePath: String = String()
 
-  /// "thumbnail" | "preview" | "preview_full" | "adjustments" | "mask" (CHAIN-5: a detected mask finished)
+  /// "thumbnail" | "preview" | "preview_full" | "adjustments" | "mask" (CHAIN-5: a detected mask finished) | "export" (CHAIN-6: an export finished; success says how)
   var mediaType: String = String()
 
   var success: Bool = false
@@ -1436,6 +1436,54 @@ struct Vurio_Dedup_MediaReadyEvent: Sendable {
   var displayWidth: Int32 = 0
 
   var displayHeight: Int32 = 0
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_ExportRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var filePath: String = String()
+
+  /// destination directory the user picked
+  var folder: String = String()
+
+  /// "jpeg" | "png" | "tiff" ("" = server default)
+  var format: String = String()
+
+  /// JPEG 1..100 (0 = server default)
+  var quality: Int32 = 0
+
+  /// long-side limit in pixels (0 = native)
+  var maxSide: Int32 = 0
+
+  /// <stem>-<suffix>.<ext>; "" = the applied recipe's name or "edit"
+  var nameSuffix: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_ExportResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var writtenPath: String = String()
+
+  var width: Int32 = 0
+
+  var height: Int32 = 0
+
+  var exifCopied: Bool = false
+
+  /// why EXIF was not (fully) copied, when it was not
+  var warning: String = String()
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1943,6 +1991,12 @@ struct Vurio_Dedup_ToolDescriptors: Sendable {
 
   /// CHAIN-4: the lane mask sources (category "mask")
   var maskSources: [Vurio_Dedup_ToolDescriptor] = []
+
+  /// CHAIN-6: media.adjustments.export.defaultFormat
+  var exportDefaultFormat: String = String()
+
+  /// CHAIN-6: media.adjustments.export.defaultQuality
+  var exportDefaultQuality: Int32 = 0
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -4975,6 +5029,111 @@ extension Vurio_Dedup_MediaReadyEvent: SwiftProtobuf.Message, SwiftProtobuf._Mes
   }
 }
 
+extension Vurio_Dedup_ExportRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".ExportRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{1}folder\0\u{1}format\0\u{1}quality\0\u{3}max_side\0\u{3}name_suffix\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.filePath) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.folder) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.format) }()
+      case 4: try { try decoder.decodeSingularInt32Field(value: &self.quality) }()
+      case 5: try { try decoder.decodeSingularInt32Field(value: &self.maxSide) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.nameSuffix) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.filePath.isEmpty {
+      try visitor.visitSingularStringField(value: self.filePath, fieldNumber: 1)
+    }
+    if !self.folder.isEmpty {
+      try visitor.visitSingularStringField(value: self.folder, fieldNumber: 2)
+    }
+    if !self.format.isEmpty {
+      try visitor.visitSingularStringField(value: self.format, fieldNumber: 3)
+    }
+    if self.quality != 0 {
+      try visitor.visitSingularInt32Field(value: self.quality, fieldNumber: 4)
+    }
+    if self.maxSide != 0 {
+      try visitor.visitSingularInt32Field(value: self.maxSide, fieldNumber: 5)
+    }
+    if !self.nameSuffix.isEmpty {
+      try visitor.visitSingularStringField(value: self.nameSuffix, fieldNumber: 6)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_ExportRequest, rhs: Vurio_Dedup_ExportRequest) -> Bool {
+    if lhs.filePath != rhs.filePath {return false}
+    if lhs.folder != rhs.folder {return false}
+    if lhs.format != rhs.format {return false}
+    if lhs.quality != rhs.quality {return false}
+    if lhs.maxSide != rhs.maxSide {return false}
+    if lhs.nameSuffix != rhs.nameSuffix {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_ExportResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".ExportResponse"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}written_path\0\u{1}width\0\u{1}height\0\u{3}exif_copied\0\u{1}warning\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.writtenPath) }()
+      case 2: try { try decoder.decodeSingularInt32Field(value: &self.width) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.height) }()
+      case 4: try { try decoder.decodeSingularBoolField(value: &self.exifCopied) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.warning) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.writtenPath.isEmpty {
+      try visitor.visitSingularStringField(value: self.writtenPath, fieldNumber: 1)
+    }
+    if self.width != 0 {
+      try visitor.visitSingularInt32Field(value: self.width, fieldNumber: 2)
+    }
+    if self.height != 0 {
+      try visitor.visitSingularInt32Field(value: self.height, fieldNumber: 3)
+    }
+    if self.exifCopied != false {
+      try visitor.visitSingularBoolField(value: self.exifCopied, fieldNumber: 4)
+    }
+    if !self.warning.isEmpty {
+      try visitor.visitSingularStringField(value: self.warning, fieldNumber: 5)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_ExportResponse, rhs: Vurio_Dedup_ExportResponse) -> Bool {
+    if lhs.writtenPath != rhs.writtenPath {return false}
+    if lhs.width != rhs.width {return false}
+    if lhs.height != rhs.height {return false}
+    if lhs.exifCopied != rhs.exifCopied {return false}
+    if lhs.warning != rhs.warning {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
 extension Vurio_Dedup_Recipe: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".Recipe"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{1}description\0\u{3}chain_json\0\u{3}node_count\0\u{3}includes_geometry\0\u{1}source\0\u{3}created_at\0\u{3}updated_at\0")
@@ -6046,7 +6205,7 @@ extension Vurio_Dedup_ToolDescriptor: SwiftProtobuf.Message, SwiftProtobuf._Mess
 
 extension Vurio_Dedup_ToolDescriptors: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".ToolDescriptors"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}tools\0\u{3}document_version\0\u{3}blend_modes\0\u{3}mask_sources\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}tools\0\u{3}document_version\0\u{3}blend_modes\0\u{3}mask_sources\0\u{3}export_default_format\0\u{3}export_default_quality\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -6058,6 +6217,8 @@ extension Vurio_Dedup_ToolDescriptors: SwiftProtobuf.Message, SwiftProtobuf._Mes
       case 2: try { try decoder.decodeSingularInt32Field(value: &self.documentVersion) }()
       case 3: try { try decoder.decodeRepeatedStringField(value: &self.blendModes) }()
       case 4: try { try decoder.decodeRepeatedMessageField(value: &self.maskSources) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.exportDefaultFormat) }()
+      case 6: try { try decoder.decodeSingularInt32Field(value: &self.exportDefaultQuality) }()
       default: break
       }
     }
@@ -6076,6 +6237,12 @@ extension Vurio_Dedup_ToolDescriptors: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if !self.maskSources.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.maskSources, fieldNumber: 4)
     }
+    if !self.exportDefaultFormat.isEmpty {
+      try visitor.visitSingularStringField(value: self.exportDefaultFormat, fieldNumber: 5)
+    }
+    if self.exportDefaultQuality != 0 {
+      try visitor.visitSingularInt32Field(value: self.exportDefaultQuality, fieldNumber: 6)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -6084,6 +6251,8 @@ extension Vurio_Dedup_ToolDescriptors: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if lhs.documentVersion != rhs.documentVersion {return false}
     if lhs.blendModes != rhs.blendModes {return false}
     if lhs.maskSources != rhs.maskSources {return false}
+    if lhs.exportDefaultFormat != rhs.exportDefaultFormat {return false}
+    if lhs.exportDefaultQuality != rhs.exportDefaultQuality {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

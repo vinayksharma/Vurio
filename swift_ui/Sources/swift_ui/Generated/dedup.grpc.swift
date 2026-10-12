@@ -3724,6 +3724,11 @@ internal protocol Vurio_Dedup_AdjustmentsServiceClientProtocol: GRPCClient {
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions?
   ) -> UnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_MaskStatusResponse>
+
+  func exportRendered(
+    _ request: Vurio_Dedup_ExportRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_ExportRequest, Vurio_Dedup_ExportResponse>
 }
 
 extension Vurio_Dedup_AdjustmentsServiceClientProtocol {
@@ -3881,6 +3886,30 @@ extension Vurio_Dedup_AdjustmentsServiceClientProtocol {
       interceptors: self.interceptors?.makeClearMaskCacheInterceptors() ?? []
     )
   }
+
+  /// CHAIN-6 (docs §8): render the chain at full resolution and write a NEW
+  /// file into `folder`. The source is never touched; an existing name is
+  /// never reused (" (2)", " (3)"…); no sidecar, no embedded chain. Not
+  /// registered: a folder inside a location is seen by the ordinary scan.
+  /// INVALID_ARGUMENT: format/quality/folder; NOT_FOUND: unregistered or
+  /// missing file; PERMISSION_DENIED: folder not writable; INTERNAL: decode
+  /// or encode failed. A MediaReadyEvent "export" follows every attempt.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to ExportRendered.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func exportRendered(
+    _ request: Vurio_Dedup_ExportRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_ExportRequest, Vurio_Dedup_ExportResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.exportRendered.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeExportRenderedInterceptors() ?? []
+    )
+  }
 }
 
 @available(*, deprecated)
@@ -3992,6 +4021,11 @@ internal protocol Vurio_Dedup_AdjustmentsServiceAsyncClientProtocol: GRPCClient 
     _ request: Vurio_Dedup_Empty,
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_Empty, Vurio_Dedup_MaskStatusResponse>
+
+  func makeExportRenderedCall(
+    _ request: Vurio_Dedup_ExportRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_ExportRequest, Vurio_Dedup_ExportResponse>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -4099,6 +4133,18 @@ extension Vurio_Dedup_AdjustmentsServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeClearMaskCacheInterceptors() ?? []
     )
   }
+
+  internal func makeExportRenderedCall(
+    _ request: Vurio_Dedup_ExportRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_ExportRequest, Vurio_Dedup_ExportResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.exportRendered.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeExportRenderedInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -4198,6 +4244,18 @@ extension Vurio_Dedup_AdjustmentsServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeClearMaskCacheInterceptors() ?? []
     )
   }
+
+  internal func exportRendered(
+    _ request: Vurio_Dedup_ExportRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_ExportResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.exportRendered.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeExportRenderedInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -4242,6 +4300,9 @@ internal protocol Vurio_Dedup_AdjustmentsServiceClientInterceptorFactoryProtocol
 
   /// - Returns: Interceptors to use when invoking 'clearMaskCache'.
   func makeClearMaskCacheInterceptors() -> [ClientInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_MaskStatusResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'exportRendered'.
+  func makeExportRenderedInterceptors() -> [ClientInterceptor<Vurio_Dedup_ExportRequest, Vurio_Dedup_ExportResponse>]
 }
 
 internal enum Vurio_Dedup_AdjustmentsServiceClientMetadata {
@@ -4257,6 +4318,7 @@ internal enum Vurio_Dedup_AdjustmentsServiceClientMetadata {
       Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.stepHistory,
       Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.maskStatus,
       Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.clearMaskCache,
+      Vurio_Dedup_AdjustmentsServiceClientMetadata.Methods.exportRendered,
     ]
   )
 
@@ -4306,6 +4368,12 @@ internal enum Vurio_Dedup_AdjustmentsServiceClientMetadata {
     internal static let clearMaskCache = GRPCMethodDescriptor(
       name: "ClearMaskCache",
       path: "/vurio.dedup.AdjustmentsService/ClearMaskCache",
+      type: GRPCCallType.unary
+    )
+
+    internal static let exportRendered = GRPCMethodDescriptor(
+      name: "ExportRendered",
+      path: "/vurio.dedup.AdjustmentsService/ExportRendered",
       type: GRPCCallType.unary
     )
   }
@@ -7428,6 +7496,15 @@ internal protocol Vurio_Dedup_AdjustmentsServiceProvider: CallHandlerProvider {
   func maskStatus(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_MaskStatusResponse>
 
   func clearMaskCache(request: Vurio_Dedup_Empty, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_MaskStatusResponse>
+
+  /// CHAIN-6 (docs §8): render the chain at full resolution and write a NEW
+  /// file into `folder`. The source is never touched; an existing name is
+  /// never reused (" (2)", " (3)"…); no sidecar, no embedded chain. Not
+  /// registered: a folder inside a location is seen by the ordinary scan.
+  /// INVALID_ARGUMENT: format/quality/folder; NOT_FOUND: unregistered or
+  /// missing file; PERMISSION_DENIED: folder not writable; INTERNAL: decode
+  /// or encode failed. A MediaReadyEvent "export" follows every attempt.
+  func exportRendered(request: Vurio_Dedup_ExportRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_ExportResponse>
 }
 
 extension Vurio_Dedup_AdjustmentsServiceProvider {
@@ -7514,6 +7591,15 @@ extension Vurio_Dedup_AdjustmentsServiceProvider {
         userFunction: self.clearMaskCache(request:context:)
       )
 
+    case "ExportRendered":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_ExportRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_ExportResponse>(),
+        interceptors: self.interceptors?.makeExportRenderedInterceptors() ?? [],
+        userFunction: self.exportRendered(request:context:)
+      )
+
     default:
       return nil
     }
@@ -7586,6 +7672,18 @@ internal protocol Vurio_Dedup_AdjustmentsServiceAsyncProvider: CallHandlerProvid
     request: Vurio_Dedup_Empty,
     context: GRPCAsyncServerCallContext
   ) async throws -> Vurio_Dedup_MaskStatusResponse
+
+  /// CHAIN-6 (docs §8): render the chain at full resolution and write a NEW
+  /// file into `folder`. The source is never touched; an existing name is
+  /// never reused (" (2)", " (3)"…); no sidecar, no embedded chain. Not
+  /// registered: a folder inside a location is seen by the ordinary scan.
+  /// INVALID_ARGUMENT: format/quality/folder; NOT_FOUND: unregistered or
+  /// missing file; PERMISSION_DENIED: folder not writable; INTERNAL: decode
+  /// or encode failed. A MediaReadyEvent "export" follows every attempt.
+  func exportRendered(
+    request: Vurio_Dedup_ExportRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_ExportResponse
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -7679,6 +7777,15 @@ extension Vurio_Dedup_AdjustmentsServiceAsyncProvider {
         wrapping: { try await self.clearMaskCache(request: $0, context: $1) }
       )
 
+    case "ExportRendered":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_ExportRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_ExportResponse>(),
+        interceptors: self.interceptors?.makeExportRenderedInterceptors() ?? [],
+        wrapping: { try await self.exportRendered(request: $0, context: $1) }
+      )
+
     default:
       return nil
     }
@@ -7718,6 +7825,10 @@ internal protocol Vurio_Dedup_AdjustmentsServiceServerInterceptorFactoryProtocol
   /// - Returns: Interceptors to use when handling 'clearMaskCache'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeClearMaskCacheInterceptors() -> [ServerInterceptor<Vurio_Dedup_Empty, Vurio_Dedup_MaskStatusResponse>]
+
+  /// - Returns: Interceptors to use when handling 'exportRendered'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeExportRenderedInterceptors() -> [ServerInterceptor<Vurio_Dedup_ExportRequest, Vurio_Dedup_ExportResponse>]
 }
 
 internal enum Vurio_Dedup_AdjustmentsServiceServerMetadata {
@@ -7733,6 +7844,7 @@ internal enum Vurio_Dedup_AdjustmentsServiceServerMetadata {
       Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.stepHistory,
       Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.maskStatus,
       Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.clearMaskCache,
+      Vurio_Dedup_AdjustmentsServiceServerMetadata.Methods.exportRendered,
     ]
   )
 
@@ -7782,6 +7894,12 @@ internal enum Vurio_Dedup_AdjustmentsServiceServerMetadata {
     internal static let clearMaskCache = GRPCMethodDescriptor(
       name: "ClearMaskCache",
       path: "/vurio.dedup.AdjustmentsService/ClearMaskCache",
+      type: GRPCCallType.unary
+    )
+
+    internal static let exportRendered = GRPCMethodDescriptor(
+      name: "ExportRendered",
+      path: "/vurio.dedup.AdjustmentsService/ExportRendered",
       type: GRPCCallType.unary
     )
   }

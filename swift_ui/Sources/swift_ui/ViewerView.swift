@@ -119,6 +119,8 @@ struct ViewerView: View {
         }
         .background(Theme.background)
         .background(keyboardShortcuts)
+        // CHAIN-6 (docs §9.2): Export… (⇧⌘E) writes a new file from the chain.
+        .sheet(isPresented: $adjustments.isExportPresented) { ExportSheet(model: adjustments) }
         .task(id: request?.id) {
             if let request {
                 await model.load(request)
@@ -499,6 +501,14 @@ struct ViewerView: View {
             }
             .disabled(!hasImage || isPlaceholderImage || !adjustments.isAvailable)
 
+            controlDivider
+
+            // CHAIN-6: a new file from the chain, into a folder of the user's choosing.
+            controlButton("square.and.arrow.up", help: "Export… (⇧⌘E): render the edits into a new file") {
+                adjustments.isExportPresented = true
+            }
+            .disabled(!hasImage || isPlaceholderImage || !adjustments.isAvailable)
+
             if model.isGroupMode, let selected = model.selectedImage, !selected.isRepresentative {
                 controlDivider
                 ejectRestoreDisk(isEjected: selected.isEjected)
@@ -799,6 +809,11 @@ struct ViewerView: View {
                 Button("") { adjustments.redo() }
                     .keyboardShortcut("z", modifiers: [.command, .shift])
                     .hidden()
+                if currentImage != nil && !isPlaceholderImage && adjustments.isAvailable {
+                    Button("") { adjustments.isExportPresented = true }
+                        .keyboardShortcut("e", modifiers: [.command, .shift])
+                        .hidden()
+                }
                 if let selected = adjustments.selectedNodeID {
                     Button("") { adjustments.removeNode(selected) }
                         .keyboardShortcut(.delete, modifiers: [.command])

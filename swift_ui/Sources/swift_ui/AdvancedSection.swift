@@ -145,6 +145,9 @@ struct AdvancedSection: View {
                     // CHAIN-5 (docs §9.3): detected-mask backends and cache.
                     MaskStatusRow(viewModel: viewModel)
 
+                    // CHAIN-6 (docs §9.3): where exports go by default.
+                    ExportDefaultsRow()
+
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Advanced Overlay")
@@ -339,5 +342,52 @@ private struct MaskStatusRow: View {
             }
         }
         .task { await viewModel.loadMaskStatus() }
+    }
+}
+
+/// CHAIN-6 (docs §9.3): the export folder the sheet starts from. Format and
+/// JPEG quality defaults are server settings (media.adjustments.export.*)
+/// and live in the Configuration list above.
+private struct ExportDefaultsRow: View {
+    @State private var folder = ExportSettings.folder
+
+    var body: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Export Folder")
+                    .font(.headline)
+                    .textCase(.uppercase)
+                Text("Where Export… (⇧⌘E) proposes to write. Exports are new files named after the source and the recipe; nothing is ever replaced, and the folder is not registered unless it already lies inside a library location. Format and JPEG quality defaults are in the configuration list (media.adjustments.export).")
+                    .font(.subheadline)
+                    .foregroundColor(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(folder.isEmpty ? "Not set — the sheet asks each time." : (folder as NSString).abbreviatingWithTildeInPath)
+                    .font(.custom("Menlo", size: 10))
+                    .foregroundColor(folder.isEmpty ? Theme.textSecondary : Theme.textAccent)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .padding(.top, 2)
+            }
+            Spacer()
+            VStack(spacing: 8) {
+                Button(action: {
+                    if let picked = ExportSettings.chooseFolder(startingAt: folder) {
+                        folder = picked
+                        ExportSettings.folder = picked
+                    }
+                }) {
+                    Label("Choose…", systemImage: "folder")
+                }
+                .vurioButtonStyle()
+                Button(action: {
+                    folder = ""
+                    ExportSettings.folder = ""
+                }) {
+                    Label("Forget", systemImage: "xmark")
+                }
+                .vurioButtonStyle(tint: Theme.warning)
+                .disabled(folder.isEmpty)
+            }
+        }
     }
 }

@@ -192,6 +192,10 @@ struct AdjustmentsPanel: View {
             Button("Paste chain, appending") { model.pasteChain(append: true) }
                 .keyboardShortcut("v", modifiers: [.command, .shift, .option])
                 .disabled(!hasImage)
+            Divider()
+            // CHAIN-6 (docs §9.2): the same sheet the viewer's ⇧⌘E opens.
+            Button("Export…") { model.isExportPresented = true }
+                .disabled(!hasImage)
         } label: {
             Image(systemName: "book.closed")
         }

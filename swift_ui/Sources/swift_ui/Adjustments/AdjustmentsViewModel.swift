@@ -38,6 +38,13 @@ final class AdjustmentsViewModel: ObservableObject {
     @Published private(set) var blendModes: [String] = []
     /// CHAIN-4: the lane mask sources the server describes.
     @Published private(set) var maskSources: [ToolDescriptor] = []
+    /// CHAIN-6: the export sheet's server defaults (media.adjustments.export.*).
+    struct ExportDefaults: Equatable {
+        var format = "jpeg"
+        var quality = 92
+    }
+    @Published private(set) var exportDefaults = ExportDefaults()
+    @Published var isExportPresented = false
     /// CHAIN-4 view modes (docs §9.2): a lane alone over grey, a lane's
     /// coverage tinted red. View-only, never committed.
     @Published private(set) var soloLaneID: String?
@@ -275,6 +282,10 @@ final class AdjustmentsViewModel: ObservableObject {
             descriptors = response.tools.map(ToolDescriptor.init)
             blendModes = response.blendModes
             maskSources = response.maskSources.map(ToolDescriptor.init)
+            if !response.exportDefaultFormat.isEmpty {
+                exportDefaults = ExportDefaults(format: response.exportDefaultFormat,
+                                                quality: (1...100).contains(Int(response.exportDefaultQuality)) ? Int(response.exportDefaultQuality) : 92)
+            }
             descriptorsLoaded = true
             rebuildTools()
         } catch {
@@ -1147,6 +1158,42 @@ final class AdjustmentsViewModel: ObservableObject {
             if isGrpcCancellation(error) { return }
             if grpcStatusCode(of: error) == .outOfRange { return }
             lastError = "Could not step the history: \((error as? GRPCStatus)?.message ?? error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Export (CHAIN-6, docs §8)
+
+    /// `<stem>-<recipe>` when the photo's current state came from a recipe,
+    /// `<stem>-edit` otherwise — the same rule the server applies when the
+    /// sheet sends no name.
+    var defaultExportSuffix: String {
+        guard historyIndex >= 0, historyIndex < historySteps.count else { return "edit" }
+        for step in historySteps[...historyIndex].reversed() {
+            for prefix in ["Apply recipe ", "Add recipe "] where step.label.hasPrefix(prefix) {
+                let name = String(step.label.dropFirst(prefix.count))
+                if !name.isEmpty { return name }
+            }
+        }
+        return "edit"
+    }
+
+    /// Full-resolution render into a new file; may take seconds on a large
+    /// RAW, so the call gets its own generous deadline.
+    func exportRendered(_ request: Vurio_Dedup_ExportRequest) async -> Result<Vurio_Dedup_ExportResponse, Error> {
+        guard let client = VurioGrpcClient.shared.adjustments else {
+            return .failure(GRPCStatus(code: .unavailable, message: "Not connected to the server"))
+        }
+        await flushPendingCommit()
+        // The client's defaults carry the session token; only the deadline changes.
+        var options = client.defaultCallOptions
+        options.timeLimit = .timeout(.seconds(300))
+        do {
+            return .success(try await client.exportRendered(request, callOptions: options))
+        } catch {
+            if let status = error as? GRPCStatus, let message = status.message, !message.isEmpty {
+                return .failure(GRPCStatus(code: status.code, message: message.prefix(1).uppercased() + message.dropFirst()))
+            }
+            return .failure(error)
         }
     }
 
