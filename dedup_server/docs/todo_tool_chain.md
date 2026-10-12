@@ -719,7 +719,7 @@ three stacked regions:
 | `media.adjustments.masks.enabled` | true | detected masks on/off |
 | `media.adjustments.masks.size` | 1024 | long side of cached detected masks |
 | `media.adjustments.masks.promptModelPath` | `models/clipseg-rd64-refined.onnx` | CLIPSeg |
-| `media.adjustments.masks.refineModelPath` | `models/mobile_sam.onnx` | SAM refinement (CHAIN-5b) |
+| `media.adjustments.masks.refineEncoderPath` / `refineDecoderPath` | `models/slimsam-encoder.onnx` / `models/slimsam-decoder.onnx` | SAM refinement (CHAIN-5b; SlimSAM-77, two ONNX files) |
 | `media.adjustments.masks.useCoreML` | true | CoreML EP where available |
 | `media.adjustments.recipes.builtin` | true | seed starter recipes |
 | `media.adjustments.history.maxEntries` | 100 | persisted undo steps per photo |
@@ -815,7 +815,7 @@ have more controls than the panel has height.
 - [x] Sources: `subject` (Vision on macOS + portable fallback), `people` (portable ONNX model, licence verified), `faces` (DB boxes, `person_ids`), `prompt` (CLIPSeg ONNX, edge-aware upsample); model download/verify; config
 - [x] Backend measurement on twenty library photos (IoU); drop the Vision `subject` backend if the portable path is within 5 points
 - [x] Client: prompt text field with recent prompts, person picker, pending state; Settings › Advanced mask status
-- [ ] CHAIN-5b: SAM refinement of prompt masks (MobileSAM ONNX)
+- [x] CHAIN-5b: SAM refinement of prompt masks (SlimSAM-77 ONNX; also people and the portable subject)
 - [x] Tests: cache key stability under unrelated edits; transport alignment; detection smoke tests behind the model gate used by CLIP tests
 
 Notes from the implementation (2026-10-11):
@@ -854,6 +854,36 @@ Notes from the implementation (2026-10-11):
 - Deferred to CHAIN-5b: SAM refinement (MobileSAM ONNX exports exist on
   Hugging Face with permissive licences) and the mask-models status on a
   non-macOS build (status is reported, the Vision line reads "onnx" there).
+
+CHAIN-5b implemented 2026-10-11:
+
+- **Model**: `Xenova/slimsam-77-uniform` (Apache-2.0), the ONNX export of
+  SlimSAM-77 (SAM ViT-B pruned to 5.7 M encoder params), in two files:
+  `slimsam-encoder.onnx` (23 MB) and `slimsam-decoder.onnx` (17 MB), both
+  optional assets in `ensure_models.sh`. MobileSAM has no ready ONNX
+  export under a permissive licence on the Hub; SlimSAM is the same
+  family, same prompt interface, smaller. The fp32 export ships: on ten
+  library previews the int8 export's masks disagreed with fp32 (IoU under
+  0.1) on three, for a 20 % speed gain. Measured on an M-series CPU:
+  encoder ~600 ms at 1024², decoder ~15 ms per region.
+- **How a mask is refined** (`MaskDetectors::refine`): the coarse coverage
+  (CLIPSeg, the selfie model, or the portable subject fallback — never
+  Vision's, which is sharp already) is thresholded at half its peak; each
+  connected region above the area floor (0.2 % of the picture, at most
+  six, largest first) becomes one SAM prompt: its bounding box as the two
+  corner "points" (labels 2/3) plus its deepest interior point and, when
+  elsewhere, its response peak (label 1). Of SAM's three candidates the
+  one agreeing best with the coarse region wins and replaces that region
+  (sigmoid of the logits over the region grown by 2 %); a region SAM
+  cannot match (IoU < 0.25) keeps its coarse coverage. A coarse mask whose
+  peak is under 0.3 is noise and is left alone.
+- **Cache key**: the service adds `_refine: slimsam` to the detector
+  params when SAM will run for that source here and now, so a mask cached
+  before the model was installed is not mistaken for a refined one. The
+  lane's "Sharpen edges (SAM)" toggle (a `refine` bool on Prompt, People
+  and Subject) is part of the detector params; off = the coarse mask.
+- **Status**: Settings › Advanced lists a `refine` row (model path,
+  loaded) under the sources.
 
 ### CHAIN-6 — Export
 
