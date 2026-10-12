@@ -980,6 +980,35 @@ private struct LaneMaskInspector: View {
                     .font(.caption2)
                     .foregroundColor(Theme.textSecondary)
             }
+            if tool.descriptor.id == "brush" {
+                // CHAIN-7c: paint mode, brush size, erase, clear.
+                let painting = model.brushLaneID == laneID
+                HStack(spacing: 6) {
+                    Button(action: { model.setBrushMode(!painting) }) {
+                        Label(painting ? "Done" : "Paint", systemImage: "paintbrush.pointed")
+                    }
+                    .vurioButtonStyle()
+                    .background(RoundedRectangle(cornerRadius: 4)
+                        .fill(painting ? Theme.accent.opacity(0.45) : Color.clear))
+                    .help(painting ? "Stop painting (Esc)" : "Paint the mask on the picture")
+                    Toggle("Erase", isOn: $model.brushErase)
+                        .toggleStyle(.checkbox)
+                        .font(.system(size: 11))
+                    Spacer()
+                    Button("Clear") { model.clearBrushStrokes(laneID) }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 10))
+                        .foregroundColor(Theme.textAccent)
+                        .disabled((tool.strokes["strokes"] ?? []).isEmpty)
+                }
+                .disabled(!hasImage)
+                ParamSlider(label: "Brush size", value: $model.brushRadius, range: 0.005...0.2, step: 0.005, onEditing: { _ in })
+                    .disabled(!hasImage)
+                let count = (tool.strokes["strokes"] ?? []).count
+                Text(painting ? "Drag on the picture to paint; Esc when done." : (count == 1 ? "1 stroke" : "\(count) strokes"))
+                    .font(.caption2)
+                    .foregroundColor(Theme.textSecondary)
+            }
             if model.pendingLaneIDs.contains(laneID) {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.mini)

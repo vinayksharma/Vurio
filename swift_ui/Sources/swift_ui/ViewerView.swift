@@ -323,7 +323,7 @@ struct ViewerView: View {
             // the mouse and re-asserts the arrow on every move, which would
             // wipe the ruler cursor the moment the pointer moved.
             .overlay {
-                if !adjustments.isRulerMode {
+                if !adjustments.isRulerMode, adjustments.brushLaneID == nil {
                     PanCursorOverlay(isEnabled: currentImage != nil && !adjustments.isCropEditing,
                                      isDragging: isPanning)
                 }
@@ -398,6 +398,21 @@ struct ViewerView: View {
                         .frame(width: area.width, height: area.height)
                         .offset(panOffset)
                 }
+                // CHAIN-7c: the brush mask's paint surface, at fit zoom like
+                // the pins.
+                if !editing, scale == 1, let laneID = adjustments.brushLaneID,
+                   let brushTool = adjustments.maskTool(for: laneID),
+                   let found = adjustments.document.lane(laneID) {
+                    BrushOverlay(tool: brushTool, frame: frame, layout: layout,
+                                 radius: adjustments.brushRadius, erase: adjustments.brushErase,
+                                 colour: AdjustmentsViewModel.laneColor(found.laneIndex),
+                                 onChange: { interactive in
+                                     adjustments.laneMaskChanged(laneID, label: adjustments.brushErase ? "Erase brush stroke" : "Brush stroke",
+                                                                 interactive: interactive)
+                                 })
+                        .frame(width: area.width, height: area.height)
+                        .offset(panOffset)
+                }
             } else {
                 Image(nsImage: image)
                     .resizable()
@@ -439,7 +454,7 @@ struct ViewerView: View {
         // starts and ends a pan of zero translation, which moves nothing.
         DragGesture(minimumDistance: 0)
             .onChanged { value in
-                guard !adjustments.isCropEditing, !adjustments.isRulerMode else { return }
+                guard !adjustments.isCropEditing, !adjustments.isRulerMode, adjustments.brushLaneID == nil else { return }
                 isPanning = true
                 panOffset = CGSize(
                     width: panBase.width + value.translation.width,
@@ -455,7 +470,7 @@ struct ViewerView: View {
     private var magnifyGesture: some Gesture {
         MagnificationGesture()
             .onChanged { value in
-                guard !adjustments.isCropEditing, !adjustments.isRulerMode else { return }
+                guard !adjustments.isCropEditing, !adjustments.isRulerMode, adjustments.brushLaneID == nil else { return }
                 scale = clampScale(gestureScaleBase * value.magnitude)
             }
             .onEnded { _ in
@@ -789,6 +804,8 @@ struct ViewerView: View {
                 Button("") {
                     if adjustments.isEditingReadout {
                         adjustments.isEditingReadout = false
+                    } else if adjustments.isBrushMode {
+                        adjustments.setBrushMode(false)
                     } else if adjustments.isRulerMode {
                         adjustments.isRulerMode = false
                     } else if adjustments.isCropEditing {

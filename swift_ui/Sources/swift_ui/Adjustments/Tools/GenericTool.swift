@@ -113,7 +113,12 @@ final class GenericToolUI: AdjustmentToolUI {
         for p in descriptor.params where p.kind == .curve {
             curveLabels[p.id] = MonotoneCurve.isIdentity(curves[p.id] ?? p.defaultCurve) ? nil : p.label
         }
-        return Self.format(descriptor.summary, numbers: numbers, strings: strings, curves: curveLabels)
+        var text = strings
+        for p in descriptor.params where p.kind == .strokes {
+            let n = (strokes[p.id] ?? []).count
+            text[p.id] = n == 0 ? "no strokes" : (n == 1 ? "1 stroke" : "\(n) strokes")
+        }
+        return Self.format(descriptor.summary, numbers: numbers, strings: text, curves: curveLabels)
     }
 
     static func format(_ template: String, numbers: [String: Double], strings: [String: String],
@@ -383,6 +388,18 @@ enum MonotoneCurve {
             out.append(CGPoint(x: x, y: y))
         }
         return out.sorted { $0.x < $1.x }
+    }
+
+    /// Points in their stored order (a brush stroke's path).
+    static func pointsUnsorted(from any: Any) -> [CGPoint]? {
+        guard let arr = any as? [Any] else { return nil }
+        var out: [CGPoint] = []
+        for item in arr {
+            guard let pair = item as? [Any], pair.count == 2,
+                  let x = (pair[0] as? NSNumber)?.doubleValue, let y = (pair[1] as? NSNumber)?.doubleValue else { return nil }
+            out.append(CGPoint(x: x, y: y))
+        }
+        return out
     }
 
     static func json(_ points: [CGPoint]) -> [[Double]] {

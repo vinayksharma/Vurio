@@ -58,6 +58,12 @@ final class AdjustmentsViewModel: ObservableObject {
     /// The crop node the editor is open on.
     @Published private(set) var editingCropID: String?
     @Published var isRulerMode = false
+    /// CHAIN-7c: painting the selected lane's brush component. Entered from
+    /// the lane inspector, left with Esc or the button; the lane's mask
+    /// overlay is shown while painting so the strokes read as coverage.
+    @Published var isBrushMode = false
+    @Published var brushRadius: Double = 0.03
+    @Published var brushErase = false
     /// The Rotate readout is a text field right now (click, or F2). Lives
     /// here so the viewer's Esc can cancel it before anything else.
     @Published var isEditingReadout = false
@@ -640,6 +646,25 @@ final class AdjustmentsViewModel: ObservableObject {
         guard soloLaneID != laneID else { return }
         soloLaneID = laneID
         requestPreview()
+    }
+
+    /// CHAIN-7c: the lane whose brush component is being painted, when the
+    /// selection is a lane with a brush as its selected component.
+    var brushLaneID: String? {
+        guard isBrushMode, let lane = selectedLane, maskTool(for: lane.id)?.descriptor.id == "brush" else { return nil }
+        return lane.id
+    }
+
+    func setBrushMode(_ on: Bool) {
+        guard isBrushMode != on else { return }
+        isBrushMode = on
+        if on, let lane = selectedLane { setOverlay(lane.id) }
+    }
+
+    func clearBrushStrokes(_ laneID: String) {
+        guard let editor = maskTool(for: laneID), editor.descriptor.id == "brush" else { return }
+        editor.strokes["strokes"] = []
+        laneMaskChanged(laneID, label: "Clear brush strokes", interactive: false)
     }
 
     func setOverlay(_ laneID: String?) {
