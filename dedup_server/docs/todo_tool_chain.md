@@ -1099,9 +1099,27 @@ canvas-shaped rectangle inside the warped quad. Verified: vertical +0.57
 with the fill, the SAM lighthouse mask coinciding with the warped
 building both below and above the split.
 
-**7g — Docs, memory, merges.**
+**7g — Docs, memory, merges.** Done 2026-10-12 with the sub-steps above.
 
-**7h — AI denoise, Upscale.** Assessed after 7a–7g; see the notes below.
+**7h — AI denoise, Upscale.** Assessed 2026-10-12, not implemented; both
+need a decision before the work (§14):
+
+- Each is a model sub-project the size of CHAIN-5b: pick an open-source
+  network, find or produce a permissive ONNX export (there is no Python
+  ONNX toolchain on the build machine, so an export means a new dependency
+  or a vetted download), verify it against the fp32 reference, add the
+  download to `ensure_models.sh`, tile the inference (a 24 MP frame does
+  not fit a UNet in one pass) and measure. Candidates: NAFNet (MIT) or
+  SCUNet (Apache-2.0) for denoise; Real-ESRGAN (BSD-3; the published ONNX
+  exports on the Hub carry other licences and need checking) for upscale.
+- Neither fits the live envelope (§5.4): a CNN denoise on a 2560 px preview
+  is seconds on CPU, an ×4 upscale of a 24 MP base is minutes and 400 MP of
+  output. They would be export-time or cached-once operations, not nodes
+  the preview re-runs on every drag — a different composition from every
+  other tool, so the user should say which they want: an export option
+  ("upscale ×2/×4 on export", "AI denoise on export"), a cached raster node
+  that renders a placeholder until its result arrives (like detected
+  masks), or neither.
 
 ## 13. Decisions recorded 2026-10-11 (user's answers to the first round)
 
@@ -1146,7 +1164,11 @@ Second round (same day):
 
 ## 14. Questions open
 
-None. Residual choices the design took on its own and that the user can
+1. (CHAIN-7h) AI denoise and Upscale: export-time option, cached node, or
+   left out? And which model licences count as acceptable (the Hub's ONNX
+   exports of Real-ESRGAN are under their exporters' terms, not BSD-3).
+
+Otherwise none. Residual choices the design took on its own and that the user can
 overturn at review time: history snapshots rather than deltas and the cap
 of 100; the 5-IoU-point exit clause for the Vision backend; JPEG q92 and
 the `<stem>-<recipe>` export name.

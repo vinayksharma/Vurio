@@ -37,7 +37,7 @@ Completed tasks move to Done as one-liners; their spec documents are deleted
   implemented 2026-10-11 (export: full-res render to a new JPEG/PNG/TIFF-16
   file, EXIF carried over upright via libexif, never overwrites, export
   sheet + ⇧⌘E); CHAIN-5b implemented 2026-10-11 (SlimSAM-77 sharpens
-  the prompt, people and portable subject masks; per-lane toggle); CHAIN-7 next.* CHAIN-1 (engine, document
+  the prompt, people and portable subject masks; per-lane toggle); CHAIN-7a–7f implemented 2026-10-12 (Levels, Curves, HSL, Grain, Clarity, Dehaze; mask component combination UI; brush mask; strip multi-select with batch recipe apply and export; history snapshots; homography transport + Perspective); CHAIN-7h (AI denoise, Upscale) assessed and left for a decision (spec §14).* CHAIN-1 (engine, document
   format 2, preview session, chain UI) first; CHAIN-2 (tools) and CHAIN-3
   (recipes) in parallel; CHAIN-4 (splits, procedural masks); CHAIN-5
   (detected masks); CHAIN-6 (export); CHAIN-7 (second wave). Progress
