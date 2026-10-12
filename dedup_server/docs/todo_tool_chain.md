@@ -486,9 +486,12 @@ Each tool's header comment carries its formula; the golden test pins it.
 | Masks `full`, `linear` (p0, p1, feather), `radial` (centre, rx, ry, rotation, feather), `luminance` (lo, hi, knee), `color_range` (hue, range, sat_min, feather) | mask | base space (geometric) / fork pixels (tonal) | coverage formulas in the header; smoothstep edges |
 | Masks `subject`, `people`, `faces` (`person_ids`), `prompt` (`text`) | mask | — | §5.6 |
 
-Later (CHAIN-7): Curves (1-D LUT), HSL per hue, Levels, Grain (seeded),
-Clarity/Dehaze, AI denoise, Perspective, Upscale, Brush mask, SAM
-refinement, mask component combination UI.
+CHAIN-7 (2026-10-12) added, formulas in their headers: Perspective
+`perspective` (geometry: `vertical`, `horizontal`, `auto_fill`), Levels
+`levels`, Curves `curves` (four `curve` params), HSL `hsl` (8 bands × hue /
+sat / lum, grouped), Grain `grain`, Clarity `clarity` and Dehaze `dehaze`
+(raster), the Brush mask `brush` (`strokes`, `softness`) and SAM refinement
+(CHAIN-5b). Still later: AI denoise, Upscale (see 7h).
 
 ## 7. Recipes
 
@@ -1079,8 +1082,22 @@ Tool `perspective` (geometry, trunk only): `vertical`, `horizontal`
 (default on) scales the largest inscribed rectangle of the warped content
 to the input canvas so no empty corners appear; canvas size unchanged.
 
-- [ ] Homography transport + tests (existing geometry tests hold)
-- [ ] Perspective tool + client
+- [x] Homography transport + tests (existing geometry tests hold)
+- [x] Perspective tool + client
+
+7f implemented 2026-10-12: `Frame::base_to_canvas` is a `cv::Matx33d`
+(`composeAffine` lifts 2×3 inputs, `composeHomography`, `project` with the
+divide, `unproject`, `jacobian`, `affineScale` measured at the base centre,
+`isAffine`); detected masks go through `warpPerspective` when the transport
+is projective, the radial mask reads its rotation from the Jacobian at its
+centre (shapes are the local-affine approximation under perspective,
+centres exact), linear and brush project their points; `base_to_canvas`
+is 9 values on the wire and `PreviewFrame` inverts the 3×3. Tool
+`perspective` (`tools/perspective_tool.cpp`): `keystone()` from
+`getPerspectiveTransform`, `fillScale()` bisects the largest centred
+canvas-shaped rectangle inside the warped quad. Verified: vertical +0.57
+with the fill, the SAM lighthouse mask coinciding with the warped
+building both below and above the split.
 
 **7g — Docs, memory, merges.**
 
