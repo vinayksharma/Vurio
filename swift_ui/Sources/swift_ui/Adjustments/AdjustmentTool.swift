@@ -23,6 +23,11 @@ struct ToolParamSpec: Equatable {
     /// CHAIN-7: params sharing a group are shown one group at a time behind
     /// a chip row (HSL's bands, Curves' channels); empty = ungrouped.
     let group: String
+    /// An enum whose options are shortcuts for values of other params
+    /// (Monochrome's filters → its weights): option → param id → value.
+    let presets: [String: [String: Double]]
+    /// The option an edit of a preset-governed param selects ("" = none).
+    let customOption: String
 
     init(_ p: Vurio_Dedup_ParamSpec) {
         id = p.id
@@ -36,6 +41,8 @@ struct ToolParamSpec: Equatable {
         options = p.options
         defaultJSON = p.defaultJson
         group = p.group
+        presets = Dictionary(p.presets.map { ($0.option, $0.values) }, uniquingKeysWith: { _, last in last })
+        customOption = p.customOption
     }
 
     /// The default of a `curve` param as points (identity when unparsable).

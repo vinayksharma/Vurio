@@ -970,6 +970,17 @@ message ParamSpec {
   // CHAIN-7: params sharing a group are shown one group at a time behind a
   // chip row (HSL's bands, Curves' channels); empty = ungrouped.
   string group = 11;
+  // An enum whose options are shortcuts for values of OTHER params
+  // (Monochrome's filters → its red/green/blue weights). Picking an option
+  // that has a preset sets those params; editing any param a preset names
+  // selects `custom_option` (when set).
+  repeated ParamPreset presets = 12;
+  string custom_option = 13;
+}
+
+message ParamPreset {
+  string option = 1;
+  map<string, double> values = 2; // param id → value
 }
 
 message ToolDescriptor {

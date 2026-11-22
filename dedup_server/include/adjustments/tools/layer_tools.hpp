@@ -69,6 +69,7 @@ namespace MediaDedup::Adjustments
         /// already convert (active_at_defaults).
         bool isIdentity(const ToolState &state) const override;
         static void weights(const std::string &preset, double r, double g, double b, double &wr, double &wg, double &wb);
+        static void presetWeights(const std::string &preset, double &wr, double &wg, double &wb);
     };
 
     // out = in·(1 − d) + (in ⊗ C·k)·d, C = HSV(hue, saturation, 1), k scales

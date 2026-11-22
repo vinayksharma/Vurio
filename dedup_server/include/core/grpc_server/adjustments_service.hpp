@@ -142,6 +142,12 @@ public:
                 for (const auto& o : p.options) ps->add_options(o);
                 ps->set_default_json(p.default_json);
                 ps->set_group(p.group);
+                for (const auto& preset : p.presets) {
+                    auto* pp = ps->add_presets();
+                    pp->set_option(preset.first);
+                    for (const auto& v : preset.second) (*pp->mutable_values())[v.first] = v.second;
+                }
+                ps->set_custom_option(p.custom_option);
             }
         }
     }

@@ -1990,6 +1990,29 @@ struct Vurio_Dedup_ParamSpec: Sendable {
   /// chip row (HSL's bands, Curves' channels); empty = ungrouped.
   var group: String = String()
 
+  /// An enum whose options are shortcuts for values of OTHER params
+  /// (Monochrome's filters → its red/green/blue weights). Picking an option
+  /// that has a preset sets those params; editing any param a preset names
+  /// selects `custom_option` (when set).
+  var presets: [Vurio_Dedup_ParamPreset] = []
+
+  var customOption: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_ParamPreset: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var option: String = String()
+
+  /// param id → value
+  var values: Dictionary<String,Double> = [:]
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -6230,7 +6253,7 @@ extension Vurio_Dedup_SnapshotRequest: SwiftProtobuf.Message, SwiftProtobuf._Mes
 
 extension Vurio_Dedup_ParamSpec: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".ParamSpec"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}kind\0\u{1}min\0\u{1}max\0\u{1}step\0\u{3}default_value\0\u{3}default_option\0\u{1}options\0\u{3}default_json\0\u{1}group\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}kind\0\u{1}min\0\u{1}max\0\u{1}step\0\u{3}default_value\0\u{3}default_option\0\u{1}options\0\u{3}default_json\0\u{1}group\0\u{1}presets\0\u{3}custom_option\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -6249,6 +6272,8 @@ extension Vurio_Dedup_ParamSpec: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
       case 9: try { try decoder.decodeRepeatedStringField(value: &self.options) }()
       case 10: try { try decoder.decodeSingularStringField(value: &self.defaultJson) }()
       case 11: try { try decoder.decodeSingularStringField(value: &self.group) }()
+      case 12: try { try decoder.decodeRepeatedMessageField(value: &self.presets) }()
+      case 13: try { try decoder.decodeSingularStringField(value: &self.customOption) }()
       default: break
       }
     }
@@ -6288,6 +6313,12 @@ extension Vurio_Dedup_ParamSpec: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
     if !self.group.isEmpty {
       try visitor.visitSingularStringField(value: self.group, fieldNumber: 11)
     }
+    if !self.presets.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.presets, fieldNumber: 12)
+    }
+    if !self.customOption.isEmpty {
+      try visitor.visitSingularStringField(value: self.customOption, fieldNumber: 13)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -6303,6 +6334,43 @@ extension Vurio_Dedup_ParamSpec: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
     if lhs.options != rhs.options {return false}
     if lhs.defaultJson != rhs.defaultJson {return false}
     if lhs.group != rhs.group {return false}
+    if lhs.presets != rhs.presets {return false}
+    if lhs.customOption != rhs.customOption {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_ParamPreset: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".ParamPreset"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}option\0\u{1}values\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.option) }()
+      case 2: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufDouble>.self, value: &self.values) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.option.isEmpty {
+      try visitor.visitSingularStringField(value: self.option, fieldNumber: 1)
+    }
+    if !self.values.isEmpty {
+      try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufDouble>.self, value: self.values, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_ParamPreset, rhs: Vurio_Dedup_ParamPreset) -> Bool {
+    if lhs.option != rhs.option {return false}
+    if lhs.values != rhs.values {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

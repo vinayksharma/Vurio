@@ -209,6 +209,20 @@ TEST(LayerToolTest, PerPixelFormulas)
     EXPECT_GT(tinted[2], tinted[0]) << "a 40° tint is warm";
     cv::Vec3f red_filter = run("monochrome", json{{"preset", "red_filter"}}, cv::Vec3f(0.0f, 0.0f, 1.0f));
     EXPECT_NEAR(red_filter[1], 0.7f, 1e-4) << "red filter weights red 0.7";
+    // Custom weights act on the picture (normalised to sum 1).
+    cv::Vec3f custom = run("monochrome", json{{"preset", "custom"}, {"red", 0.5}, {"green", 0.0}, {"blue", 1.0}}, cv::Vec3f(1.0f, 0.0f, 0.0f));
+    EXPECT_NEAR(custom[1], 2.0f / 3.0f, 1e-4) << "blue weighs 1.0 of 1.5";
+    // Every named filter publishes its weights as a preset, and editing a
+    // weight selects "custom" — the client keeps the sliders live with these.
+    for (const auto &p : ToolRegistry::instance().find("monochrome")->descriptor().params)
+    {
+        if (p.id != "preset")
+            continue;
+        EXPECT_EQ(p.custom_option, "custom");
+        EXPECT_EQ(p.presets.size(), p.options.size() - 1);
+        for (const auto &preset : p.presets)
+            EXPECT_EQ(preset.second.size(), 3u) << preset.first;
+    }
 
     // Colour filter at density 0 is identity; at density 1 it is the luma-preserving tint.
     cv::Vec3f none = run("color_filter", json{{"density", 0}, {"hue", 200}}, colour);

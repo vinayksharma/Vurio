@@ -208,6 +208,34 @@ namespace MediaDedup::Adjustments
         number("tint_amount", "Tint amount", 0, 1, 0, 0.01);
         flag("enabled_mono", "Convert to monochrome", true);
         descriptor_.active_at_defaults = true;
+        // The filters are shortcuts for the weights: the client loads a
+        // filter's weights into the sliders and selects "custom" as soon as
+        // a weight is edited, so the sliders always act on the picture.
+        for (auto &p : descriptor_.params)
+        {
+            if (p.id != "preset")
+                continue;
+            for (const auto &option : p.options)
+            {
+                if (option == "custom")
+                    continue;
+                double wr, wg, wb;
+                presetWeights(option, wr, wg, wb);
+                p.presets.push_back({option, {{"red", wr}, {"green", wg}, {"blue", wb}}});
+            }
+            p.custom_option = "custom";
+        }
+    }
+
+    // A named filter's weights, as shown on the sliders (not normalised).
+    void MonochromeTool::presetWeights(const std::string &preset, double &wr, double &wg, double &wb)
+    {
+        if (preset == "red_filter") { wr = 0.7; wg = 0.2; wb = 0.1; }
+        else if (preset == "orange_filter") { wr = 0.6; wg = 0.3; wb = 0.1; }
+        else if (preset == "yellow_filter") { wr = 0.4; wg = 0.5; wb = 0.1; }
+        else if (preset == "green_filter") { wr = 0.2; wg = 0.7; wb = 0.1; }
+        else if (preset == "blue_filter") { wr = 0.1; wg = 0.2; wb = 0.7; }
+        else { wr = kLumR; wg = kLumG; wb = kLumB; }
     }
 
     bool MonochromeTool::isIdentity(const ToolState &state) const
@@ -217,13 +245,8 @@ namespace MediaDedup::Adjustments
 
     void MonochromeTool::weights(const std::string &preset, double r, double g, double b, double &wr, double &wg, double &wb)
     {
-        if (preset == "red_filter") { wr = 0.7; wg = 0.2; wb = 0.1; }
-        else if (preset == "orange_filter") { wr = 0.6; wg = 0.3; wb = 0.1; }
-        else if (preset == "yellow_filter") { wr = 0.4; wg = 0.5; wb = 0.1; }
-        else if (preset == "green_filter") { wr = 0.2; wg = 0.7; wb = 0.1; }
-        else if (preset == "blue_filter") { wr = 0.1; wg = 0.2; wb = 0.7; }
-        else if (preset == "custom") { wr = r; wg = g; wb = b; }
-        else { wr = kLumR; wg = kLumG; wb = kLumB; }
+        if (preset == "custom") { wr = r; wg = g; wb = b; }
+        else presetWeights(preset, wr, wg, wb);
         double sum = wr + wg + wb;
         if (sum <= 1e-9) { wr = kLumR; wg = kLumG; wb = kLumB; sum = 1; }
         wr /= sum; wg /= sum; wb /= sum;

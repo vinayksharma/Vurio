@@ -7,6 +7,7 @@
 // node may be placed (§3.2).
 
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace MediaDedup::Adjustments
@@ -39,6 +40,13 @@ namespace MediaDedup::Adjustments
         // CHAIN-7: params sharing a group are shown one group at a time
         // behind a chip row (HSL's bands, Curves' channels); empty = none.
         std::string group;
+        // An Enum whose options are shortcuts for values of OTHER params
+        // (Monochrome's filters → its red/green/blue weights). Picking an
+        // option with a preset sets those params; editing any param a preset
+        // names selects `custom_option`. The client keeps the two in step,
+        // so the controls always show the values the engine applies.
+        std::vector<std::pair<std::string, std::vector<std::pair<std::string, double>>>> presets;
+        std::string custom_option; // "" = none
 
         static constexpr int kCurveMaxPoints = 16;
         static constexpr int kStrokesMax = 200;

@@ -60,6 +60,37 @@ final class GenericToolUI: AdjustmentToolUI {
                 if let v = params[p.id] as? [Any] { strokes[p.id] = v }
             }
         }
+        // A document saved with a named preset may carry other values for
+        // the params it governs (the engine ignores them): show the preset's.
+        for p in descriptor.params where p.kind == .enum {
+            applyPreset(p, option: strings[p.id] ?? p.defaultOption)
+        }
+    }
+
+    /// Choose an enum option; an option with a preset also sets the params
+    /// that preset names (a Monochrome filter loads its weights).
+    func setOption(_ id: String, _ option: String) {
+        strings[id] = option
+        if let p = descriptor.param(id) { applyPreset(p, option: option) }
+    }
+
+    /// Set a number; when an enum's presets govern it, that enum moves to
+    /// its custom option, so the edited value is the one the engine applies.
+    func setNumber(_ id: String, _ value: Double) {
+        numbers[id] = value
+        for p in descriptor.params where p.kind == .enum && !p.customOption.isEmpty {
+            guard p.presets.values.contains(where: { $0[id] != nil }),
+                  (strings[p.id] ?? p.defaultOption) != p.customOption else { continue }
+            strings[p.id] = p.customOption
+        }
+    }
+
+    private func applyPreset(_ p: ToolParamSpec, option: String) {
+        guard let values = p.presets[option] else { return }
+        for (id, value) in values {
+            guard let target = descriptor.param(id), target.kind == .number || target.kind == .integer else { continue }
+            numbers[id] = min(max(value, target.min), target.max)
+        }
     }
 
     func encode() -> [String: Any]? {
@@ -228,7 +259,7 @@ struct GenericInspector: View {
         switch p.kind {
         case .number:
             ParamSlider(label: p.label, value: Binding(get: { tool.numbers[p.id] ?? p.defaultValue },
-                                                       set: { tool.numbers[p.id] = $0
+                                                       set: { tool.setNumber(p.id, $0)
                                                               model.paramDragged() }),
                         range: p.min...p.max, step: p.step, defaultValue: p.defaultValue,
                         onEditing: { editing in
@@ -261,7 +292,7 @@ struct GenericInspector: View {
                 Text(p.label).font(.system(size: 11)).foregroundColor(Theme.textSecondary)
                 Spacer()
                 Picker("", selection: Binding(get: { tool.strings[p.id] ?? p.defaultOption },
-                                              set: { tool.strings[p.id] = $0
+                                              set: { tool.setOption(p.id, $0)
                                                      model.paramChanged(nodeID: nodeID, label: label(p), interactive: false) })) {
                     ForEach(p.options, id: \.self) { option in
                         Text(GenericToolUI.readable(option)).tag(option)
