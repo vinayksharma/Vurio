@@ -503,8 +503,60 @@ final class AdjustmentsViewModel: ObservableObject {
     /// Add a tool after the selection (or at the end) and select it. With a
     /// lane or a lane step selected the tool goes into that lane; geometry
     /// is refused there (docs §3.2).
+    ///
+    /// Clicking through the catalogue is also how the tools are explored:
+    /// when the tool added by the previous click is still exactly as it was
+    /// added, the new one takes its place instead of piling up behind it.
     @discardableResult
     func addTool(_ toolID: String) -> ChainNode? {
+        let added = replaceUntouchedAdd(with: toolID) ?? appendTool(toolID)
+        // Read back after the rebuild, so the comparison on the next click
+        // sees the params as the tool's own UI encodes them.
+        untouchedAdd = added.flatMap { currentDocument().node($0.id) }
+        return added
+    }
+
+    /// The node the last catalogue click added, as it was added.
+    private var untouchedAdd: ChainNode?
+
+    /// Swap the previous click's node for `toolID` in place, when it has not
+    /// been adjusted since. Nil when there is nothing to replace (the caller
+    /// then adds normally): no such node, it was edited, it is the same tool
+    /// (a second click on a chip adds a second node), or the new tool may
+    /// not stand where it is.
+    private func replaceUntouchedAdd(with toolID: String) -> ChainNode? {
+        guard let previous = untouchedAdd, previous.tool != toolID,
+              let descriptor = descriptor(for: toolID) else { return nil }
+        let current = currentDocument()
+        guard current.node(previous.id) == previous else { return nil }
+        let location = current.locate(previous.id)
+        var laneID: String?
+        if case .laneStep(let splitID, let li, _) = location {
+            guard descriptor.category != .geometry else { return nil }
+            laneID = current.node(splitID)?.lanes?[li].id
+        }
+        if editingCropID == previous.id { exitCropEditing() }
+        document = current
+        let node = freshNode(descriptor)
+        switch location {
+        case .trunk(let i):
+            document.removeAny(id: previous.id)
+            document.insert(node, at: i)
+        case .laneStep(_, _, let si):
+            guard let laneID else { return nil }
+            document.removeAny(id: previous.id)
+            document.insert(node, inLane: laneID, at: si)
+        default:
+            return nil
+        }
+        rebuildTools()
+        selectedNodeID = node.id
+        let old = self.descriptor(for: previous.tool)?.label ?? previous.tool
+        chainChanged(label: "Replace \(old) with \(descriptor.label)")
+        return node
+    }
+
+    private func appendTool(_ toolID: String) -> ChainNode? {
         if let laneID = targetLaneID {
             guard let descriptor = descriptor(for: toolID) else { return nil }
             if descriptor.category == .geometry {
