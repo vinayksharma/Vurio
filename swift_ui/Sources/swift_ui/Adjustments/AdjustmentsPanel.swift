@@ -606,6 +606,24 @@ private struct ChainListView: View {
     }
 }
 
+/// The trailing delete button shared by every chain row (nodes and lanes).
+private struct RowDeleteButton: View {
+    let help: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "trash")
+                .font(.system(size: 9))
+                .foregroundColor(Theme.textSecondary)
+                .frame(width: 14, height: 14)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+}
+
 private struct ChainRow: View {
     @ObservedObject var model: AdjustmentsViewModel
     let node: ChainNode
@@ -656,6 +674,9 @@ private struct ChainRow: View {
                     .font(.system(size: 9))
                     .foregroundColor(Theme.success)
                     .help("Being edited")
+            }
+            RowDeleteButton(help: node.isSplit ? "Remove the split and its lanes" : "Remove from the chain") {
+                model.removeNode(node.id)
             }
         }
         .padding(.horizontal, 6)
@@ -741,6 +762,7 @@ private struct LaneRow: View {
             }
             .buttonStyle(.plain)
             .help("Show the mask as a red tint")
+            RowDeleteButton(help: "Remove the lane and its steps") { model.removeLane(lane.id) }
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
