@@ -8,6 +8,11 @@ import SwiftUI
 /// different controls; here the ticks are spacing, not steps — the value
 /// still snaps to `step` when one is set.
 ///
+/// The mouse wheel and a two-finger scroll over the slider move the thumb
+/// too (up or right increases): a wheel notch is a hundredth of the range,
+/// a trackpad scroll moves it in proportion. A run of scrolling is one
+/// edit, ending shortly after the last event.
+///
 /// A press anywhere on the track jumps the thumb there and starts a drag;
 /// `onEditing(true)` fires on the press and `onEditing(false)` on release,
 /// mirroring `Slider.onEditingChanged` so the model's drag-size preview /
@@ -26,6 +31,11 @@ struct TickSlider: View {
     @Environment(\.isEnabled) private var isEnabled
     @State private var isDragging = false
     @State private var isHovering = false
+    /// The unsnapped value a run of scrolling accumulates into, so small
+    /// trackpad deltas add up to a step instead of rounding away.
+    @State private var wheelValue = 0.0
+    @State private var wheelSession = false
+    @State private var wheelEnd: DispatchWorkItem?
 
     static let height: CGFloat = 20
     static let tickCount = 11
@@ -76,6 +86,12 @@ struct TickSlider: View {
             .contentShape(Rectangle())
             .onHover { isHovering = $0 }
             .gesture(isEnabled ? drag(inset: inset, usable: usable) : nil)
+            .overlay(
+                ScrollWheelCatcher(includesHorizontal: true) { delta, _, isPrecise in
+                    guard isEnabled, !isDragging else { return }
+                    wheel(by: Self.wheelDelta(delta, isPrecise: isPrecise, range: range, step: step))
+                }
+            )
         }
         .frame(height: Self.height)
         .opacity(isEnabled ? 1 : 0.6)
@@ -112,6 +128,35 @@ struct TickSlider: View {
                 isDragging = false
                 onEditing(false)
             }
+    }
+
+    /// The value change for one scroll event: a mouse notch is a hundredth
+    /// of the range (never less than a step, and a whole number of steps);
+    /// a trackpad's point deltas cover the range in about 400 points.
+    static func wheelDelta(_ delta: CGFloat, isPrecise: Bool, range: ClosedRange<Double>, step: Double) -> Double {
+        let span = range.upperBound - range.lowerBound
+        if isPrecise { return Double(delta) * span / 400 }
+        var notch = span / 100
+        if step > 0 { notch = max(1, (notch / step).rounded()) * step }
+        return delta > 0 ? notch : -notch
+    }
+
+    private func wheel(by delta: Double) {
+        if !wheelSession {
+            wheelSession = true
+            wheelValue = value
+            onEditing(true)
+        }
+        wheelValue = min(max(wheelValue + delta, range.lowerBound), range.upperBound)
+        let snapped = Self.snap(wheelValue, in: range, step: step)
+        if snapped != value { value = snapped }
+        wheelEnd?.cancel()
+        let end = DispatchWorkItem {
+            wheelSession = false
+            onEditing(false)
+        }
+        wheelEnd = end
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: end)
     }
 
     static func fraction(of v: Double, in range: ClosedRange<Double>) -> CGFloat {

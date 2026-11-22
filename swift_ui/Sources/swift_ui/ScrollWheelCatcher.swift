@@ -19,14 +19,27 @@ struct ScrollWheelCatcher: NSViewRepresentable {
     /// deltas need a gentler response than a mouse's discrete notches.
     var onScroll: (_ deltaY: CGFloat, _ location: CGPoint, _ isPrecise: Bool) -> Void
 
+    /// Also take sideways scrolls (a two-finger swipe along a slider, a
+    /// tilt wheel): whichever axis moved more is reported, with fingers
+    /// moving right counted like fingers moving up.
+    var includesHorizontal = false
+
+    init(includesHorizontal: Bool = false,
+         onScroll: @escaping (_ deltaY: CGFloat, _ location: CGPoint, _ isPrecise: Bool) -> Void) {
+        self.includesHorizontal = includesHorizontal
+        self.onScroll = onScroll
+    }
+
     func makeNSView(context: Context) -> CatcherView {
         let view = CatcherView()
         view.onScroll = onScroll
+        view.includesHorizontal = includesHorizontal
         return view
     }
 
     func updateNSView(_ view: CatcherView, context: Context) {
         view.onScroll = onScroll
+        view.includesHorizontal = includesHorizontal
     }
 
     static func dismantleNSView(_ view: CatcherView, coordinator: ()) {
@@ -35,7 +48,13 @@ struct ScrollWheelCatcher: NSViewRepresentable {
 
     final class CatcherView: NSView {
         var onScroll: ((CGFloat, CGPoint, Bool) -> Void)?
+        var includesHorizontal = false
         private var monitor: Any?
+        /// Scroll events closer together than this are one run (a trackpad
+        /// gesture with its momentum, or a spin of the wheel).
+        private static let runGap: TimeInterval = 0.3
+        private var lastScrollSeen: TimeInterval = 0
+        private var runStartedInside = false
 
         /// Top-left origin, so the reported point matches SwiftUI's.
         override var isFlipped: Bool { true }
@@ -67,11 +86,20 @@ struct ScrollWheelCatcher: NSViewRepresentable {
         private func handle(_ event: NSEvent) -> Bool {
             guard let window, event.window === window, let onScroll else { return false }
             let point = convert(event.locationInWindow, from: nil)
-            guard bounds.contains(point) else { return false }
+            let inside = bounds.contains(point)
+            // A run of scrolling belongs to whatever was under the pointer
+            // when it began. Without this, scrolling a panel slides its
+            // controls under a still pointer and they start taking the
+            // scroll — a slider's value changes while the user only meant
+            // to move the list.
+            if event.timestamp - lastScrollSeen > Self.runGap { runStartedInside = inside }
+            lastScrollSeen = event.timestamp
+            guard inside, runStartedInside else { return false }
             // The delta already carries the natural-scrolling preference;
             // undoing it here keeps the gesture physical — wheel forward and
             // fingers up zoom in on every machine.
-            let raw = event.scrollingDeltaY
+            var raw = event.scrollingDeltaY
+            if includesHorizontal, abs(event.scrollingDeltaX) > abs(raw) { raw = event.scrollingDeltaX }
             guard raw != 0 else { return false }
             onScroll(event.isDirectionInvertedFromDevice ? -raw : raw,
                      point,
