@@ -28,6 +28,9 @@ struct ToolParamSpec: Equatable {
     let presets: [String: [String: Double]]
     /// The option an edit of a preset-governed param selects ("" = none).
     let customOption: String
+    /// "#RRGGBB" gradient stops for the slider's track (Color Mixer's
+    /// bands); empty = the plain track.
+    let trackColors: [String]
 
     init(_ p: Vurio_Dedup_ParamSpec) {
         id = p.id
@@ -43,6 +46,7 @@ struct ToolParamSpec: Equatable {
         group = p.group
         presets = Dictionary(p.presets.map { ($0.option, $0.values) }, uniquingKeysWith: { _, last in last })
         customOption = p.customOption
+        trackColors = p.trackColors
     }
 
     /// The default of a `curve` param as points (identity when unparsable).
@@ -83,6 +87,11 @@ struct ToolDescriptor: Equatable {
     let summary: String
     /// The defaults already change pixels (Monochrome): never identity.
     let activeAtDefaults: Bool
+    /// Non-empty: the tool has an eyedropper; the text says what to click.
+    let pickHint: String
+    /// The eyedropper is press-and-drag: the server answers a press with a
+    /// weight per param and the drag moves those params together.
+    let pickDrag: Bool
     let params: [ToolParamSpec]
 
     init(_ d: Vurio_Dedup_ToolDescriptor) {
@@ -95,6 +104,8 @@ struct ToolDescriptor: Equatable {
         resolutionDependent = d.resolutionDependent
         summary = d.summary
         activeAtDefaults = d.activeAtDefaults
+        pickHint = d.pickHint
+        pickDrag = d.pickDrag
         params = d.params.map(ToolParamSpec.init)
     }
 

@@ -217,20 +217,81 @@ struct GenericInspector: View {
     }
 
     private var currentGroup: String {
-        groups.contains(selectedGroup) ? selectedGroup : (groups.first ?? "")
+        if selectedGroup == Self.allGroups, offersAll { return selectedGroup }
+        return groups.contains(selectedGroup) ? selectedGroup : (groups.first ?? "")
+    }
+
+    /// The extra chip that shows every group at once, under its name.
+    /// Offered when the groups hold only sliders (Color Mixer); a stack of
+    /// curve editors would not be a view anyone wants.
+    static let allGroups = "All"
+    private var offersAll: Bool {
+        groups.count > 1 && tool.descriptor.params.allSatisfy { $0.group.isEmpty || $0.kind == .number }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if !tool.descriptor.pickHint.isEmpty {
+                let picking = model.pickingNodeID == nodeID
+                HStack(spacing: 8) {
+                    Button(action: { model.togglePick(nodeID) }) {
+                        Image(systemName: "eyedropper")
+                    }
+                    .buttonStyle(.vurioIcon(tint: picking ? Theme.textAccent : Theme.textPrimary, size: 24, bordered: true))
+                    .disabled(!hasImage)
+                    .help(picking ? "\(tool.descriptor.pickHint) (Esc to cancel)" : "Eyedropper: \(tool.descriptor.pickHint.prefix(1).lowercased() + tool.descriptor.pickHint.dropFirst())")
+                    Text(picking ? tool.descriptor.pickHint : "Eyedropper")
+                        .font(.system(size: 11))
+                        .foregroundColor(picking ? Theme.textAccent : Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                // With every group on show the press-and-drag eyedropper
+                // needs telling which one it moves.
+                if tool.descriptor.pickDrag, currentGroup == Self.allGroups {
+                    HStack(spacing: 6) {
+                        Text("Adjusts").font(.system(size: 10)).foregroundColor(Theme.textSecondary)
+                        GroupChips(groups: groups, selected: model.pickGroup, edited: []) { model.pickGroup = $0 }
+                    }
+                }
+                if let remark = model.pickRemark, remark.node == nodeID {
+                    Text(remark.text)
+                        .font(.caption)
+                        .foregroundColor(Theme.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             ForEach(tool.descriptor.params.filter { $0.group.isEmpty }, id: \.id) { param in
                 row(param)
             }
             if !groups.isEmpty {
-                GroupChips(groups: groups, selected: currentGroup, edited: editedGroups) { selectedGroup = $0 }
-                ForEach(tool.descriptor.params.filter { $0.group == currentGroup }, id: \.id) { param in
-                    row(param)
+                GroupChips(groups: offersAll ? groups + [Self.allGroups] : groups, selected: currentGroup,
+                           edited: editedGroups) { selectedGroup = $0 }
+                ForEach(currentGroup == Self.allGroups ? groups : [currentGroup], id: \.self) { g in
+                    if currentGroup == Self.allGroups {
+                        Text(g.uppercased())
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(Theme.textPrimary)
+                            .padding(.top, 4)
+                    }
+                    ForEach(tool.descriptor.params.filter { $0.group == g }, id: \.id) { param in
+                        row(param)
+                    }
                 }
             }
+        }
+        .onAppear { syncPickGroup() }
+        .onChange(of: currentGroup) { _, _ in syncPickGroup() }
+        .onChange(of: nodeID) { _, _ in syncPickGroup() }
+    }
+
+    /// The press-and-drag eyedropper moves the group on show; under "All"
+    /// it keeps the last one (or the first).
+    private func syncPickGroup() {
+        guard tool.descriptor.pickDrag else { return }
+        if currentGroup != Self.allGroups {
+            if model.pickGroup != currentGroup { model.pickGroup = currentGroup }
+        } else if !groups.contains(model.pickGroup) {
+            model.pickGroup = groups.first ?? ""
         }
     }
 
@@ -252,7 +313,11 @@ struct GenericInspector: View {
         return out
     }
 
-    private func label(_ p: ToolParamSpec) -> String { "\(tool.descriptor.label) \(p.label)" }
+    /// The history label: "Color Mixer Saturation Blue" for a grouped param.
+    private func label(_ p: ToolParamSpec) -> String {
+        p.group.isEmpty || p.kind != .number ? "\(tool.descriptor.label) \(p.label)"
+                                             : "\(tool.descriptor.label) \(p.group) \(p.label)"
+    }
 
     @ViewBuilder
     private func row(_ p: ToolParamSpec) -> some View {
@@ -262,6 +327,7 @@ struct GenericInspector: View {
                                                        set: { tool.setNumber(p.id, $0)
                                                               model.paramDragged() }),
                         range: p.min...p.max, step: p.step, defaultValue: p.defaultValue,
+                        trackColors: p.trackColors.map { Color(hex: $0) },
                         onEditing: { editing in
                             model.paramChanged(nodeID: nodeID, label: label(p), interactive: editing)
                         })
@@ -383,6 +449,7 @@ struct ParamSlider: View {
     let range: ClosedRange<Double>
     let step: Double
     var defaultValue: Double? = nil
+    var trackColors: [Color] = []
     let onEditing: (Bool) -> Void
     @Environment(\.isEnabled) private var isEnabled
 
@@ -394,7 +461,7 @@ struct ParamSlider: View {
                                format: { Self.text($0, in: range) }, decimals: Self.decimals(for: range),
                                isEnabled: isEnabled, onEditing: onEditing)
                 TickSlider(value: $value, range: range, step: step, defaultValue: defaultValue,
-                           onEditing: onEditing)
+                           trackColors: trackColors, onEditing: onEditing)
             }
         }
     }

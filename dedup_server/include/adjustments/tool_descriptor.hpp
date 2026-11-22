@@ -47,6 +47,11 @@ namespace MediaDedup::Adjustments
         // so the controls always show the values the engine applies.
         std::vector<std::pair<std::string, std::vector<std::pair<std::string, double>>>> presets;
         std::string custom_option; // "" = none
+        // A Number whose slider track is drawn as a gradient through these
+        // "#RRGGBB" stops, left to right — what moving the slider does to
+        // the picture (Color Mixer: a band's hue range, grey → the band's
+        // colour, its dark → light). Empty = the plain track.
+        std::vector<std::string> track_colors;
 
         static constexpr int kCurveMaxPoints = 16;
         static constexpr int kStrokesMax = 200;
@@ -101,6 +106,17 @@ namespace MediaDedup::Adjustments
         bool resolution_dependent = false;  // wants RenderContext::pixel_scale
         std::string summary;                // chain-row template, e.g. "{angle:+.1f}°"
         bool active_at_defaults = false;    // true when the defaults already change pixels (Monochrome)
+        // Non-empty: the tool can set its params from a point picked on the
+        // image (AdjustmentTool::pick); the text says what to click on
+        // ("Click something that should be neutral grey").
+        std::string pick_hint;
+        // How the eyedropper is used. False: one click sets params (the
+        // values `pick` returns are the new values — White Balance). True:
+        // press and drag — `pick` returns a WEIGHT per param for the colour
+        // pressed on, and while the button is held the client moves those
+        // params together in that ratio, within the param group on show
+        // (Color Mixer's targeted adjustment).
+        bool pick_drag = false;
         std::vector<ParamSpec> params;
     };
 }

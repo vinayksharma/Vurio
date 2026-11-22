@@ -106,16 +106,68 @@ namespace MediaDedup::Adjustments
         descriptor_.label = "White Balance";
         descriptor_.category = ToolCategory::Layer;
         descriptor_.icon = "thermometer.medium";
+        descriptor_.version = 2;
         descriptor_.summary = "temp {temperature:+.2f} · tint {tint:+.2f}";
         number("temperature", "Temperature", -1, 1, 0, 0.01);
         number("tint", "Tint", -1, 1, 0, 0.01);
+        descriptor_.pick_hint = "Click something that should be neutral grey or white";
+    }
+
+    bool WhiteBalanceTool::upgradeParams(nlohmann::json &params) const
+    {
+        if (!params.is_object() || params.value("version", 1) >= 2)
+            return false;
+        auto value = [&params](const char *id)
+        {
+            return params.contains(id) && params[id].is_number() ? std::clamp(params[id].get<double>(), -1.0, 1.0) : 0.0;
+        };
+        // Version 1 gains, up to the common luma scale both versions apply.
+        const double t1 = value("temperature"), tint1 = value("tint");
+        const double r = 1.0 + 0.3 * t1, g = 1.0 - 0.2 * tint1, b = 1.0 - 0.3 * t1;
+        // Version 2 has R/B = 2^(2k·t) and G/√(R·B) = 2^(−m·tint).
+        params["temperature"] = std::log2(r / b) / (2.0 * kTemperatureStops);
+        params["tint"] = -std::log2(g / std::sqrt(r * b)) / kTintStops;
+        params["version"] = 2;
+        return true;
+    }
+
+    bool WhiteBalanceTool::pick(const PickedColour &input, std::vector<std::pair<std::string, double>> &values,
+                                std::string &note, std::string &error) const
+    {
+        const double r = input.r, g = input.g, b = input.b;
+        // A patch near black carries no ratio worth trusting, and a clipped
+        // channel has lost it. ONE dark channel is not black, though: under
+        // a deep cast (tungsten: plenty of red, almost no blue) that is the
+        // cast itself, and it is corrected as far as the sliders reach.
+        if (std::max({r, g, b}) < 0.04)
+        {
+            error = "That spot is too dark to read a colour from";
+            return false;
+        }
+        if (std::max({r, g, b}) > 0.98)
+        {
+            error = "That spot is clipped; pick one that is not blown out";
+            return false;
+        }
+        auto snap = [](double v) { return std::round(v * 100.0) / 100.0; };
+        // An empty channel still has a (large) ratio to the others.
+        const double lowest = 1e-3;
+        double t_exact = std::log2(std::max(b, lowest) / std::max(r, lowest)) / (2.0 * kTemperatureStops);
+        double t = snap(std::clamp(t_exact, -1.0, 1.0));
+        double red = std::pow(2.0, kTemperatureStops * t) * r, blue = std::pow(2.0, -kTemperatureStops * t) * b;
+        double tint_exact = std::log2(std::max(g, lowest) / std::max((red + blue) / 2.0, lowest)) / kTintStops;
+        double tint = snap(std::clamp(tint_exact, -1.0, 1.0));
+        if (std::fabs(t_exact) > 1.0 || std::fabs(tint_exact) > 1.0)
+            note = "The cast there is stronger than White Balance can remove; corrected as far as it goes";
+        values = {{"temperature", t}, {"tint", tint}};
+        return true;
     }
 
     void WhiteBalanceTool::gains(double temperature, double tint, double &gr, double &gg, double &gb)
     {
-        gr = 1.0 + 0.3 * temperature;
-        gb = 1.0 - 0.3 * temperature;
-        gg = 1.0 - 0.2 * tint;
+        gr = std::pow(2.0, kTemperatureStops * temperature);
+        gb = std::pow(2.0, -kTemperatureStops * temperature);
+        gg = std::pow(2.0, -kTintStops * tint);
         double k = 1.0 / (kLumR * gr + kLumG * gg + kLumB * gb);
         gr *= k;
         gg *= k;

@@ -161,6 +161,56 @@ namespace MediaDedup::Adjustments
         return true;
     }
 
+    bool PreviewSession::sample(const RenderPlan &plan, int max_side, double nx, double ny,
+                                AdjustmentTool::PickedColour &out, std::string &error)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        touch();
+        if (base_.empty())
+        {
+            error = "preview session has no base image";
+            return false;
+        }
+        double scale = ChainEngine::workingScale(plan, base_.size(), max_side);
+        Frame frame;
+        frame.pixels = base_.pixels;
+        frame.base_to_canvas = base_.base_to_canvas;
+        ChainEngine::scaleFrame(frame, scale);
+        if (frame.pixels.data == base_.pixels.data)
+            frame.pixels = base_.pixels.clone(); // the nodes write in place
+        frame.base_to_canvas = base_.base_to_canvas;
+        if (std::fabs(scale - 1.0) > 1e-9)
+            frame.composeAffine(cv::Matx23d(static_cast<double>(frame.width()) / base_.width(), 0, 0, 0,
+                                            static_cast<double>(frame.height()) / base_.height(), 0));
+
+        // Like a preview frame: a lane whose detected mask is still
+        // computing is a no-op rather than a wait.
+        RenderPlan::RenderOptions opts;
+        opts.file_path = file_path_;
+        opts.inline_masks = false;
+        opts.pending_lanes = std::make_shared<std::vector<std::string>>();
+        plan.render(frame, 0, nullptr, opts);
+
+        cv::Point2d p = frame.project(nx, ny);
+        int cx = static_cast<int>(std::floor(p.x)), cy = static_cast<int>(std::floor(p.y));
+        if (frame.empty() || cx < 0 || cy < 0 || cx >= frame.width() || cy >= frame.height())
+        {
+            error = "That point is outside the picture at this step of the chain";
+            return false;
+        }
+        // About half a percent of the shorter side each way: big enough to
+        // average out noise and JPEG grain, small enough to stay on the
+        // thing that was clicked.
+        int radius = std::max(2, static_cast<int>(std::lround(frame.pixelScale() * 0.005)));
+        cv::Rect patch(cx - radius, cy - radius, 2 * radius + 1, 2 * radius + 1);
+        patch &= cv::Rect(0, 0, frame.width(), frame.height());
+        cv::Scalar mean = cv::mean(frame.pixels(patch));
+        out.b = mean[0];
+        out.g = mean[1];
+        out.r = mean[2];
+        return true;
+    }
+
     size_t PreviewSession::cachedFrames() const
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -347,6 +397,116 @@ namespace MediaDedup::Adjustments
                              request.quality > 0 ? request.quality : 85, response.result, error, options))
         {
             response.outcome = Outcome::Internal;
+            response.error = error;
+            return response;
+        }
+        response.outcome = Outcome::Ok;
+        return response;
+    }
+
+    namespace
+    {
+        // The plan whose output is the input of document node `id`: the
+        // nodes before it in its own chain, preceded — for a lane step — by
+        // everything before its split. `plan` is `chain` compiled (identity
+        // and disabled nodes are absent from it, hence the doc_index match).
+        bool inputPlan(const nlohmann::json &chain, const RenderPlan &plan, const std::string &id,
+                       RenderPlan &out, std::string &tool_id)
+        {
+            if (!chain.is_array())
+                return false;
+            auto before = [&plan](size_t doc_index)
+            {
+                size_t count = 0;
+                for (const auto &n : plan.nodes())
+                    if (n.doc_index < doc_index)
+                        ++count;
+                return plan.prefix(count);
+            };
+            for (size_t i = 0; i < chain.size(); ++i)
+            {
+                const auto &node = chain[i];
+                if (!node.is_object())
+                    continue;
+                if (node.value("id", std::string()) == id)
+                {
+                    out = before(i);
+                    tool_id = node.value("tool", std::string());
+                    return true;
+                }
+                if (!node.contains("lanes") || !node["lanes"].is_array())
+                    continue;
+                for (const auto &lane : node["lanes"])
+                {
+                    if (!lane.is_object())
+                        continue;
+                    // The lane's compiled steps, when the lane made it into
+                    // the plan (one that does nothing is dropped).
+                    static const RenderPlan empty;
+                    const RenderPlan *steps = &empty;
+                    for (const auto &n : plan.nodes())
+                        if (n.doc_index == i)
+                            for (const auto &l : n.lanes)
+                                if (l.id == lane.value("id", std::string()) && l.steps)
+                                    steps = l.steps.get();
+                    RenderPlan inner;
+                    if (inputPlan(lane.value("steps", nlohmann::json::array()), *steps, id, inner, tool_id))
+                    {
+                        out = before(i);
+                        out.append(inner);
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+    }
+
+    PreviewSessionManager::PickResponse PreviewSessionManager::pick(const std::string &file_path,
+                                                                    const std::string &document_json,
+                                                                    const std::string &node_id, double nx, double ny)
+    {
+        PickResponse response;
+        expire();
+        std::string error;
+        AdjustmentDocument doc;
+        RenderPlan plan;
+        if (!AdjustmentDocument::parse(document_json, doc, error) ||
+            !doc.compile(ToolRegistry::instance(), plan, error))
+        {
+            response.outcome = Outcome::Invalid;
+            response.error = error;
+            return response;
+        }
+        RenderPlan input;
+        std::string tool_id;
+        if (!inputPlan(doc.chain, plan, node_id, input, tool_id))
+        {
+            response.outcome = Outcome::Invalid;
+            response.error = "no node " + node_id + " in the chain";
+            return response;
+        }
+        const AdjustmentTool *tool = ToolRegistry::instance().find(tool_id);
+        if (!tool || tool->descriptor().pick_hint.empty())
+        {
+            response.outcome = Outcome::Invalid;
+            response.error = "this tool has no eyedropper";
+            return response;
+        }
+        auto session = sessionFor(file_path, error);
+        if (!session)
+        {
+            response.outcome = Outcome::NotFound;
+            response.error = error;
+            return response;
+        }
+        AdjustmentTool::PickedColour colour;
+        // The patch is a few pixels wide either way; the dragging size is
+        // plenty and keeps a long prefix quick.
+        if (!session->sample(input, 1280, nx, ny, colour, error) ||
+            !tool->pick(colour, response.values, response.note, error))
+        {
+            response.outcome = Outcome::Invalid;
             response.error = error;
             return response;
         }

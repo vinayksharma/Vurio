@@ -26,6 +26,10 @@ struct TickSlider: View {
     /// the centre; a 0…1 strength slider with default 1 fills back from the
     /// right edge, showing how much has been taken away.
     var defaultValue: Double? = nil
+    /// Gradient stops for the track, left to right: the track then shows
+    /// what the slider does (a colour band's hue range, grey → colour) and
+    /// the accent fill is left out — the thumb alone marks the value.
+    var trackColors: [Color] = []
     var onEditing: (Bool) -> Void = { _ in }
 
     @Environment(\.isEnabled) private var isEnabled
@@ -55,16 +59,25 @@ struct TickSlider: View {
             let originX = inset + usable * originFraction
 
             ZStack(alignment: .topLeading) {
-                // Track
-                Capsule()
-                    .fill(Theme.surfaceElevated)
-                    .frame(width: usable, height: Self.trackHeight)
-                    .offset(x: inset, y: Self.trackY - Self.trackHeight / 2)
-                // Fill from the origin to the thumb
-                Rectangle()
-                    .fill(isEnabled ? Theme.textAccent.opacity(isDragging ? 1 : 0.85) : Theme.textSecondary.opacity(0.5))
-                    .frame(width: abs(thumbX - originX), height: Self.trackHeight)
-                    .offset(x: min(thumbX, originX), y: Self.trackY - Self.trackHeight / 2)
+                if trackColors.count >= 2 {
+                    // Gradient track: a little taller so the colours read.
+                    Capsule()
+                        .fill(LinearGradient(colors: trackColors, startPoint: .leading, endPoint: .trailing))
+                        .frame(width: usable, height: Self.trackHeight + 1)
+                        .offset(x: inset, y: Self.trackY - (Self.trackHeight + 1) / 2)
+                        .saturation(isEnabled ? 1 : 0.3)
+                } else {
+                    // Track
+                    Capsule()
+                        .fill(Theme.surfaceElevated)
+                        .frame(width: usable, height: Self.trackHeight)
+                        .offset(x: inset, y: Self.trackY - Self.trackHeight / 2)
+                    // Fill from the origin to the thumb
+                    Rectangle()
+                        .fill(isEnabled ? Theme.textAccent.opacity(isDragging ? 1 : 0.85) : Theme.textSecondary.opacity(0.5))
+                        .frame(width: abs(thumbX - originX), height: Self.trackHeight)
+                        .offset(x: min(thumbX, originX), y: Self.trackY - Self.trackHeight / 2)
+                }
                 // Eleven evenly spaced ticks; the ends and the centre are taller.
                 ForEach(0..<Self.tickCount, id: \.self) { i in
                     let major = i == 0 || i == Self.tickCount - 1 || i == Self.tickCount / 2

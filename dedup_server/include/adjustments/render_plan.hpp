@@ -86,6 +86,11 @@ namespace MediaDedup::Adjustments
         // The plan truncated before `count` nodes (crop editing: the canvas
         // a node receives). count >= size() returns a copy.
         RenderPlan prefix(size_t count) const;
+        // Append copies of `other`'s nodes (the eyedropper: a trunk prefix
+        // followed by the lane steps before the picked node). The result
+        // is for rendering only: its prefix hashes are not those of a
+        // compiled chain and must not key a cache.
+        void append(const RenderPlan &other);
 
         // First node of a tool, or null.
         const ToolState *firstStateOf(const std::string &tool_id) const;

@@ -173,6 +173,53 @@ TEST(PreviewSessionTest, ManagerCreatesTruncatesExpiresAndRefuses)
     mgr.release("/a.jpg");
     EXPECT_EQ(mgr.sessionCount(), 1u);
 
+    // The eyedropper reads the colour ENTERING the picked node. The base
+    // is BGR (40, 90, 200) with a (220, 30, 30) rectangle at 10–43 % × 10–35 %.
+    {
+        auto wb = [](const char *id) { return json{{"id", id}, {"tool", "white_balance"}, {"params", {{"version", 2}}}}; };
+        auto value = [](const PreviewSessionManager::PickResponse &p, const char *id)
+        {
+            for (const auto &v : p.values)
+                if (v.first == id)
+                    return v.second;
+            return 99.0;
+        };
+        // On the trunk, after a quarter turn: the base point still lands on
+        // the same part of the picture (red-orange background → cooled).
+        std::string trunk = docText(json::array({rotate(1), wb("wbtrunk1")}));
+        auto p = mgr.pick("/a.jpg", trunk, "wbtrunk1", 0.8, 0.8);
+        ASSERT_EQ(p.outcome, PreviewSessionManager::Outcome::Ok) << p.error;
+        EXPECT_LT(value(p, "temperature"), 0);
+        // …and inside the blue rectangle it warms instead.
+        p = mgr.pick("/a.jpg", trunk, "wbtrunk1", 0.2, 0.2);
+        ASSERT_EQ(p.outcome, PreviewSessionManager::Outcome::Ok) << p.error;
+        EXPECT_GT(value(p, "temperature"), 0);
+
+        // What comes AFTER the node does not count; what comes before does:
+        // a monochrome ahead of it leaves nothing to correct.
+        json mono = {{"id", "mononode"}, {"tool", "monochrome"}, {"params", {{"version", 1}}}};
+        p = mgr.pick("/a.jpg", docText(json::array({wb("wbfirst1"), mono})), "wbfirst1", 0.8, 0.8);
+        ASSERT_EQ(p.outcome, PreviewSessionManager::Outcome::Ok) << p.error;
+        EXPECT_LT(value(p, "temperature"), 0);
+        p = mgr.pick("/a.jpg", docText(json::array({mono, wb("wblast01")})), "wblast01", 0.8, 0.8);
+        ASSERT_EQ(p.outcome, PreviewSessionManager::Outcome::Ok) << p.error;
+        EXPECT_NEAR(value(p, "temperature"), 0, 0.011);
+        EXPECT_NEAR(value(p, "tint"), 0, 0.011);
+
+        // A lane step sees the lane steps before it.
+        json lane = {{"id", "lane0001"}, {"name", "Lane 1"}, {"mask", {{"components", json::array({{{"source", "full"}}})}}},
+                     {"merge", {{"blend", "normal"}, {"strength", 1}}}, {"steps", json::array({mono, wb("wblane01")})}};
+        json split = {{"id", "splitnod"}, {"tool", "split"}, {"params", json::object()}, {"lanes", json::array({lane})}};
+        p = mgr.pick("/a.jpg", docText(json::array({split})), "wblane01", 0.8, 0.8);
+        ASSERT_EQ(p.outcome, PreviewSessionManager::Outcome::Ok) << p.error;
+        EXPECT_NEAR(value(p, "temperature"), 0, 0.011);
+
+        // Refusals: no such node, a tool without an eyedropper.
+        EXPECT_EQ(mgr.pick("/a.jpg", trunk, "nosuchid", 0.5, 0.5).outcome, PreviewSessionManager::Outcome::Invalid);
+        EXPECT_EQ(mgr.pick("/a.jpg", trunk, "rotate01", 0.5, 0.5).outcome, PreviewSessionManager::Outcome::Invalid);
+        mgr.release("/a.jpg");
+    }
+
     // Idle expiry (1 s configured).
     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
     mgr.expire();

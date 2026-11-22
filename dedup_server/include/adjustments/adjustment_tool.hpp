@@ -15,6 +15,8 @@
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace MediaDedup::Adjustments
 {
@@ -67,5 +69,36 @@ namespace MediaDedup::Adjustments
         // The canvas after this tool, from the canvas it receives. Identity
         // for every non-geometry tool.
         virtual Size transformSize(const ToolState &state, Size input) const = 0;
+
+        // Bring params written by an older version of this tool to the
+        // version this build writes, in place, so that they render exactly
+        // as they did. True when anything changed. The document parser
+        // calls this for every node (chain, history, snapshots), so the
+        // rest of the server and the client only ever see current params.
+        virtual bool upgradeParams(nlohmann::json &params) const
+        {
+            (void)params;
+            return false;
+        }
+
+        // The eyedropper (descriptor().pick_hint non-empty): the params a
+        // picked point asks for. `input` is the colour ENTERING this node
+        // at that point (gamma sRGB, [0,1]), averaged over a small patch.
+        // `values` receives param id → value, within the limits; `note` a
+        // remark for the user when the result is the nearest the tool can
+        // do. False with `error` when the patch cannot be used.
+        struct PickedColour
+        {
+            double r = 0, g = 0, b = 0;
+        };
+        virtual bool pick(const PickedColour &input, std::vector<std::pair<std::string, double>> &values,
+                          std::string &note, std::string &error) const
+        {
+            (void)input;
+            (void)values;
+            (void)note;
+            error = "this tool has no eyedropper";
+            return false;
+        }
     };
 }

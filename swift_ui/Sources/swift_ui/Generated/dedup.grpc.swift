@@ -5098,6 +5098,11 @@ internal protocol Vurio_Dedup_PreviewServiceClientProtocol: GRPCClient {
     _ request: Vurio_Dedup_AdjustmentsFileRequest,
     callOptions: CallOptions?
   ) -> UnaryCall<Vurio_Dedup_AdjustmentsFileRequest, Vurio_Dedup_Empty>
+
+  func pickParams(
+    _ request: Vurio_Dedup_PickParamsRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_PickParamsRequest, Vurio_Dedup_PickParamsResponse>
 }
 
 extension Vurio_Dedup_PreviewServiceClientProtocol {
@@ -5139,6 +5144,28 @@ extension Vurio_Dedup_PreviewServiceClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeReleasePreviewInterceptors() ?? []
+    )
+  }
+
+  /// The eyedropper (ToolDescriptor.pick_hint): the params node `node_id`
+  /// should take for a point picked on the image. The server reads the
+  /// colour ENTERING that node there and the node's tool solves for it.
+  /// INVALID_ARGUMENT carries the reason (no such node, no eyedropper, the
+  /// spot is too dark / clipped / outside the canvas); NOT_FOUND as above.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to PickParams.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func pickParams(
+    _ request: Vurio_Dedup_PickParamsRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_PickParamsRequest, Vurio_Dedup_PickParamsResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_PreviewServiceClientMetadata.Methods.pickParams.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makePickParamsInterceptors() ?? []
     )
   }
 }
@@ -5222,6 +5249,11 @@ internal protocol Vurio_Dedup_PreviewServiceAsyncClientProtocol: GRPCClient {
     _ request: Vurio_Dedup_AdjustmentsFileRequest,
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_AdjustmentsFileRequest, Vurio_Dedup_Empty>
+
+  func makePickParamsCall(
+    _ request: Vurio_Dedup_PickParamsRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_PickParamsRequest, Vurio_Dedup_PickParamsResponse>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -5257,6 +5289,18 @@ extension Vurio_Dedup_PreviewServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeReleasePreviewInterceptors() ?? []
     )
   }
+
+  internal func makePickParamsCall(
+    _ request: Vurio_Dedup_PickParamsRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_PickParamsRequest, Vurio_Dedup_PickParamsResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_PreviewServiceClientMetadata.Methods.pickParams.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makePickParamsInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -5282,6 +5326,18 @@ extension Vurio_Dedup_PreviewServiceAsyncClientProtocol {
       request: request,
       callOptions: callOptions ?? self.defaultCallOptions,
       interceptors: self.interceptors?.makeReleasePreviewInterceptors() ?? []
+    )
+  }
+
+  internal func pickParams(
+    _ request: Vurio_Dedup_PickParamsRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_PickParamsResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_PreviewServiceClientMetadata.Methods.pickParams.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makePickParamsInterceptors() ?? []
     )
   }
 }
@@ -5310,6 +5366,9 @@ internal protocol Vurio_Dedup_PreviewServiceClientInterceptorFactoryProtocol: Se
 
   /// - Returns: Interceptors to use when invoking 'releasePreview'.
   func makeReleasePreviewInterceptors() -> [ClientInterceptor<Vurio_Dedup_AdjustmentsFileRequest, Vurio_Dedup_Empty>]
+
+  /// - Returns: Interceptors to use when invoking 'pickParams'.
+  func makePickParamsInterceptors() -> [ClientInterceptor<Vurio_Dedup_PickParamsRequest, Vurio_Dedup_PickParamsResponse>]
 }
 
 internal enum Vurio_Dedup_PreviewServiceClientMetadata {
@@ -5319,6 +5378,7 @@ internal enum Vurio_Dedup_PreviewServiceClientMetadata {
     methods: [
       Vurio_Dedup_PreviewServiceClientMetadata.Methods.renderPreview,
       Vurio_Dedup_PreviewServiceClientMetadata.Methods.releasePreview,
+      Vurio_Dedup_PreviewServiceClientMetadata.Methods.pickParams,
     ]
   )
 
@@ -5332,6 +5392,12 @@ internal enum Vurio_Dedup_PreviewServiceClientMetadata {
     internal static let releasePreview = GRPCMethodDescriptor(
       name: "ReleasePreview",
       path: "/vurio.dedup.PreviewService/ReleasePreview",
+      type: GRPCCallType.unary
+    )
+
+    internal static let pickParams = GRPCMethodDescriptor(
+      name: "PickParams",
+      path: "/vurio.dedup.PreviewService/PickParams",
       type: GRPCCallType.unary
     )
   }
@@ -8404,6 +8470,13 @@ internal protocol Vurio_Dedup_PreviewServiceProvider: CallHandlerProvider {
   /// Drop the file's render session (decoded base + node cache) early;
   /// sessions also expire on their own.
   func releasePreview(request: Vurio_Dedup_AdjustmentsFileRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_Empty>
+
+  /// The eyedropper (ToolDescriptor.pick_hint): the params node `node_id`
+  /// should take for a point picked on the image. The server reads the
+  /// colour ENTERING that node there and the node's tool solves for it.
+  /// INVALID_ARGUMENT carries the reason (no such node, no eyedropper, the
+  /// spot is too dark / clipped / outside the canvas); NOT_FOUND as above.
+  func pickParams(request: Vurio_Dedup_PickParamsRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_PickParamsResponse>
 }
 
 extension Vurio_Dedup_PreviewServiceProvider {
@@ -8434,6 +8507,15 @@ extension Vurio_Dedup_PreviewServiceProvider {
         responseSerializer: ProtobufSerializer<Vurio_Dedup_Empty>(),
         interceptors: self.interceptors?.makeReleasePreviewInterceptors() ?? [],
         userFunction: self.releasePreview(request:context:)
+      )
+
+    case "PickParams":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_PickParamsRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_PickParamsResponse>(),
+        interceptors: self.interceptors?.makePickParamsInterceptors() ?? [],
+        userFunction: self.pickParams(request:context:)
       )
 
     default:
@@ -8468,6 +8550,16 @@ internal protocol Vurio_Dedup_PreviewServiceAsyncProvider: CallHandlerProvider, 
     request: Vurio_Dedup_AdjustmentsFileRequest,
     context: GRPCAsyncServerCallContext
   ) async throws -> Vurio_Dedup_Empty
+
+  /// The eyedropper (ToolDescriptor.pick_hint): the params node `node_id`
+  /// should take for a point picked on the image. The server reads the
+  /// colour ENTERING that node there and the node's tool solves for it.
+  /// INVALID_ARGUMENT carries the reason (no such node, no eyedropper, the
+  /// spot is too dark / clipped / outside the canvas); NOT_FOUND as above.
+  func pickParams(
+    request: Vurio_Dedup_PickParamsRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_PickParamsResponse
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -8507,6 +8599,15 @@ extension Vurio_Dedup_PreviewServiceAsyncProvider {
         wrapping: { try await self.releasePreview(request: $0, context: $1) }
       )
 
+    case "PickParams":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_PickParamsRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_PickParamsResponse>(),
+        interceptors: self.interceptors?.makePickParamsInterceptors() ?? [],
+        wrapping: { try await self.pickParams(request: $0, context: $1) }
+      )
+
     default:
       return nil
     }
@@ -8522,6 +8623,10 @@ internal protocol Vurio_Dedup_PreviewServiceServerInterceptorFactoryProtocol: Se
   /// - Returns: Interceptors to use when handling 'releasePreview'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeReleasePreviewInterceptors() -> [ServerInterceptor<Vurio_Dedup_AdjustmentsFileRequest, Vurio_Dedup_Empty>]
+
+  /// - Returns: Interceptors to use when handling 'pickParams'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makePickParamsInterceptors() -> [ServerInterceptor<Vurio_Dedup_PickParamsRequest, Vurio_Dedup_PickParamsResponse>]
 }
 
 internal enum Vurio_Dedup_PreviewServiceServerMetadata {
@@ -8531,6 +8636,7 @@ internal enum Vurio_Dedup_PreviewServiceServerMetadata {
     methods: [
       Vurio_Dedup_PreviewServiceServerMetadata.Methods.renderPreview,
       Vurio_Dedup_PreviewServiceServerMetadata.Methods.releasePreview,
+      Vurio_Dedup_PreviewServiceServerMetadata.Methods.pickParams,
     ]
   )
 
@@ -8544,6 +8650,12 @@ internal enum Vurio_Dedup_PreviewServiceServerMetadata {
     internal static let releasePreview = GRPCMethodDescriptor(
       name: "ReleasePreview",
       path: "/vurio.dedup.PreviewService/ReleasePreview",
+      type: GRPCCallType.unary
+    )
+
+    internal static let pickParams = GRPCMethodDescriptor(
+      name: "PickParams",
+      path: "/vurio.dedup.PreviewService/PickParams",
       type: GRPCCallType.unary
     )
   }

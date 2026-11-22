@@ -329,7 +329,7 @@ struct ViewerView: View {
             // the mouse and re-asserts the arrow on every move, which would
             // wipe the ruler cursor the moment the pointer moved.
             .overlay {
-                if !adjustments.isRulerMode, adjustments.brushLaneID == nil {
+                if !adjustments.isRulerMode, !adjustments.isPicking, adjustments.brushLaneID == nil {
                     PanCursorOverlay(isEnabled: currentImage != nil && !adjustments.isCropEditing,
                                      isDragging: isPanning)
                 }
@@ -432,6 +432,29 @@ struct ViewerView: View {
                 RulerOverlay(onRuler: { a, b in adjustments.applyRuler(from: a, to: b) })
                     .frame(width: area.width, height: area.height)
             }
+            // The eyedropper: one click on the picture, wherever it is
+            // zoomed or panned to.
+            if adjustments.isPicking, !isPlaceholderImage {
+                let basePoint: (CGPoint) -> CGPoint? = { q in
+                    let layout = frame.flatMap { AdjustmentLayout.compute(frame: $0.size, area: area, editing: false) }
+                    return PickOverlay.basePoint(at: q, area: area, zoom: scale, pan: panOffset,
+                                                 frame: frame, layout: layout, imageSize: image.size)
+                }
+                PickOverlay(onPick: { q in
+                                guard let base = basePoint(q) else { return }
+                                Task { await adjustments.pick(at: base) }
+                            },
+                            // Press and drag (Color Mixer): the colour under
+                            // the press, then the travel while held.
+                            onPress: adjustments.isPickDragTool ? { q in
+                                guard let base = basePoint(q) else { return }
+                                Task { await adjustments.beginPickDrag(at: base, origin: q) }
+                            } : nil,
+                            onDrag: { adjustments.updatePickDrag(travel: $0) },
+                            onRelease: { adjustments.endPickDrag() },
+                            drag: adjustments.pickDrag)
+                .frame(width: area.width, height: area.height)
+            }
         }
         .frame(width: area.width, height: area.height)
     }
@@ -460,7 +483,7 @@ struct ViewerView: View {
         // starts and ends a pan of zero translation, which moves nothing.
         DragGesture(minimumDistance: 0)
             .onChanged { value in
-                guard !adjustments.isCropEditing, !adjustments.isRulerMode, adjustments.brushLaneID == nil else { return }
+                guard !adjustments.isCropEditing, !adjustments.isRulerMode, !adjustments.isPicking, adjustments.brushLaneID == nil else { return }
                 isPanning = true
                 panOffset = CGSize(
                     width: panBase.width + value.translation.width,
@@ -841,6 +864,8 @@ struct ViewerView: View {
                         adjustments.isEditingReadout = false
                     } else if adjustments.isBrushMode {
                         adjustments.setBrushMode(false)
+                    } else if adjustments.isPicking {
+                        adjustments.cancelPick()
                     } else if adjustments.isRulerMode {
                         adjustments.isRulerMode = false
                     } else if adjustments.isCropEditing {

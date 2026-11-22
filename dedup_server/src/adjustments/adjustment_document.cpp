@@ -304,8 +304,52 @@ namespace MediaDedup::Adjustments
         if (!validateChainShape(doc.chain, "chain", ids, error))
             return false;
         doc.ensureNodeIds();
+        doc.upgradeToolParams();
         out = std::move(doc);
         return true;
+    }
+
+    bool AdjustmentDocument::upgradeChain(nlohmann::json &chain)
+    {
+        if (!chain.is_array())
+            return false;
+        bool changed = false;
+        for (auto &node : chain)
+        {
+            if (!node.is_object())
+                continue;
+            if (node.contains("lanes") && node["lanes"].is_array())
+            {
+                for (auto &lane : node["lanes"])
+                    if (lane.is_object() && lane.contains("steps"))
+                        changed = upgradeChain(lane["steps"]) || changed;
+                continue;
+            }
+            const AdjustmentTool *tool = ToolRegistry::instance().find(node.value("tool", std::string()));
+            if (!tool || !node.contains("params") || !node["params"].is_object())
+                continue;
+            if (tool->upgradeParams(node["params"]))
+            {
+                // The node's own version mirrors its params'.
+                if (node.contains("version"))
+                    node["version"] = tool->descriptor().version;
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    bool AdjustmentDocument::upgradeToolParams()
+    {
+        bool changed = upgradeChain(chain);
+        if (history.is_object())
+            for (const char *list : {"steps", "snapshots"})
+                if (history.contains(list) && history[list].is_array())
+                    for (auto &entry : history[list])
+                        if (entry.is_object() && entry.contains("chain"))
+                            changed = upgradeChain(entry["chain"]) || changed;
+        params_upgraded = params_upgraded || changed;
+        return changed;
     }
 
     std::string AdjustmentDocument::serialize() const

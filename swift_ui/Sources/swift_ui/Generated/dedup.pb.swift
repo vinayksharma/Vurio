@@ -1752,6 +1752,44 @@ struct Vurio_Dedup_ImportRecipesResult: Sendable {
   init() {}
 }
 
+struct Vurio_Dedup_PickParamsRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var filePath: String = String()
+
+  /// the chain being edited
+  var documentJson: String = String()
+
+  var nodeID: String = String()
+
+  /// normalised base coordinates, as mask pins use
+  var x: Double = 0
+
+  var y: Double = 0
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_PickParamsResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// param id → value, within the limits
+  var values: Dictionary<String,Double> = [:]
+
+  /// non-empty: a remark to show the user
+  var note: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
 struct Vurio_Dedup_RenderPreviewRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -1998,6 +2036,10 @@ struct Vurio_Dedup_ParamSpec: Sendable {
 
   var customOption: String = String()
 
+  /// A number whose slider track is a gradient through these "#RRGGBB"
+  /// stops, left to right (Color Mixer's bands); empty = the plain track.
+  var trackColors: [String] = []
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -2050,6 +2092,15 @@ struct Vurio_Dedup_ToolDescriptor: Sendable {
 
   /// the tool changes pixels even with every param at its default (Monochrome)
   var activeAtDefaults: Bool = false
+
+  /// Non-empty: the tool has an eyedropper (PreviewService.PickParams); the
+  /// text says what to click on.
+  var pickHint: String = String()
+
+  /// False: PickParams returns the values to set (one click). True: it
+  /// returns a weight per param for the colour pressed on, and the client
+  /// moves those params together in that ratio while the button is held.
+  var pickDrag: Bool = false
 
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -5821,6 +5872,91 @@ extension Vurio_Dedup_ImportRecipesResult: SwiftProtobuf.Message, SwiftProtobuf.
   }
 }
 
+extension Vurio_Dedup_PickParamsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".PickParamsRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{3}document_json\0\u{3}node_id\0\u{1}x\0\u{1}y\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.filePath) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.documentJson) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.nodeID) }()
+      case 4: try { try decoder.decodeSingularDoubleField(value: &self.x) }()
+      case 5: try { try decoder.decodeSingularDoubleField(value: &self.y) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.filePath.isEmpty {
+      try visitor.visitSingularStringField(value: self.filePath, fieldNumber: 1)
+    }
+    if !self.documentJson.isEmpty {
+      try visitor.visitSingularStringField(value: self.documentJson, fieldNumber: 2)
+    }
+    if !self.nodeID.isEmpty {
+      try visitor.visitSingularStringField(value: self.nodeID, fieldNumber: 3)
+    }
+    if self.x.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.x, fieldNumber: 4)
+    }
+    if self.y.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.y, fieldNumber: 5)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_PickParamsRequest, rhs: Vurio_Dedup_PickParamsRequest) -> Bool {
+    if lhs.filePath != rhs.filePath {return false}
+    if lhs.documentJson != rhs.documentJson {return false}
+    if lhs.nodeID != rhs.nodeID {return false}
+    if lhs.x != rhs.x {return false}
+    if lhs.y != rhs.y {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_PickParamsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".PickParamsResponse"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}values\0\u{1}note\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufDouble>.self, value: &self.values) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.note) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.values.isEmpty {
+      try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufDouble>.self, value: self.values, fieldNumber: 1)
+    }
+    if !self.note.isEmpty {
+      try visitor.visitSingularStringField(value: self.note, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_PickParamsResponse, rhs: Vurio_Dedup_PickParamsResponse) -> Bool {
+    if lhs.values != rhs.values {return false}
+    if lhs.note != rhs.note {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
 extension Vurio_Dedup_RenderPreviewRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".RenderPreviewRequest"
   static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{3}document_json\0\u{3}max_side\0\u{1}quality\0\u{1}seq\0\u{3}truncate_at_node_id\0\u{1}before\0\u{3}solo_lane_id\0\u{3}overlay_lane_id\0")
@@ -6253,7 +6389,7 @@ extension Vurio_Dedup_SnapshotRequest: SwiftProtobuf.Message, SwiftProtobuf._Mes
 
 extension Vurio_Dedup_ParamSpec: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".ParamSpec"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}kind\0\u{1}min\0\u{1}max\0\u{1}step\0\u{3}default_value\0\u{3}default_option\0\u{1}options\0\u{3}default_json\0\u{1}group\0\u{1}presets\0\u{3}custom_option\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}kind\0\u{1}min\0\u{1}max\0\u{1}step\0\u{3}default_value\0\u{3}default_option\0\u{1}options\0\u{3}default_json\0\u{1}group\0\u{1}presets\0\u{3}custom_option\0\u{3}track_colors\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -6274,6 +6410,7 @@ extension Vurio_Dedup_ParamSpec: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
       case 11: try { try decoder.decodeSingularStringField(value: &self.group) }()
       case 12: try { try decoder.decodeRepeatedMessageField(value: &self.presets) }()
       case 13: try { try decoder.decodeSingularStringField(value: &self.customOption) }()
+      case 14: try { try decoder.decodeRepeatedStringField(value: &self.trackColors) }()
       default: break
       }
     }
@@ -6319,6 +6456,9 @@ extension Vurio_Dedup_ParamSpec: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
     if !self.customOption.isEmpty {
       try visitor.visitSingularStringField(value: self.customOption, fieldNumber: 13)
     }
+    if !self.trackColors.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.trackColors, fieldNumber: 14)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -6336,6 +6476,7 @@ extension Vurio_Dedup_ParamSpec: SwiftProtobuf.Message, SwiftProtobuf._MessageIm
     if lhs.group != rhs.group {return false}
     if lhs.presets != rhs.presets {return false}
     if lhs.customOption != rhs.customOption {return false}
+    if lhs.trackColors != rhs.trackColors {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -6378,7 +6519,7 @@ extension Vurio_Dedup_ParamPreset: SwiftProtobuf.Message, SwiftProtobuf._Message
 
 extension Vurio_Dedup_ToolDescriptor: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".ToolDescriptor"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}version\0\u{1}params\0\u{1}category\0\u{1}icon\0\u{3}lane_allowed\0\u{3}resolution_dependent\0\u{1}summary\0\u{3}active_at_defaults\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{1}version\0\u{1}params\0\u{1}category\0\u{1}icon\0\u{3}lane_allowed\0\u{3}resolution_dependent\0\u{1}summary\0\u{3}active_at_defaults\0\u{3}pick_hint\0\u{3}pick_drag\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -6396,6 +6537,8 @@ extension Vurio_Dedup_ToolDescriptor: SwiftProtobuf.Message, SwiftProtobuf._Mess
       case 8: try { try decoder.decodeSingularBoolField(value: &self.resolutionDependent) }()
       case 9: try { try decoder.decodeSingularStringField(value: &self.summary) }()
       case 10: try { try decoder.decodeSingularBoolField(value: &self.activeAtDefaults) }()
+      case 11: try { try decoder.decodeSingularStringField(value: &self.pickHint) }()
+      case 12: try { try decoder.decodeSingularBoolField(value: &self.pickDrag) }()
       default: break
       }
     }
@@ -6432,6 +6575,12 @@ extension Vurio_Dedup_ToolDescriptor: SwiftProtobuf.Message, SwiftProtobuf._Mess
     if self.activeAtDefaults != false {
       try visitor.visitSingularBoolField(value: self.activeAtDefaults, fieldNumber: 10)
     }
+    if !self.pickHint.isEmpty {
+      try visitor.visitSingularStringField(value: self.pickHint, fieldNumber: 11)
+    }
+    if self.pickDrag != false {
+      try visitor.visitSingularBoolField(value: self.pickDrag, fieldNumber: 12)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -6446,6 +6595,8 @@ extension Vurio_Dedup_ToolDescriptor: SwiftProtobuf.Message, SwiftProtobuf._Mess
     if lhs.resolutionDependent != rhs.resolutionDependent {return false}
     if lhs.summary != rhs.summary {return false}
     if lhs.activeAtDefaults != rhs.activeAtDefaults {return false}
+    if lhs.pickHint != rhs.pickHint {return false}
+    if lhs.pickDrag != rhs.pickDrag {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

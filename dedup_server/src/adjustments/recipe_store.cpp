@@ -114,6 +114,7 @@ namespace MediaDedup::Adjustments
         if (j.is_array())
         {
             chain = j;
+            AdjustmentDocument::upgradeChain(chain); // a recipe saved by an older tool version
             return true;
         }
         if (j.is_object())
@@ -127,6 +128,7 @@ namespace MediaDedup::Adjustments
                     return false;
                 }
                 chain = j["chain"];
+                AdjustmentDocument::upgradeChain(chain);
                 return true;
             }
             if (j.contains("tools") && j["tools"].is_object())
@@ -611,7 +613,7 @@ namespace MediaDedup::Adjustments
              R"([{"tool":"bright_contrast","params":{"version":1,"brightness":0.0,"contrast":0.15}},
                  {"tool":"saturation","params":{"version":1,"amount":-0.1}}])"},
             {"Warm vignette", "A warmer balance and a soft dark edge.",
-             R"([{"tool":"white_balance","params":{"version":1,"temperature":0.3,"tint":0.0}},
+             R"([{"tool":"white_balance","params":{"version":2,"temperature":0.07,"tint":0.0}},
                  {"tool":"vignette","params":{"version":1,"amount":0.4,"midpoint":0.5,"roundness":0.0,"feather":0.5}}])"},
         };
         int seeded = 0;

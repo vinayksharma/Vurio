@@ -63,6 +63,14 @@ namespace MediaDedup::Adjustments
         bool render(const RenderPlan &plan, int max_side, int quality, PreviewResult &out, std::string &error,
                     const RenderPlan::RenderOptions &options = RenderPlan::RenderOptions());
 
+        // The eyedropper: the mean colour (gamma sRGB, [0,1]) of a small
+        // patch of `plan`'s output around a normalised base point. Rendered
+        // at `max_side` without the node cache (the plan may be a spliced
+        // one whose prefix hashes are not cache keys). False with `error`
+        // when the point lies outside the rendered canvas.
+        bool sample(const RenderPlan &plan, int max_side, double nx, double ny, AdjustmentTool::PickedColour &out,
+                    std::string &error);
+
         // For tests and the debug overlay.
         size_t cachedFrames() const;
         size_t cachedBytes() const;
@@ -115,6 +123,21 @@ namespace MediaDedup::Adjustments
             PreviewResult result;
         };
         Response render(const std::string &file_path, const PreviewRequest &request);
+
+        // The eyedropper: pick the params of node `node_id` from a point
+        // of the image (normalised base coordinates, as mask pins use). The
+        // chain is rendered up to that node — the trunk before it, or the
+        // trunk before its split plus the lane steps before it — the patch
+        // under the point is read there, and the node's tool solves for it.
+        struct PickResponse
+        {
+            Outcome outcome = Outcome::Internal;
+            std::string error;
+            std::vector<std::pair<std::string, double>> values;
+            std::string note;
+        };
+        PickResponse pick(const std::string &file_path, const std::string &document_json, const std::string &node_id,
+                          double nx, double ny);
         void release(const std::string &file_path);
         // Drop sessions idle longer than the configured limit.
         void expire();

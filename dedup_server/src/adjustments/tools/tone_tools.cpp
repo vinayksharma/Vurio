@@ -1,4 +1,5 @@
 #include "adjustments/tools/tone_tools.hpp"
+#include <cstdio>
 #include <algorithm>
 #include <cmath>
 #include <opencv2/imgproc.hpp>
@@ -146,19 +147,86 @@ namespace MediaDedup::Adjustments
     HslTool::HslTool()
     {
         descriptor_.id = kId;
-        descriptor_.label = "HSL";
+        descriptor_.label = "Color Mixer";
         descriptor_.category = ToolCategory::Layer;
         descriptor_.icon = "circle.hexagongrid.fill";
-        descriptor_.summary = "8 bands";
-        for (int b = 0; b < kBands; ++b)
+        descriptor_.summary = "8 colours";
+        descriptor_.pick_hint = "Press on a colour in the picture and drag up or down";
+        descriptor_.pick_drag = true;
+        // One group per property, a slider per colour band — the mixer
+        // layout: "what do I want to do to the blues" reads down a column
+        // of colours. Each track shows what its slider does to that band.
+        auto band = [this](int b, const char *suffix, double min, double max, double step, std::vector<std::string> track)
         {
-            group(kBandLabels[b]);
-            std::string base = kBandIds[b];
-            number((base + "_hue").c_str(), "Hue", -45, 45, 0, 1);
-            number((base + "_sat").c_str(), "Saturation", -1, 1, 0, 0.01);
-            number((base + "_lum").c_str(), "Luminance", -1, 1, 0, 0.01);
-        }
+            number((std::string(kBandIds[b]) + suffix).c_str(), kBandLabels[b], min, max, 0, step);
+            descriptor_.params.back().track_colors = std::move(track);
+        };
+        group("Hue");
+        for (int b = 0; b < kBands; ++b)
+            band(b, "_hue", -45, 45, 1,
+                 {hexOfHsv(kBandCentres[b] - 45, 0.85, 0.9), hexOfHsv(kBandCentres[b], 0.85, 0.9), hexOfHsv(kBandCentres[b] + 45, 0.85, 0.9)});
+        group("Saturation");
+        for (int b = 0; b < kBands; ++b)
+            band(b, "_sat", -1, 1, 0.01, {hexOfHsv(kBandCentres[b], 0.0, 0.55), hexOfHsv(kBandCentres[b], 0.95, 0.9)});
+        group("Luminance");
+        for (int b = 0; b < kBands; ++b)
+            band(b, "_lum", -1, 1, 0.01,
+                 {hexOfHsv(kBandCentres[b], 0.9, 0.3), hexOfHsv(kBandCentres[b], 0.85, 0.9), hexOfHsv(kBandCentres[b], 0.35, 1.0)});
         group(nullptr);
+    }
+
+    bool HslTool::pick(const PickedColour &input, std::vector<std::pair<std::string, double>> &values, std::string &note,
+                       std::string &error) const
+    {
+        (void)note;
+        const double r = input.r, g = input.g, b = input.b;
+        const double hi = std::max({r, g, b}), lo = std::min({r, g, b});
+        // The engine fades its effect out below s = 0.25 and is off at 0;
+        // under a tenth there is nothing a drag could visibly change.
+        if (hi < 0.02 || (hi - lo) / hi < 0.1)
+        {
+            error = "That spot has no colour to adjust; press on something more colourful";
+            return false;
+        }
+        double hue;
+        const double d = hi - lo;
+        if (hi == r)
+            hue = 60.0 * std::fmod((g - b) / d, 6.0);
+        else if (hi == g)
+            hue = 60.0 * ((b - r) / d + 2.0);
+        else
+            hue = 60.0 * ((r - g) / d + 4.0);
+        double w[kBands];
+        weights(hue, w);
+        values.clear();
+        for (int k = 0; k < kBands; ++k)
+        {
+            if (w[k] <= 0.005)
+                continue;
+            for (const char *suffix : {"_hue", "_sat", "_lum"})
+                values.emplace_back(std::string(kBandIds[k]) + suffix, w[k]);
+        }
+        return true;
+    }
+
+    std::string HslTool::hexOfHsv(double hue_degrees, double s, double v)
+    {
+        double h = std::fmod(std::fmod(hue_degrees, 360.0) + 360.0, 360.0) / 60.0;
+        double c = v * s, x = c * (1 - std::fabs(std::fmod(h, 2.0) - 1)), m = v - c;
+        double r = 0, g = 0, b = 0;
+        switch (static_cast<int>(h) % 6)
+        {
+        case 0: r = c, g = x; break;
+        case 1: r = x, g = c; break;
+        case 2: g = c, b = x; break;
+        case 3: g = x, b = c; break;
+        case 4: r = x, b = c; break;
+        default: r = c, b = x; break;
+        }
+        char text[8];
+        std::snprintf(text, sizeof text, "#%02X%02X%02X", static_cast<int>(std::lround((r + m) * 255)),
+                      static_cast<int>(std::lround((g + m) * 255)), static_cast<int>(std::lround((b + m) * 255)));
+        return text;
     }
 
     void HslTool::weights(double hue_degrees, double out[kBands])

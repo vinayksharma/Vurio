@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 #include <cmath>
 #include <opencv2/imgproc.hpp>
+#include <map>
 #include <set>
 #include <string>
 
@@ -196,6 +197,87 @@ TEST(LayerToolTest, PerPixelFormulas)
     cv::Vec3f wb = run("white_balance", json{{"temperature", 0.8}, {"tint", -0.5}}, cv::Vec3f(0.5f, 0.5f, 0.5f));
     EXPECT_NEAR(0.0722f * wb[0] + 0.7152f * wb[1] + 0.2126f * wb[2], 0.5f, 1e-4);
     EXPECT_GT(wb[2], wb[0]) << "warm: red up, blue down";
+    // Gains are multiplicative: ±1 temperature is a 16:1 red/blue ratio.
+    cv::Vec3f full = run("white_balance", json{{"version", 2}, {"temperature", 1.0}}, cv::Vec3f(0.1f, 0.1f, 0.1f));
+    EXPECT_NEAR(full[2] / full[0], 16.0, 1e-3);
+    // A stored document is converted wherever the old params sit: the
+    // chain, a lane, a history step.
+    {
+        json node = {{"id", "wbold00001"}, {"tool", "white_balance"}, {"params", {{"version", 1}, {"temperature", 1.0}, {"tint", 0.0}}}};
+        json text = {{"format", "vurio.adjustments"}, {"version", 2}, {"chain", json::array({node})},
+                     {"history", {{"index", 0}, {"steps", json::array({{{"label", "x"}, {"at", ""}, {"chain", json::array({node})}}})}}}};
+        text["format"] = AdjustmentDocument::kFormat;
+        AdjustmentDocument doc;
+        std::string error;
+        ASSERT_TRUE(AdjustmentDocument::parse(text.dump(), doc, error)) << error;
+        EXPECT_TRUE(doc.params_upgraded);
+        EXPECT_EQ(doc.chain[0]["params"]["version"], 2);
+        // 1.3 : 0.7 red to blue is 2^(4t).
+        EXPECT_NEAR(doc.chain[0]["params"]["temperature"].get<double>(), std::log2(1.3 / 0.7) / 4.0, 1e-9);
+        EXPECT_EQ(doc.history["steps"][0]["chain"][0]["params"]["version"], 2);
+        AdjustmentDocument again;
+        ASSERT_TRUE(AdjustmentDocument::parse(doc.serialize(), again, error)) << error;
+        EXPECT_FALSE(again.params_upgraded);
+    }
+    // Params of version 1 (linear gains 1±0.3t, 1−0.2·tint) are converted
+    // to the pair that renders the same.
+    {
+        const AdjustmentTool *tool = ToolRegistry::instance().find("white_balance");
+        json old = {{"version", 1}, {"temperature", 0.8}, {"tint", -0.5}};
+        ASSERT_TRUE(tool->upgradeParams(old));
+        EXPECT_EQ(old["version"], 2);
+        EXPECT_FALSE(tool->upgradeParams(old)) << "already current";
+        cv::Vec3f same = run("white_balance", old, cv::Vec3f(0.5f, 0.5f, 0.5f));
+        const double sum = 0.0722 * 0.76 + 0.7152 * 1.1 + 0.2126 * 1.24;
+        EXPECT_NEAR(same[0], 0.5 * 0.76 / sum, 1e-4);
+        EXPECT_NEAR(same[1], 0.5 * 1.1 / sum, 1e-4);
+        EXPECT_NEAR(same[2], 0.5 * 1.24 / sum, 1e-4);
+    }
+
+    // The eyedropper: the picked params neutralise the picked colour.
+    {
+        const AdjustmentTool *tool = ToolRegistry::instance().find("white_balance");
+        ASSERT_NE(tool, nullptr);
+        EXPECT_FALSE(tool->descriptor().pick_hint.empty());
+        std::vector<std::pair<std::string, double>> values;
+        std::string note, error;
+        // A warm, slightly green cast on a grey card (r, g, b).
+        ASSERT_TRUE(tool->pick({0.55, 0.52, 0.42}, values, note, error)) << error;
+        EXPECT_TRUE(note.empty());
+        json params = json{{"version", 2}};
+        for (const auto &v : values)
+            params[v.first] = v.second;
+        EXPECT_LT(params["temperature"].get<double>(), 0) << "a warm cast is cooled";
+        cv::Vec3f fixed = run("white_balance", params, cv::Vec3f(0.42f, 0.52f, 0.55f));
+        EXPECT_NEAR(fixed[0], fixed[2], 0.01) << "blue = red (to the 0.01 slider step)";
+        EXPECT_NEAR(fixed[1], (fixed[0] + fixed[2]) / 2, 0.01) << "green = their mean";
+
+        // Tungsten on a daylight balance (16:1 red to blue) is within reach.
+        ASSERT_TRUE(tool->pick({0.8, 0.3, 0.05}, values, note, error)) << error;
+        EXPECT_TRUE(note.empty());
+        params = json{{"version", 2}};
+        for (const auto &v : values)
+            params[v.first] = v.second;
+        fixed = run("white_balance", params, cv::Vec3f(0.05f, 0.3f, 0.8f));
+        EXPECT_NEAR(fixed[0], fixed[2], 0.01);
+        EXPECT_NEAR(fixed[1], fixed[2], 0.01);
+
+        // Beyond the sliders: corrected as far as they go, and said so.
+        ASSERT_TRUE(tool->pick({0.9, 0.3, 0.01}, values, note, error)) << error;
+        EXPECT_FALSE(note.empty());
+        for (const auto &v : values)
+            EXPECT_LE(std::fabs(v.second), 1.0) << v.first;
+
+        // Nothing to read from black or from a clipped patch.
+        EXPECT_FALSE(tool->pick({0.02, 0.01, 0.0}, values, note, error));
+        // One empty channel is a deep cast, not black: still corrected.
+        ASSERT_TRUE(tool->pick({0.45, 0.12, 0.0}, values, note, error)) << error;
+        EXPECT_FALSE(note.empty());
+        EXPECT_DOUBLE_EQ(values[0].second, -1.0);
+        EXPECT_FALSE(tool->pick({0.99, 0.9, 0.9}, values, note, error));
+        // A tool without an eyedropper refuses.
+        EXPECT_FALSE(ToolRegistry::instance().find("exposure")->pick({0.5, 0.5, 0.5}, values, note, error));
+    }
 
     // Hue 180° turns red toward cyan.
     cv::Vec3f shifted = run("hue", json{{"degrees", 180}}, cv::Vec3f(0.0f, 0.0f, 1.0f));
@@ -403,9 +485,39 @@ TEST(LayerToolTest, HslTouchesOnlyTheTargetedBandAndLeavesGreysAlone)
     std::set<std::string> groups;
     for (const auto &p : tool->descriptor().params)
         groups.insert(p.group);
-    EXPECT_EQ(groups.size(), 8u);
-    EXPECT_EQ(tool->descriptor().params[0].group, "Red");
+    EXPECT_EQ(groups.size(), 3u);
+    EXPECT_EQ(tool->descriptor().params[0].group, "Hue");
 
+    // Presented as the Color Mixer: Hue / Saturation / Luminance groups,
+    // eight colour sliders each, every one with a gradient track.
+    EXPECT_EQ(tool->descriptor().label, "Color Mixer");
+    ASSERT_EQ(tool->descriptor().params.size(), 24u);
+    EXPECT_EQ(tool->descriptor().params[0].group, "Hue");
+    EXPECT_EQ(tool->descriptor().params[0].label, "Red");
+    EXPECT_EQ(tool->descriptor().params[8].id, "red_sat");
+    EXPECT_EQ(tool->descriptor().params[23].group, "Luminance");
+    for (const auto &p : tool->descriptor().params)
+        EXPECT_GE(p.track_colors.size(), 2u) << p.id;
+    // The targeted adjustment: a colour's band shares, per property.
+    {
+        EXPECT_TRUE(tool->descriptor().pick_drag);
+        std::vector<std::pair<std::string, double>> values;
+        std::string note, error;
+        // Hue 225° sits between aqua (180) and blue (240): 1/4 and 3/4.
+        ASSERT_TRUE(tool->pick({0.0, 0.25, 1.0}, values, note, error)) << error;
+        std::map<std::string, double> share(values.begin(), values.end());
+        EXPECT_EQ(share.size(), 6u);
+        EXPECT_NEAR(share["blue_sat"], 0.75, 1e-6);
+        EXPECT_NEAR(share["aqua_sat"], 0.25, 1e-6);
+        EXPECT_NEAR(share["blue_hue"], 0.75, 1e-6);
+        // Pure red is one band alone; a grey is refused.
+        ASSERT_TRUE(tool->pick({0.8, 0.1, 0.1}, values, note, error)) << error;
+        EXPECT_EQ(values.size(), 3u);
+        EXPECT_FALSE(tool->pick({0.5, 0.5, 0.48}, values, note, error));
+        EXPECT_FALSE(error.empty());
+    }
+    EXPECT_EQ(HslTool::hexOfHsv(0, 1, 1), "#FF0000");
+    EXPECT_EQ(HslTool::hexOfHsv(-120, 1, 1), "#0000FF");
     double w[HslTool::kBands];
     HslTool::weights(0, w);
     EXPECT_NEAR(w[0], 1.0, 1e-9);

@@ -40,6 +40,17 @@ namespace MediaDedup::Adjustments
         // without an id get one.
         static bool parse(const std::string &text, AdjustmentDocument &out, std::string &error);
 
+        // Tool params written by an older version of a tool, brought to the
+        // version this build writes (AdjustmentTool::upgradeParams) — in the
+        // chain, in lanes, and in every history step and snapshot. `parse`
+        // does this; a caller that attaches a history afterwards (the store
+        // keeps it in its own column) calls it again. True when anything
+        // changed; `params_upgraded` remembers it, so the store knows the
+        // text it parsed is not the text it would now write.
+        bool upgradeToolParams();
+        static bool upgradeChain(nlohmann::json &chain);
+        bool params_upgraded = false;
+
         // Full document text as written to the sidecar (pretty, sorted keys).
         std::string serialize() const;
         // The chain alone, as the client sends and receives it.

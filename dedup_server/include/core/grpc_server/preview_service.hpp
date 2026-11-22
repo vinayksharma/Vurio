@@ -51,6 +51,22 @@ public:
         return grpc::Status::OK;
     }
 
+    grpc::Status PickParams(grpc::ServerContext*, const vurio::dedup::PickParamsRequest* request,
+                            vurio::dedup::PickParamsResponse* reply) override {
+        using Outcome = MediaDedup::Adjustments::PreviewSessionManager::Outcome;
+        auto response = MediaDedup::Adjustments::PreviewSessionManager::instance().pick(
+            request->file_path(), request->document_json(), request->node_id(), request->x(), request->y());
+        switch (response.outcome) {
+            case Outcome::Ok: break;
+            case Outcome::Invalid: return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, response.error);
+            case Outcome::NotFound: return grpc::Status(grpc::StatusCode::NOT_FOUND, response.error);
+            case Outcome::Internal: return grpc::Status(grpc::StatusCode::INTERNAL, response.error);
+        }
+        for (const auto& v : response.values) (*reply->mutable_values())[v.first] = v.second;
+        reply->set_note(response.note);
+        return grpc::Status::OK;
+    }
+
     grpc::Status ReleasePreview(grpc::ServerContext*, const vurio::dedup::AdjustmentsFileRequest* request,
                                 vurio::dedup::Empty*) override {
         MediaDedup::Adjustments::PreviewSessionManager::instance().release(request->file_path());

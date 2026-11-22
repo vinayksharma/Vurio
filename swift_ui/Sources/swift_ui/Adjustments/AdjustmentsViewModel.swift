@@ -71,6 +71,42 @@ final class AdjustmentsViewModel: ObservableObject {
     /// The crop node the editor is open on.
     @Published private(set) var editingCropID: String?
     @Published var isRulerMode = false
+    /// The node whose eyedropper is armed: the next click on the image
+    /// picks its params (White Balance's neutral point).
+    @Published private(set) var pickingNodeID: String?
+    /// What the last pick had to say (a refused spot, a cast beyond the
+    /// sliders), shown beside the eyedropper of `node`.
+    @Published private(set) var pickRemark: (node: String, text: String)?
+    /// The param group a press-and-drag eyedropper adjusts (Color Mixer's
+    /// open tab: Hue, Saturation or Luminance). The inspector keeps it.
+    @Published var pickGroup: String = ""
+    /// A press-and-drag eyedropper while the button is held: where it was
+    /// pressed, the params it moves and how far the pointer has travelled.
+    @Published private(set) var pickDrag: PickDrag?
+    private var pickPress = 0
+
+    struct PickDrag: Equatable {
+        struct Share: Equatable {
+            let id: String
+            let label: String
+            let weight: Double
+            let start: Double
+        }
+        let nodeID: String
+        let group: String
+        /// Press point in the image area's coordinate space.
+        let origin: CGPoint
+        let shares: [Share]
+        /// Vertical travel in points, up positive.
+        var travel: CGFloat = 0
+        /// Points of travel that move a full-share param across its range.
+        static let fullTravel: CGFloat = 300
+        /// The drag as a fraction of the range (−1…1 over ±fullTravel).
+        var amount: Double { Double(max(-1, min(1, travel / Self.fullTravel))) }
+    }
+    /// Armed and still meaningful: the node is the selected one and the
+    /// picture is not in the crop editor.
+    var isPicking: Bool { pickingNodeID != nil && pickingNodeID == selectedNodeID && !isCropEditing }
     /// CHAIN-7c: painting the selected lane's brush component. Entered from
     /// the lane inspector, left with Esc or the button; the lane's mask
     /// overlay is shown while painting so the strokes read as coverage.
@@ -354,6 +390,10 @@ final class AdjustmentsViewModel: ObservableObject {
         isCropEditing = false
         editingCropID = nil
         isRulerMode = false
+        pickingNodeID = nil
+        pickRemark = nil
+        pickDrag = nil
+        pickPress += 1
         isEditingReadout = false
         showBefore = false
         isInteracting = false
@@ -903,6 +943,132 @@ final class AdjustmentsViewModel: ObservableObject {
         isInteracting = false
         chainChanged(label: label)
         if wasInteracting { requestPreview() }
+    }
+
+    // MARK: - Eyedropper
+
+    func togglePick(_ nodeID: String) {
+        pickRemark = nil
+        if pickingNodeID == nodeID {
+            pickingNodeID = nil
+        } else {
+            isRulerMode = false
+            pickingNodeID = nodeID
+        }
+    }
+
+    func cancelPick() {
+        endPickDrag()
+        pickingNodeID = nil
+    }
+
+    /// The armed eyedropper is the press-and-drag kind.
+    var isPickDragTool: Bool {
+        guard let id = pickingNodeID, let tool = tools[id] as? GenericToolUI else { return false }
+        return tool.descriptor.pickDrag
+    }
+
+    /// The button went down on the picture with a press-and-drag eyedropper
+    /// (`base` normalised base coordinates, `origin` the same point in the
+    /// image area). The server reads the colour entering the node there and
+    /// answers with a share per param; the ones in `pickGroup` then follow
+    /// the pointer until the button comes up.
+    func beginPickDrag(at base: CGPoint, origin: CGPoint) async {
+        guard isPicking, pickDrag == nil, let nodeID = pickingNodeID, let path = filePath,
+              let tool = tools[nodeID] as? GenericToolUI,
+              let client = VurioGrpcClient.shared.preview else { return }
+        pickPress += 1
+        let press = pickPress
+        pickRemark = nil
+        let group = pickGroup
+        let request = Vurio_Dedup_PickParamsRequest.with {
+            $0.filePath = path
+            $0.documentJson = currentDocument().serialize()
+            $0.nodeID = nodeID
+            $0.x = Double(base.x)
+            $0.y = Double(base.y)
+        }
+        do {
+            let response = try await client.pickParams(request)
+            // The button may be up again, or the photo gone, by now.
+            guard press == pickPress, filePath == path, pickingNodeID == nodeID, tools[nodeID] === tool else { return }
+            let shares = tool.descriptor.params.compactMap { p -> PickDrag.Share? in
+                guard p.kind == .number, p.group == group, let w = response.values[p.id], w > 0 else { return nil }
+                return PickDrag.Share(id: p.id, label: p.label, weight: w, start: tool.numbers[p.id] ?? p.defaultValue)
+            }.sorted { $0.weight > $1.weight }
+            guard !shares.isEmpty else { return }
+            pickDrag = PickDrag(nodeID: nodeID, group: group, origin: origin, shares: shares, travel: pendingPickTravel)
+            paramChanged(nodeID: nodeID, label: "", interactive: true)
+            applyPickDrag()
+        } catch {
+            guard press == pickPress, !isGrpcCancellation(error) else { return }
+            pickRemark = (nodeID, (error as? GRPCStatus)?.message ?? "The eyedropper could not read that spot")
+        }
+    }
+    /// Travel that arrived before the server answered the press.
+    private var pendingPickTravel: CGFloat = 0
+
+    /// The pointer moved with the button held (`travel` points, up positive).
+    func updatePickDrag(travel: CGFloat) {
+        pendingPickTravel = travel
+        guard pickDrag != nil else { return }
+        pickDrag?.travel = travel
+        applyPickDrag()
+    }
+
+    private func applyPickDrag() {
+        guard let drag = pickDrag, let tool = tools[drag.nodeID] as? GenericToolUI else { return }
+        var changed = false
+        for share in drag.shares {
+            guard let p = tool.descriptor.param(share.id) else { continue }
+            let value = TickSlider.snap(share.start + share.weight * drag.amount * (p.max - p.min),
+                                        in: p.min...p.max, step: p.step)
+            if value != (tool.numbers[p.id] ?? p.defaultValue) {
+                tool.setNumber(p.id, value)
+                changed = true
+            }
+        }
+        if changed { paramDragged() }
+    }
+
+    /// The button came up: the drag is one history step, and the eyedropper
+    /// stays armed for the next colour.
+    func endPickDrag() {
+        pickPress += 1
+        pendingPickTravel = 0
+        guard let drag = pickDrag else { return }
+        pickDrag = nil
+        let name = (tools[drag.nodeID] as? GenericToolUI)?.descriptor.label ?? "Eyedropper"
+        paramChanged(nodeID: drag.nodeID, label: "\(name) \(drag.group) eyedropper", interactive: false)
+    }
+
+    /// A point of the image was clicked with the eyedropper armed (`base`
+    /// in normalised base coordinates). The server reads the colour
+    /// entering the node there and its tool answers with the params; a
+    /// refusal (too dark, clipped) leaves the eyedropper armed for another
+    /// spot.
+    func pick(at base: CGPoint) async {
+        guard isPicking, let nodeID = pickingNodeID, let path = filePath,
+              let tool = tools[nodeID] as? GenericToolUI,
+              let client = VurioGrpcClient.shared.preview else { return }
+        let request = Vurio_Dedup_PickParamsRequest.with {
+            $0.filePath = path
+            $0.documentJson = currentDocument().serialize()
+            $0.nodeID = nodeID
+            $0.x = Double(base.x)
+            $0.y = Double(base.y)
+        }
+        do {
+            let response = try await client.pickParams(request)
+            guard filePath == path, pickingNodeID == nodeID, tools[nodeID] === tool else { return }
+            for (id, value) in response.values { tool.setNumber(id, value) }
+            pickingNodeID = nil
+            pickRemark = response.note.isEmpty ? nil : (nodeID, response.note)
+            paramChanged(nodeID: nodeID, label: "\(tool.descriptor.label) eyedropper", interactive: false)
+        } catch {
+            if isGrpcCancellation(error) { return }
+            pickRemark = (nodeID, (error as? GRPCStatus)?.message ?? "The eyedropper could not read that spot")
+        }
     }
 
     /// CHAIN-7: a slider moved while its drag is in progress. The frame

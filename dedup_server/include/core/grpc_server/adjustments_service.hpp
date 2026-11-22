@@ -129,6 +129,8 @@ public:
             t->set_resolution_dependent(d.resolution_dependent);
             t->set_summary(d.summary);
             t->set_active_at_defaults(d.active_at_defaults);
+            t->set_pick_hint(d.pick_hint);
+            t->set_pick_drag(d.pick_drag);
             for (const auto& p : d.params) {
                 auto* ps = t->add_params();
                 ps->set_id(p.id);
@@ -148,6 +150,7 @@ public:
                     for (const auto& v : preset.second) (*pp->mutable_values())[v.first] = v.second;
                 }
                 ps->set_custom_option(p.custom_option);
+                for (const auto& c : p.track_colors) ps->add_track_colors(c);
             }
         }
     }

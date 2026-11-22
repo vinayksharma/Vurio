@@ -112,18 +112,38 @@ struct AdjustmentsPanel: View {
                 .padding(12)
                 Spacer()
             } else {
-                ChainListView(model: model, hasImage: hasImage)
-                    .frame(maxHeight: .infinity)
+                // The chain takes the height of its rows and the inspector
+                // everything below it, so a tool with many controls (Color
+                // Mixer, a lane) is not squeezed under an empty list. With
+                // nothing selected the chain keeps the room.
+                if model.selectedNodeID == nil {
+                    ChainListView(model: model, hasImage: hasImage)
+                        .frame(maxHeight: .infinity)
+                } else {
+                    ChainListView(model: model, hasImage: hasImage)
+                        .frame(minHeight: 44, maxHeight: Self.chainHeight(rows: model.document.rows.count))
+                        .layoutPriority(1)
+                }
                 Divider().background(Theme.border)
                 // The inspector scrolls when a tool has more controls than
-                // the panel has height (Monochrome, a lane).
-                ScrollView(.vertical) { inspector }
-                    .frame(maxHeight: 420)
-                    .fixedSize(horizontal: false, vertical: true)
+                // the panel has height.
+                if model.selectedNodeID == nil {
+                    inspector
+                } else {
+                    ScrollView(.vertical) { inspector }
+                        .frame(minHeight: 200, maxHeight: .infinity)
+                }
                 Divider().background(Theme.border)
                 CatalogueView(model: model, hasImage: hasImage)
             }
         }
+    }
+
+    /// The chain list's height for `rows` rows: a row is 28 pt plus its
+    /// insets, and a long name wraps to a second line, so allow a little
+    /// over; a very long chain stops at ten rows and scrolls.
+    static func chainHeight(rows: Int) -> CGFloat {
+        CGFloat(min(max(rows, 1), 10)) * 36 + 8
     }
 
     private var header: some View {

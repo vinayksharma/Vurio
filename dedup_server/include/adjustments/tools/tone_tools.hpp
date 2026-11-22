@@ -43,6 +43,9 @@ namespace MediaDedup::Adjustments
     // scaled by f = smoothstep(0, 0.25, s) so greys are untouched. In HSV:
     //   h' = h + f·Δh,  s' = s·(1 + f·Δs),
     //   v' = Δl ≥ 0 ? v + (1 − v)·f·Δl/2 : v·(1 + f·Δl/2).
+    // Shown as "Color Mixer": three groups (Hue, Saturation, Luminance),
+    // each with one slider per band. The id and param ids stay "hsl" /
+    // "<band>_hue|_sat|_lum", so chains saved before the rename still load.
     class HslTool final : public ParamTool
     {
     public:
@@ -55,6 +58,14 @@ namespace MediaDedup::Adjustments
         void apply(const ToolState &, Frame &io, const RenderContext &) const override;
         // The band weights for a hue in degrees (sum to 1).
         static void weights(double hue_degrees, double out[kBands]);
+        // The targeted adjustment: the band weights of the colour pressed
+        // on, one entry per param of each band that has a share
+        // ("blue_sat": 0.7, "aqua_sat": 0.3, and the same for _hue, _lum).
+        // A grey has no hue to target and is refused.
+        bool pick(const PickedColour &input, std::vector<std::pair<std::string, double>> &values, std::string &note,
+                  std::string &error) const override;
+        // "#RRGGBB" of an HSV colour (the slider tracks' gradient stops).
+        static std::string hexOfHsv(double hue_degrees, double s, double v);
     };
 
     // Apply per-channel LUTs (B, G, R; each over [0,1]) to a frame with

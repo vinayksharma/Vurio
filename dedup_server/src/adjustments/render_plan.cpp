@@ -94,6 +94,12 @@ namespace MediaDedup::Adjustments
         return out;
     }
 
+    void RenderPlan::append(const RenderPlan &other)
+    {
+        for (const Node &n : other.nodes_)
+            nodes_.push_back(cloneNode(n));
+    }
+
     const ToolState *RenderPlan::firstStateOf(const std::string &tool_id) const
     {
         for (const Node &n : nodes_)

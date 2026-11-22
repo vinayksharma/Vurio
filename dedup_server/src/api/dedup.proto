@@ -869,6 +869,25 @@ service PreviewService {
   // Drop the file's render session (decoded base + node cache) early;
   // sessions also expire on their own.
   rpc ReleasePreview(AdjustmentsFileRequest) returns (Empty);
+  // The eyedropper (ToolDescriptor.pick_hint): the params node `node_id`
+  // should take for a point picked on the image. The server reads the
+  // colour ENTERING that node there and the node's tool solves for it.
+  // INVALID_ARGUMENT carries the reason (no such node, no eyedropper, the
+  // spot is too dark / clipped / outside the canvas); NOT_FOUND as above.
+  rpc PickParams(PickParamsRequest) returns (PickParamsResponse);
+}
+
+message PickParamsRequest {
+  string file_path = 1;
+  string document_json = 2; // the chain being edited
+  string node_id = 3;
+  double x = 4;             // normalised base coordinates, as mask pins use
+  double y = 5;
+}
+
+message PickParamsResponse {
+  map<string, double> values = 1; // param id → value, within the limits
+  string note = 2;                // non-empty: a remark to show the user
 }
 
 message RenderPreviewRequest {
@@ -976,6 +995,9 @@ message ParamSpec {
   // selects `custom_option` (when set).
   repeated ParamPreset presets = 12;
   string custom_option = 13;
+  // A number whose slider track is a gradient through these "#RRGGBB"
+  // stops, left to right (Color Mixer's bands); empty = the plain track.
+  repeated string track_colors = 14;
 }
 
 message ParamPreset {
@@ -996,6 +1018,13 @@ message ToolDescriptor {
   bool resolution_dependent = 8;
   string summary = 9;          // chain-row text template, "{param:fmt}" placeholders
   bool active_at_defaults = 10; // the tool changes pixels even with every param at its default (Monochrome)
+  // Non-empty: the tool has an eyedropper (PreviewService.PickParams); the
+  // text says what to click on.
+  string pick_hint = 11;
+  // False: PickParams returns the values to set (one click). True: it
+  // returns a weight per param for the colour pressed on, and the client
+  // moves those params together in that ratio while the button is held.
+  bool pick_drag = 12;
 }
 
 message ToolDescriptors {

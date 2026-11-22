@@ -76,6 +76,7 @@ namespace MediaDedup::Adjustments
                 catch (...)
                 {
                 }
+                doc.upgradeToolParams();
             }
             return true;
         }
@@ -144,14 +145,21 @@ namespace MediaDedup::Adjustments
                 // format-2 canonical form. Re-key it once (document column
                 // rewritten as format 2, tiles regenerate on demand); the
                 // sidecar is rewritten on the next commit.
-                if (e.plan.revision() != row.render_revision)
+                // The same goes for a row holding params of an older tool
+                // version (White Balance 1 → 2), wherever they sit: the
+                // chain, a disabled node, a history step. The upgrade keeps
+                // the pixels, so tiles are only dropped when the revision
+                // (a hash of the params as written) moved.
+                if (e.plan.revision() != row.render_revision || doc.params_upgraded)
                 {
+                    const bool rehashed = e.plan.revision() != row.render_revision;
                     e.row.render_revision = e.plan.revision();
                     std::string history_column, sidecar_text;
                     splitDocument(doc, e.row.document, history_column, sidecar_text);
                     e.row.history = history_column;
                     AdjustmentsOps::upsert(*db_, e.row);
-                    invalidate.push_back(row.file_path);
+                    if (rehashed)
+                        invalidate.push_back(row.file_path);
                     ++rekeyed;
                 }
             }
@@ -608,6 +616,7 @@ namespace MediaDedup::Adjustments
             catch (...)
             {
             }
+            doc.upgradeToolParams();
         }
         if (!existing && doc.isIdentity(ToolRegistry::instance()))
         {

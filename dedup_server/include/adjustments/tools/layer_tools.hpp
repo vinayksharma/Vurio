@@ -28,15 +28,30 @@ namespace MediaDedup::Adjustments
         void apply(const ToolState &, Frame &io, const RenderContext &) const override;
     };
 
-    // Channel gains R·(1+0.3t), G·(1−0.2·tint), B·(1−0.3t), scaled so the
-    // luma of mid-grey is unchanged.
+    // Channel gains R·2^(k·t), G·2^(−m·tint), B·2^(−k·t), scaled so the
+    // luma of mid-grey is unchanged. Multiplicative, so the response is
+    // symmetric, no gain can reach zero, and ±1 spans a 16:1 red/blue ratio
+    // (k = 2) and a 2:1 green one (m = 1) — enough to neutralise tungsten
+    // light shot on a daylight balance.
+    //
+    // Params version 1 used linear gains R·(1+0.3t), G·(1−0.2·tint),
+    // B·(1−0.3t), which stopped at a 1.86:1 red/blue ratio. `upgradeParams`
+    // converts a version-1 pair to the version-2 pair with the same gains.
     class WhiteBalanceTool final : public ParamTool
     {
     public:
         static constexpr const char *kId = "white_balance";
+        static constexpr double kTemperatureStops = 2.0; // k
+        static constexpr double kTintStops = 1.0;        // m
         WhiteBalanceTool();
+        bool upgradeParams(nlohmann::json &params) const override;
         void apply(const ToolState &, Frame &io, const RenderContext &) const override;
         static void gains(double temperature, double tint, double &gr, double &gg, double &gb);
+        // The temperature and tint that make `input` neutral: R = B gives
+        // the temperature and G = their mean gives the tint. A cast beyond
+        // the sliders' reach is corrected as far as they go.
+        bool pick(const PickedColour &input, std::vector<std::pair<std::string, double>> &values,
+                  std::string &note, std::string &error) const override;
     };
 
     // out = L + (in − L)·s, s = 1 + amount
