@@ -394,14 +394,14 @@ actor ServerImageLoader {
 
                 if let image = await self.decodeImageInBackground(filePath: responsePath, priority: priority) {
                     // ADJ-2: cached under the revision the server actually
-                    // rendered (it resolves the current one) AND under the
-                    // requested key, so a tile holding a stale row still
-                    // paints and re-keys once the adjustments event lands.
+                    // rendered (it resolves the current one) and ONLY that
+                    // one. A tile holding a stale row still paints (it gets
+                    // the bitmap returned here) and re-keys once the
+                    // adjustments event lands; caching under the requested
+                    // key too would file this bitmap under a revision the
+                    // file can come back to (0, once its edits are removed).
                     let served = Int(response.renderRevision)
                     ImageCache.shared.setImage(image, forKey: ThumbnailAssetKey.make(filePath: filePath, size: size, revision: served))
-                    if served != revision {
-                        ImageCache.shared.setImage(image, forKey: ThumbnailAssetKey.make(filePath: filePath, size: size, revision: revision))
-                    }
                     logDebug("loadThumbnail SUCCESS for \(filePath)")
                     return image
                 } else {

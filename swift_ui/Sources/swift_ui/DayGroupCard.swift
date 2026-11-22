@@ -175,6 +175,10 @@ struct DayGroupCard: View {
             $0.displayWidth = file.displayWidth
             $0.displayHeight = file.displayHeight
             $0.cachedThumbnails = file.cachedThumbnails // STRIP-2
+            // ADJ-2: without this an edited file's tile keys its bitmap at
+            // revision 0, which is what every strip shows once the edits
+            // are removed.
+            $0.renderRevision = file.renderRevision
         }
     }
 
