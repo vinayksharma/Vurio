@@ -412,7 +412,7 @@ struct AdjustmentsPanel: View {
                         Image(systemName: node.enabled ? "eye" : "eye.slash")
                     }
                     .buttonStyle(.vurioIcon)
-                    .help(node.enabled ? "Bypass (⌘E)" : "Enable (⌘E)")
+                    .help(node.enabled ? "Mute (⌘E)" : "Unmute (⌘E)")
                     Button(action: { model.resetNode(node.id) }) {
                         Image(systemName: "arrow.counterclockwise")
                     }
@@ -530,7 +530,7 @@ private struct ChainListView: View {
 
     @ViewBuilder
     private func nodeMenu(_ node: ChainNode) -> some View {
-        Button(node.enabled ? "Bypass" : "Enable") { model.toggleNodeEnabled(node.id) }
+        Button(node.enabled ? "Mute" : "Unmute") { model.toggleNodeEnabled(node.id) }
         Button("Duplicate") { model.duplicateNode(node.id) }
         if !node.isSplit { Button("Reset") { model.resetNode(node.id) } }
         if node.isSplit { Button("Add lane") { model.addLane(toSplit: node.id) } }
@@ -543,7 +543,7 @@ private struct ChainListView: View {
 
     @ViewBuilder
     private func laneMenu(_ lane: Lane, splitID: String) -> some View {
-        Button(lane.enabled ? "Bypass lane" : "Enable lane") { model.setLaneEnabled(lane.id, !lane.enabled) }
+        Button(lane.enabled ? "Mute lane" : "Unmute lane") { model.setLaneEnabled(lane.id, !lane.enabled) }
         Button(model.soloLaneID == lane.id ? "Unsolo" : "Solo") {
             model.setSolo(model.soloLaneID == lane.id ? nil : lane.id)
         }
@@ -624,6 +624,26 @@ private struct RowDeleteButton: View {
     }
 }
 
+/// The mute toggle at the trailing edge of a chain row: an open eye while
+/// the row takes part in the render, a struck-through one while muted.
+private struct RowMuteButton: View {
+    let enabled: Bool
+    let what: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: enabled ? "eye" : "eye.slash")
+                .font(.system(size: 9))
+                .foregroundColor(enabled ? Theme.textSecondary : Theme.warning)
+                .frame(width: 16, height: 14)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(enabled ? "Mute \(what)" : "Unmute \(what)")
+    }
+}
+
 private struct ChainRow: View {
     @ObservedObject var model: AdjustmentsViewModel
     let node: ChainNode
@@ -644,13 +664,6 @@ private struct ChainRow: View {
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 9))
                 .foregroundColor(Theme.textSecondary.opacity(0.6))
-            Button(action: { model.toggleNodeEnabled(node.id) }) {
-                Image(systemName: node.enabled ? "circle.fill" : "circle")
-                    .font(.system(size: 8))
-                    .foregroundColor(node.enabled ? Theme.textAccent : Theme.textSecondary)
-            }
-            .buttonStyle(.plain)
-            .help(node.enabled ? "Bypass" : "Enable")
             Image(systemName: descriptor?.icon ?? "questionmark")
                 .font(.system(size: 11))
                 .foregroundColor(node.enabled ? Theme.textPrimary : Theme.textSecondary)
@@ -674,6 +687,9 @@ private struct ChainRow: View {
                     .font(.system(size: 9))
                     .foregroundColor(Theme.success)
                     .help("Being edited")
+            }
+            RowMuteButton(enabled: node.enabled, what: node.isSplit ? "the split" : "this tool") {
+                model.toggleNodeEnabled(node.id)
             }
             RowDeleteButton(help: node.isSplit ? "Remove the split and its lanes" : "Remove from the chain") {
                 model.removeNode(node.id)
@@ -720,13 +736,11 @@ private struct LaneRow: View {
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 9))
                 .foregroundColor(Theme.textSecondary.opacity(0.6))
-            Button(action: { model.setLaneEnabled(lane.id, !lane.enabled) }) {
-                Image(systemName: lane.enabled ? "circle.fill" : "circle")
-                    .font(.system(size: 8))
-                    .foregroundColor(lane.enabled ? colour : Theme.textSecondary)
-            }
-            .buttonStyle(.plain)
-            .help(lane.enabled ? "Bypass lane" : "Enable lane")
+            // The lane's colour (its rail on the steps below); the mute
+            // toggle is the eye at the trailing edge.
+            Image(systemName: lane.enabled ? "circle.fill" : "circle")
+                .font(.system(size: 8))
+                .foregroundColor(lane.enabled ? colour : Theme.textSecondary)
             Image(systemName: model.maskSource(lane.mask.primary.source)?.icon ?? "square.dashed")
                 .font(.system(size: 11))
                 .foregroundColor(lane.enabled ? Theme.textPrimary : Theme.textSecondary)
@@ -762,6 +776,7 @@ private struct LaneRow: View {
             }
             .buttonStyle(.plain)
             .help("Show the mask as a red tint")
+            RowMuteButton(enabled: lane.enabled, what: "the lane") { model.setLaneEnabled(lane.id, !lane.enabled) }
             RowDeleteButton(help: "Remove the lane and its steps") { model.removeLane(lane.id) }
         }
         .padding(.horizontal, 6)
@@ -815,7 +830,7 @@ private struct SplitInspector: View {
                     Image(systemName: node.enabled ? "eye" : "eye.slash")
                 }
                 .buttonStyle(.vurioIcon)
-                .help(node.enabled ? "Bypass (⌘E)" : "Enable (⌘E)")
+                .help(node.enabled ? "Mute (⌘E)" : "Unmute (⌘E)")
                 Button(action: { model.removeNode(node.id) }) {
                     Image(systemName: "trash")
                 }
@@ -877,7 +892,7 @@ private struct LaneInspector: View {
                     Image(systemName: lane.enabled ? "eye" : "eye.slash")
                 }
                 .buttonStyle(.vurioIcon)
-                .help(lane.enabled ? "Bypass lane (⌘E)" : "Enable lane (⌘E)")
+                .help(lane.enabled ? "Mute lane (⌘E)" : "Unmute lane (⌘E)")
                 Button(action: { model.removeLane(lane.id) }) {
                     Image(systemName: "trash")
                 }

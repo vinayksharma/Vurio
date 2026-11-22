@@ -639,7 +639,7 @@ final class AdjustmentsViewModel: ObservableObject {
     func setLaneEnabled(_ laneID: String, _ enabled: Bool) {
         guard let found = document.lane(laneID), found.lane.enabled != enabled else { return }
         document.updateLane(laneID) { $0.enabled = enabled }
-        chainChanged(label: enabled ? "Enable lane" : "Bypass lane")
+        chainChanged(label: enabled ? "Unmute lane" : "Mute lane")
     }
 
     /// Change the source of one mask component (defaults for the new source).
@@ -987,7 +987,7 @@ final class AdjustmentsViewModel: ObservableObject {
         document.update(id) { $0.enabled = enabled }
         if !enabled, editingCropID == id { exitCropEditing() }
         let label = descriptor(for: node.tool)?.label ?? node.tool
-        chainChanged(label: enabled ? "Enable \(label)" : "Bypass \(label)")
+        chainChanged(label: enabled ? "Unmute \(label)" : "Mute \(label)")
     }
 
     func toggleNodeEnabled(_ id: String) {
