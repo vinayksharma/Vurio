@@ -211,6 +211,58 @@ TEST(MaskSourceTest, BrushStrokesFollowThePictureAndEraseInOrder)
     EXPECT_FLOAT_EQ(cov.at<float>(100, 100), 0.0f);
 }
 
+TEST(MaskSourceTest, SnapToEdgesMovesAnOffsetBoundaryOntoTheHorizon)
+{
+    // Bright blue sky over dark green land with a wavy horizon; the
+    // "detected" mask ends 10 px short of it and is blurred, as a model's is.
+    const int W = 900, H = 600;
+    cv::Mat img(H, W, CV_32FC3), mask(H, W, CV_32FC1);
+    cv::RNG rng(7);
+    auto horizon = [](int x) { return 300 + static_cast<int>(20 * std::sin(x / 40.0)); };
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x)
+        {
+            bool sky = y < horizon(x);
+            float n = static_cast<float>(rng.gaussian(0.02));
+            img.at<cv::Vec3f>(y, x) = sky ? cv::Vec3f(0.85f + n, 0.7f + n, 0.6f + n)
+                                          : cv::Vec3f(0.08f + n, 0.2f + 3 * n, 0.1f + n);
+            mask.at<float>(y, x) = y < horizon(x) - 10 ? 1.0f : 0.0f;
+        }
+    cv::GaussianBlur(mask, mask, cv::Size(0, 0), 3);
+    cv::Mat before = mask.clone();
+    MaskMath::snapToEdges(img, mask);
+
+    double worst_sky = 1, worst_land = 0, far_change = 0;
+    for (int x = 20; x < W - 20; x += 7)
+    {
+        int h = horizon(x);
+        for (int y = h - 9; y <= h - 3; ++y) // the gap the mask left uncovered
+            worst_sky = std::min<double>(worst_sky, mask.at<float>(y, x));
+        for (int y = h + 3; y <= h + 9; ++y)
+            worst_land = std::max<double>(worst_land, mask.at<float>(y, x));
+        for (int y : {50, 150, 450, 550})
+            far_change = std::max<double>(far_change, std::abs(mask.at<float>(y, x) - before.at<float>(y, x)));
+    }
+    EXPECT_LT(before.at<float>(horizon(450) - 5, 450), 0.3) << "the gap was there to begin with";
+    EXPECT_GT(worst_sky, 0.9) << "sky right above the horizon is covered";
+    EXPECT_LT(worst_land, 0.1) << "land right below it is not";
+    EXPECT_LT(far_change, 1e-4) << "away from the boundary the mask is untouched";
+
+    // A mask with no boundary, and a picture with nothing to tell the
+    // sides apart, both come through sane.
+    cv::Mat full(H, W, CV_32FC1, cv::Scalar(1.0f));
+    MaskMath::snapToEdges(img, full);
+    EXPECT_EQ(cv::countNonZero(full != 1.0f), 0);
+    cv::Mat flat(H, W, CV_32FC3, cv::Scalar(0.5f, 0.5f, 0.5f)), soft = before.clone();
+    MaskMath::snapToEdges(flat, soft);
+    double mn, mx;
+    cv::minMaxLoc(soft, &mn, &mx);
+    EXPECT_GE(mn, 0.0);
+    EXPECT_LE(mx, 1.0);
+    EXPECT_GT(soft.at<float>(100, 450), 0.99);
+    EXPECT_LT(soft.at<float>(500, 450), 0.01);
+}
+
 TEST(MaskSourceTest, PerspectiveKeystonesAndCarriesMasksThroughTheHomography)
 {
     // CHAIN-7f. A feature at base (0.25, 0.5); a vertical keystone (top

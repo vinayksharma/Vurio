@@ -323,6 +323,8 @@ namespace MediaDedup::Adjustments
                         dst[x] = static_cast<float>(MaskMath::smoothstep(th - soft, th + soft, src[x]));
                 }
                 transport(shaped, fork, out);
+                if (s.number("snap", 1) != 0)
+                    MaskMath::snapToEdges(fork.pixels, out);
             }
 
             // Mask pixels → fork pixels: normalise by the mask size, then the
@@ -354,6 +356,7 @@ namespace MediaDedup::Adjustments
             {
                 schema_.number("threshold", "Threshold", 0, 1, 0.5, 0.01);
                 schema_.number("softness", "Softness", 0, 0.5, 0.15, 0.01);
+                schema_.flag("snap", "Follow image edges", true);
             }
 
             // CHAIN-5b: SAM sharpening of a model's coarse coverage. Part of
@@ -634,6 +637,93 @@ namespace MediaDedup::Adjustments
             if (c.source && c.source->detected())
                 return true;
         return false;
+    }
+
+    // The boundary is where a detector is least sure, so the band about it
+    // (kSnapBand of the short side each way) is not trusted at all. A
+    // guided-filter fit of coverage against the picture is made from the
+    // settled pixels on either side and read back inside the band: each
+    // band pixel takes the coverage of the side it looks like, and a pixel
+    // that is a blend of both takes a matching fraction. The guide is the
+    // colour axis that best tells the two sides apart.
+    void MaskMath::snapToEdges(const cv::Mat &pixels, cv::Mat &coverage)
+    {
+        constexpr double kSnapBand = 0.025;
+        constexpr float kEps = 1e-3f;
+        if (pixels.empty() || pixels.type() != CV_32FC3 || coverage.type() != CV_32FC1 || coverage.size() != pixels.size())
+            return;
+        const int d = std::max(2, static_cast<int>(std::lround(kSnapBand * std::min(pixels.cols, pixels.rows))));
+        const int r = 3 * d;
+        auto box = [](const cv::Mat &m, int radius) {
+            cv::Mat o;
+            cv::boxFilter(m, o, CV_32F, cv::Size(2 * radius + 1, 2 * radius + 1), cv::Point(-1, -1), true, cv::BORDER_REFLECT);
+            return o;
+        };
+
+        // Settled = the coverage does not change within d of the pixel.
+        cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(2 * d + 1, 2 * d + 1));
+        cv::Mat lo, hi;
+        cv::erode(coverage, lo, kernel, cv::Point(-1, -1), 1, cv::BORDER_REPLICATE);
+        cv::dilate(coverage, hi, kernel, cv::Point(-1, -1), 1, cv::BORDER_REPLICATE);
+        cv::Mat settled = 1.0f - (hi - lo);
+        double least = 1.0;
+        cv::minMaxLoc(settled, &least, nullptr);
+        if (least > 0.99)
+            return; // no boundary to move
+
+        // The guide: the colour difference between the two settled sides.
+        cv::Mat w_in = settled.mul(coverage), w_out = settled.mul(1.0f - coverage);
+        double n_in = cv::sum(w_in)[0], n_out = cv::sum(w_out)[0];
+        cv::Vec3d axis(0.0722, 0.7152, 0.2126);
+        if (n_in > 1 && n_out > 1)
+        {
+            cv::Mat w3;
+            cv::Vec3d mean_in, mean_out;
+            cv::cvtColor(w_in, w3, cv::COLOR_GRAY2BGR);
+            cv::Scalar s_in = cv::sum(pixels.mul(w3));
+            cv::cvtColor(w_out, w3, cv::COLOR_GRAY2BGR);
+            cv::Scalar s_out = cv::sum(pixels.mul(w3));
+            cv::Vec3d diff;
+            for (int c = 0; c < 3; ++c)
+                diff[c] = s_in[c] / n_in - s_out[c] / n_out;
+            double len = cv::norm(diff);
+            if (len > 0.02)
+                axis = diff / len;
+        }
+        cv::Mat I;
+        cv::transform(pixels, I, cv::Matx13f(static_cast<float>(axis[0]), static_cast<float>(axis[1]), static_cast<float>(axis[2])));
+
+        cv::Mat w = settled.mul(settled) + 1e-4f;
+        cv::Mat sum_w = box(w, r);
+        auto wbox = [&](const cv::Mat &m) { return cv::Mat(box(w.mul(m), r) / sum_w); };
+        cv::Mat mean_I = wbox(I);
+        cv::Mat var_I = wbox(I.mul(I)) - mean_I.mul(mean_I);
+        cv::Mat mean_p = wbox(coverage);
+        cv::Mat cov = wbox(I.mul(coverage)) - mean_I.mul(mean_p);
+        cv::Mat a = cov / (var_I + kEps);
+        cv::Mat b = mean_p - a.mul(mean_I);
+        // Each pixel sits in many windows; the ones that saw both sides
+        // (their coverage varies) know the edge, the rest only know their
+        // own side, so the fits are averaged by that variance.
+        cv::Mat g = wbox(coverage.mul(coverage)) - mean_p.mul(mean_p);
+        cv::max(g, 0.0f, g);
+        g += 1e-6f;
+        cv::Mat sum_g = box(g, r);
+        cv::Mat q = (box(g.mul(a), r) / sum_g).mul(I) + box(g.mul(b), r) / sum_g;
+        // The fit is linear in the guide, so texture on either side shows
+        // up in it; a pixel takes the side it looks more like, and only a
+        // real in-between pixel stays partial.
+        for (int y = 0; y < q.rows; ++y)
+        {
+            float *row = q.ptr<float>(y);
+            for (int x = 0; x < q.cols; ++x)
+                row[x] = static_cast<float>(smoothstep(0.25, 0.75, row[x]));
+        }
+
+        // Only the band changes; the hand-over to the settled coverage is
+        // gradual so the band's own edge never shows.
+        cv::Mat keep = box(settled, std::max(1, d / 2));
+        coverage = coverage.mul(keep) + q.mul(1.0f - keep);
     }
 
     void LaneMask::coverage(const Frame &fork, cv::Mat &out, const MaskContext &ctx) const

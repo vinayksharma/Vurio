@@ -106,5 +106,12 @@ namespace MediaDedup::Adjustments
             t = t < 0 ? 0 : (t > 1 ? 1 : t);
             return t * t * (3 - 2 * t);
         }
+
+        // Pulls a coverage's boundary onto the picture's own edge beside
+        // it. A detector's outline sits a little off the real one, and
+        // any lane tool then draws that gap as a rim. `pixels` is the
+        // fork (CV_32FC3 BGR), `coverage` CV_32FC1 of the same size; only
+        // a band about the boundary changes.
+        void snapToEdges(const cv::Mat &pixels, cv::Mat &coverage);
     }
 }
