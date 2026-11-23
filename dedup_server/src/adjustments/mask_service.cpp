@@ -87,7 +87,7 @@ namespace MediaDedup::Adjustments
 
     const std::vector<std::string> &MaskService::detectedSources()
     {
-        static const std::vector<std::string> ids = {"subject", "people", "faces", "prompt"};
+        static const std::vector<std::string> ids = {"subject", "sky", "people", "faces", "prompt"};
         return ids;
     }
 
@@ -187,7 +187,7 @@ namespace MediaDedup::Adjustments
         }
         if (source == "faces")
             return static_cast<bool>(faces_);
-        if (source == "prompt")
+        if (source == "prompt" || source == "sky")
             return MaskDetectors::promptStatus().available;
         if (source == "people")
             return MaskDetectors::peopleStatus().available;
@@ -216,6 +216,17 @@ namespace MediaDedup::Adjustments
             s.loaded = vision || prompt.loaded;
             s.available = enabled && (vision || prompt.available);
             s.note = vision ? "Apple Vision foreground lifting" : (prompt.available ? "CLIPSeg \"the main subject\"" : prompt.note);
+            out.push_back(s);
+        }
+        {
+            SourceStatus s;
+            s.id = "sky";
+            s.backend = "onnx";
+            s.model_path = prompt.model_path;
+            s.model_present = prompt.model_present;
+            s.loaded = prompt.loaded;
+            s.available = enabled && prompt.available;
+            s.note = prompt.available ? std::string("CLIPSeg \"") + kSkyPrompt + "\"" : prompt.note;
             out.push_back(s);
         }
         {
@@ -516,6 +527,11 @@ namespace MediaDedup::Adjustments
             if (!MaskDetectors::prompt(base, text, coarse, &error))
                 return false;
         }
+        else if (job.source == "sky")
+        {
+            if (!MaskDetectors::prompt(base, kSkyPrompt, coarse, &error))
+                return false;
+        }
         else if (job.source == "people")
         {
             if (!MaskDetectors::people(base, coarse, &error))
@@ -605,7 +621,7 @@ namespace MediaDedup::Adjustments
     {
         // CHAIN-5b: the key says whether SAM will refine, so a mask cached
         // before the model arrived is not mistaken for a refined one.
-        if (source != "prompt" && source != "people" && source != "subject")
+        if (source != "prompt" && source != "people" && source != "subject" && source != "sky")
             return canonical_params;
         {
             std::lock_guard<std::mutex> lock(mutex_);

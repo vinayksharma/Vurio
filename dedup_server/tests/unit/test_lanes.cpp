@@ -62,7 +62,7 @@ namespace
 TEST(MaskSourceTest, RegistryServesFiveProceduralSourcesFirst)
 {
     const auto &sources = MaskRegistry::instance().sources();
-    ASSERT_EQ(sources.size(), 10u) << "six procedural (brush since CHAIN-7c), four detected (CHAIN-5)";
+    ASSERT_EQ(sources.size(), 11u) << "six procedural (brush since CHAIN-7c), five detected (CHAIN-5, sky)";
     EXPECT_EQ(sources[0]->id(), "full");
     EXPECT_NE(MaskRegistry::instance().find("radial"), nullptr);
     for (size_t i = 0; i < 5; ++i)
@@ -125,7 +125,7 @@ TEST(MaskSourceTest, LinearRadialLuminanceAndColourFormulas)
     EXPECT_GT(cov.at<float>(50, 97), 0.05f) << "feather bleeds across the edge";
     EXPECT_LT(cov.at<float>(50, 97), 0.95f);
 
-    EXPECT_FALSE(LaneMask::parse(json{{"components", json::array({{{"source", "sky"}}})}}, linear, error));
+    EXPECT_FALSE(LaneMask::parse(json{{"components", json::array({{{"source", "moon"}}})}}, linear, error));
     EXPECT_NE(error.find("unknown mask source"), std::string::npos);
     EXPECT_FALSE(LaneMask::parse(json{{"components", json::array({{{"source", "radial"}, {"params", {{"rx", 99}}}}})}}, linear, error));
     EXPECT_FALSE(LaneMask::parse(json{{"feather", 2}}, linear, error));

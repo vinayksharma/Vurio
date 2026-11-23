@@ -112,6 +112,8 @@ namespace MediaDedup::Adjustments
         // The detector list the service knows: the ids the registry's
         // detected sources use.
         static const std::vector<std::string> &detectedSources();
+        // What the "sky" source asks the prompt model for.
+        static constexpr const char *kSkyPrompt = "the sky";
 
     private:
         MaskService() = default;

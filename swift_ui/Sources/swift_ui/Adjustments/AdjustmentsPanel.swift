@@ -554,6 +554,7 @@ private struct ChainListView: View {
         Button("Duplicate") { model.duplicateNode(node.id) }
         if !node.isSplit { Button("Reset") { model.resetNode(node.id) } }
         if node.isSplit { Button("Add lane") { model.addLane(toSplit: node.id) } }
+        if node.isSplit, model.maskSource("sky") != nil { Button("Add sky lane") { model.addLane(toSplit: node.id, source: "sky") } }
         Divider()
         Button("Move up") { model.moveNode(node.id, by: -1) }
         Button("Move down") { model.moveNode(node.id, by: 1) }
@@ -869,10 +870,20 @@ private struct SplitInspector: View {
                 .foregroundColor(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 12)
-            Button(action: { model.addLane(toSplit: node.id) }) {
-                Label("Add lane", systemImage: "plus")
+            HStack(spacing: 8) {
+                Button(action: { model.addLane(toSplit: node.id) }) {
+                    Label("Add lane", systemImage: "plus")
+                }
+                .vurioButtonStyle()
+                // A lane whose mask is the sky, found by the server.
+                if let sky = model.maskSource("sky") {
+                    Button(action: { model.addLane(toSplit: node.id, source: sky.id) }) {
+                        Label("Add sky lane", systemImage: sky.icon)
+                    }
+                    .vurioButtonStyle()
+                    .help("Add a lane that covers the sky, found automatically")
+                }
             }
-            .vurioButtonStyle()
             .disabled(!hasImage)
             .padding(.horizontal, 12)
             .padding(.bottom, 10)

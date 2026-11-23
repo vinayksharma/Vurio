@@ -657,14 +657,24 @@ final class AdjustmentsViewModel: ObservableObject {
 
     // MARK: - Lanes (CHAIN-4, docs §9.2)
 
-    func addLane(toSplit splitID: String) {
+    /// A new lane on the split; with `source`, one whose mask is that
+    /// source at its defaults and which is named after it ("Sky").
+    func addLane(toSplit splitID: String, source sourceID: String? = nil) {
         document = currentDocument()
         guard let split = document.node(splitID), split.isSplit else { return }
-        let lane = Lane(name: "Lane \((split.lanes?.count ?? 0) + 1)")
+        var lane = Lane(name: "Lane \((split.lanes?.count ?? 0) + 1)")
+        var label = "Add lane"
+        if let sourceID, let source = maskSource(sourceID), !lane.mask.components.isEmpty {
+            let taken = Set((split.lanes ?? []).map(\.name))
+            lane.name = taken.contains(source.label) ? "\(source.label) \((split.lanes?.count ?? 0) + 1)" : source.label
+            lane.mask.components[0] = MaskComponent(source: sourceID, params: GenericToolUI(descriptor: source).encode() ?? [:],
+                                                    op: lane.mask.components[0].op)
+            label = "Add \(source.label.lowercased()) lane"
+        }
         document.update(splitID) { $0.lanes?.append(lane) }
         rebuildTools()
         selectedNodeID = lane.id
-        chainChanged(label: "Add lane")
+        chainChanged(label: label)
     }
 
     func removeLane(_ laneID: String) {

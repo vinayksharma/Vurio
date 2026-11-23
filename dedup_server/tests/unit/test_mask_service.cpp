@@ -137,8 +137,8 @@ TEST(MaskServiceTest, RegistryServesTheDetectedSourcesBehindTheSameInterface)
     for (const MaskSource *m : sources)
         if (m->detected())
             ++detected;
-    EXPECT_EQ(detected, 4);
-    for (const char *id : {"subject", "people", "faces", "prompt"})
+    EXPECT_EQ(detected, 5);
+    for (const char *id : {"subject", "sky", "people", "faces", "prompt"})
     {
         const MaskSource *m = MaskRegistry::instance().find(id);
         ASSERT_NE(m, nullptr) << id;
@@ -400,6 +400,45 @@ TEST(MaskDetectorsTest, ClipSegFindsAColouredSquareWhenTheModelIsPresent)
     EXPECT_TRUE(MaskDetectors::promptStatus().loaded);
     MaskDetectors::unload();
     EXPECT_FALSE(MaskDetectors::promptStatus().loaded);
+}
+
+// The "sky" source is the prompt model asked for the sky.
+TEST(MaskDetectorsTest, SkyPromptFindsTheSkyOfALandscapeWhenTheModelIsPresent)
+{
+    MaskDetectors::Models m;
+    m.prompt_model = "models/clipseg-rd64-refined-q8.onnx";
+    m.vocab_json = "models/vocab.json";
+    m.merges_txt = "models/merges.txt";
+    if (!std::filesystem::exists(m.prompt_model) || !std::filesystem::exists(m.vocab_json))
+        GTEST_SKIP() << "CLIPSeg model not present (dedup_server/scripts/ensure_models.sh)";
+    MaskDetectors::configure(m);
+    // A blue sky paling toward the horizon with two clouds, over green
+    // hills with a ragged tree line.
+    cv::Mat img(512, 768, CV_8UC3);
+    for (int y = 0; y < img.rows; ++y)
+    {
+        double t = std::min(1.0, y / 300.0);
+        img.row(y).setTo(cv::Scalar(235 - 20 * t, 150 + 60 * t, 90 + 110 * t));
+    }
+    cv::ellipse(img, cv::Point(200, 90), cv::Size(90, 30), 0, 0, 360, cv::Scalar(245, 245, 245), cv::FILLED);
+    cv::ellipse(img, cv::Point(560, 140), cv::Size(70, 24), 0, 0, 360, cv::Scalar(240, 240, 240), cv::FILLED);
+    cv::RNG rng(3);
+    for (int x = 0; x < img.cols; ++x)
+    {
+        int top = 300 + static_cast<int>(25 * std::sin(x / 60.0)) + rng.uniform(-6, 6);
+        for (int y = top; y < img.rows; ++y)
+            img.at<cv::Vec3b>(y, x) = cv::Vec3b(static_cast<uchar>(30 + rng.uniform(0, 20)), static_cast<uchar>(90 + rng.uniform(0, 50)),
+                                                static_cast<uchar>(40 + rng.uniform(0, 20)));
+    }
+    cv::GaussianBlur(img, img, cv::Size(0, 0), 1.2);
+    cv::Mat out;
+    std::string error;
+    ASSERT_TRUE(MaskDetectors::prompt(img, MaskService::kSkyPrompt, out, &error)) << error;
+    double sky = cv::mean(out(cv::Rect(40, 20, 688, 220)))[0];
+    double ground = cv::mean(out(cv::Rect(40, 360, 688, 130)))[0];
+    EXPECT_GT(sky, 0.5) << "sky " << sky;
+    EXPECT_LT(ground, 0.2) << "ground " << ground;
+    MaskDetectors::unload();
 }
 
 // ---- CHAIN-5b: SAM refinement -------------------------------------------

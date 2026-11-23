@@ -391,6 +391,29 @@ namespace MediaDedup::Adjustments
             }
         };
 
+        // The sky, found without being asked how: the prompt model with a
+        // fixed prompt (MaskService), so a sky lane is one click.
+        class SkyMask final : public DetectedMask
+        {
+        public:
+            SkyMask()
+            {
+                descriptor_.id = "sky";
+                descriptor_.label = "Sky";
+                descriptor_.category = ToolCategory::Mask;
+                descriptor_.icon = "cloud.sun";
+                descriptor_.summary = "sky";
+                refineParam();
+                shapeParams();
+            }
+
+        protected:
+            nlohmann::json detectorParams(const ParamState &s) const override
+            {
+                return withRefine(nlohmann::json::object(), s);
+            }
+        };
+
         class PeopleMask final : public DetectedMask
         {
         public:
@@ -482,6 +505,7 @@ namespace MediaDedup::Adjustments
         owned_.push_back(std::make_unique<LuminanceMask>());
         owned_.push_back(std::make_unique<ColorRangeMask>());
         owned_.push_back(std::make_unique<SubjectMask>());
+        owned_.push_back(std::make_unique<SkyMask>());
         owned_.push_back(std::make_unique<PeopleMask>());
         owned_.push_back(std::make_unique<FacesMask>());
         owned_.push_back(std::make_unique<PromptMask>());
