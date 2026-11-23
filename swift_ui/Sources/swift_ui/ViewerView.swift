@@ -318,7 +318,13 @@ struct ViewerView: View {
             // pinch gesture above are untouched.
             .overlay(
                 ScrollWheelCatcher { deltaY, location, isPrecise in
-                    zoom(by: deltaY, at: location, in: geometry.size, isPrecise: isPrecise)
+                    // While painting a mask the wheel sizes the brush; the
+                    // pinch and the zoom buttons still zoom.
+                    if adjustments.brushLaneID != nil {
+                        adjustments.scrollBrushRadius(deltaY, isPrecise: isPrecise)
+                    } else {
+                        zoom(by: deltaY, at: location, in: geometry.size, isPrecise: isPrecise)
+                    }
                 }
             )
             // Open hand over the image, grab while panning. Hit-test-transparent
@@ -404,12 +410,12 @@ struct ViewerView: View {
                         .frame(width: area.width, height: area.height)
                         .offset(panOffset)
                 }
-                // CHAIN-7c: the brush mask's paint surface, at fit zoom like
-                // the pins.
-                if !editing, scale == 1, let laneID = adjustments.brushLaneID,
+                // CHAIN-7c: the brush mask's paint surface, at any zoom.
+                if !editing, let laneID = adjustments.brushLaneID,
                    let brushTool = adjustments.maskTool(for: laneID),
                    let found = adjustments.document.lane(laneID) {
                     BrushOverlay(tool: brushTool, frame: frame, layout: layout,
+                                 area: area, zoom: scale, pan: panOffset,
                                  radius: adjustments.brushRadius, erase: adjustments.brushErase,
                                  colour: AdjustmentsViewModel.laneColor(found.laneIndex),
                                  onChange: { interactive in
@@ -417,7 +423,6 @@ struct ViewerView: View {
                                                                  interactive: interactive)
                                  })
                         .frame(width: area.width, height: area.height)
-                        .offset(panOffset)
                 }
             } else {
                 Image(nsImage: image)
@@ -499,7 +504,7 @@ struct ViewerView: View {
     private var magnifyGesture: some Gesture {
         MagnificationGesture()
             .onChanged { value in
-                guard !adjustments.isCropEditing, !adjustments.isRulerMode, adjustments.brushLaneID == nil else { return }
+                guard !adjustments.isCropEditing, !adjustments.isRulerMode else { return }
                 scale = clampScale(gestureScaleBase * value.magnitude)
             }
             .onEnded { _ in

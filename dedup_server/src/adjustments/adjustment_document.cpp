@@ -407,9 +407,10 @@ namespace MediaDedup::Adjustments
     namespace
     {
         bool compileChain(const nlohmann::json &chain, const ToolRegistry &registry, RenderPlan &out,
-                          std::string &error, bool top_level);
+                          std::string &error, bool top_level, const std::set<std::string> &keep_lanes);
 
-        bool compileSplit(const nlohmann::json &node, const ToolRegistry &registry, RenderPlan::Node &n, std::string &error)
+        bool compileSplit(const nlohmann::json &node, const ToolRegistry &registry, RenderPlan::Node &n, std::string &error,
+                          const std::set<std::string> &keep_lanes)
         {
             std::string tag = n.id.empty() ? std::string() : "node=" + n.id + " ";
             nlohmann::json lanes = node.value("lanes", nlohmann::json::array());
@@ -435,22 +436,26 @@ namespace MediaDedup::Adjustments
                         l.strength = merge["strength"].get<double>();
                 }
                 l.steps = std::make_shared<RenderPlan>();
-                if (!compileChain(lane.value("steps", nlohmann::json::array()), registry, *l.steps, error, false))
+                if (!compileChain(lane.value("steps", nlohmann::json::array()), registry, *l.steps, error, false, keep_lanes))
                     return false;
                 // A lane with nothing to do and a plain merge changes no
                 // pixel; one with a non-normal merge still blends the fork
                 // onto the trunk (a self-multiply darkens), so it stays.
-                if (l.steps->isIdentity() && l.blend == "normal")
-                    continue;
-                if (l.strength <= 0.0)
-                    continue;
+                // A view mode (solo, mask tint) still has that lane to show:
+                // it stays in the plan, marked as changing nothing.
+                if ((l.steps->isIdentity() && l.blend == "normal") || l.strength <= 0.0)
+                {
+                    if (l.id.empty() || !keep_lanes.count(l.id))
+                        continue;
+                    l.no_op = true;
+                }
                 n.lanes.push_back(std::move(l));
             }
             return true;
         }
 
         bool compileChain(const nlohmann::json &chain, const ToolRegistry &registry, RenderPlan &out,
-                          std::string &error, bool top_level)
+                          std::string &error, bool top_level, const std::set<std::string> &keep_lanes)
         {
             RenderPlan plan;
             nlohmann::json canonical_prefix = nlohmann::json::array();
@@ -467,7 +472,7 @@ namespace MediaDedup::Adjustments
                 {
                     RenderPlan::Node n;
                     n.id = id;
-                    if (!compileSplit(node, registry, n, error))
+                    if (!compileSplit(node, registry, n, error, keep_lanes))
                         return false;
                     n.prefix_hash = std::to_string(AdjustmentDocument::fnv1a32(canonical_prefix.dump()));
                     n.doc_index = i;
@@ -505,10 +510,11 @@ namespace MediaDedup::Adjustments
         }
     }
 
-    bool AdjustmentDocument::compile(const ToolRegistry &registry, RenderPlan &out, std::string &error) const
+    bool AdjustmentDocument::compile(const ToolRegistry &registry, RenderPlan &out, std::string &error,
+                                     const std::set<std::string> &keep_lanes) const
     {
         RenderPlan plan;
-        if (!compileChain(chain, registry, plan, error, true))
+        if (!compileChain(chain, registry, plan, error, true, keep_lanes))
             return false;
         plan.setRevision(revision());
         out = std::move(plan);

@@ -32,6 +32,7 @@ namespace MediaDedup::Adjustments
         bool before = false;             // identity render
         std::string solo_lane_id;        // CHAIN-4: the lane alone over grey
         std::string overlay_lane_id;     // CHAIN-4: red tint where the lane's mask covers
+        std::string focus_lane_id;       // lane thumbnail: dim and grey outside the lane's mask
     };
 
     struct PreviewResult

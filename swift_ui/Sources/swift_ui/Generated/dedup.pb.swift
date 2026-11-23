@@ -1822,6 +1822,10 @@ struct Vurio_Dedup_RenderPreviewRequest: Sendable {
 
   var overlayLaneID: String = String()
 
+  /// The lane's thumbnail view: the normal render, darkened and drained of
+  /// colour wherever the lane's mask does not reach.
+  var focusLaneID: String = String()
+
   var unknownFields = SwiftProtobuf.UnknownStorage()
 
   init() {}
@@ -5959,7 +5963,7 @@ extension Vurio_Dedup_PickParamsResponse: SwiftProtobuf.Message, SwiftProtobuf._
 
 extension Vurio_Dedup_RenderPreviewRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   static let protoMessageName: String = _protobuf_package + ".RenderPreviewRequest"
-  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{3}document_json\0\u{3}max_side\0\u{1}quality\0\u{1}seq\0\u{3}truncate_at_node_id\0\u{1}before\0\u{3}solo_lane_id\0\u{3}overlay_lane_id\0")
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{3}document_json\0\u{3}max_side\0\u{1}quality\0\u{1}seq\0\u{3}truncate_at_node_id\0\u{1}before\0\u{3}solo_lane_id\0\u{3}overlay_lane_id\0\u{3}focus_lane_id\0")
 
   mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -5976,6 +5980,7 @@ extension Vurio_Dedup_RenderPreviewRequest: SwiftProtobuf.Message, SwiftProtobuf
       case 7: try { try decoder.decodeSingularBoolField(value: &self.before) }()
       case 8: try { try decoder.decodeSingularStringField(value: &self.soloLaneID) }()
       case 9: try { try decoder.decodeSingularStringField(value: &self.overlayLaneID) }()
+      case 10: try { try decoder.decodeSingularStringField(value: &self.focusLaneID) }()
       default: break
       }
     }
@@ -6009,6 +6014,9 @@ extension Vurio_Dedup_RenderPreviewRequest: SwiftProtobuf.Message, SwiftProtobuf
     if !self.overlayLaneID.isEmpty {
       try visitor.visitSingularStringField(value: self.overlayLaneID, fieldNumber: 9)
     }
+    if !self.focusLaneID.isEmpty {
+      try visitor.visitSingularStringField(value: self.focusLaneID, fieldNumber: 10)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -6022,6 +6030,7 @@ extension Vurio_Dedup_RenderPreviewRequest: SwiftProtobuf.Message, SwiftProtobuf
     if lhs.before != rhs.before {return false}
     if lhs.soloLaneID != rhs.soloLaneID {return false}
     if lhs.overlayLaneID != rhs.overlayLaneID {return false}
+    if lhs.focusLaneID != rhs.focusLaneID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

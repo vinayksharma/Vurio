@@ -904,6 +904,9 @@ message RenderPreviewRequest {
   // lane's coverage tinted red on the normal render.
   string solo_lane_id = 8;
   string overlay_lane_id = 9;
+  // The lane's thumbnail view: the normal render, darkened and drained of
+  // colour wherever the lane's mask does not reach.
+  string focus_lane_id = 10;
 }
 
 message PreviewFrame {

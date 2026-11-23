@@ -45,6 +45,7 @@ namespace MediaDedup::Adjustments
             std::shared_ptr<RenderPlan> steps;     // the lane's sub-plan
             std::string blend = "normal";          // merge
             double strength = 1.0;                 // merge
+            bool no_op = false;                    // changes no pixel; kept for a view mode only
         };
 
         // View modes the preview asks for (docs §5.4): render a lane alone
@@ -53,6 +54,9 @@ namespace MediaDedup::Adjustments
         {
             std::string solo_lane_id;
             std::string overlay_lane_id;
+            // The lane's thumbnail: once its split has merged, everything
+            // outside the lane's coverage is dimmed and drained of colour.
+            std::string focus_lane_id;
             // CHAIN-5: detected masks are looked up by file; a preview
             // never computes one inline (the lane renders as a no-op and
             // its id lands in `pending_lanes`), a thumbnail or full render
@@ -61,7 +65,7 @@ namespace MediaDedup::Adjustments
             bool inline_masks;
             std::shared_ptr<std::vector<std::string>> pending_lanes;
             RenderOptions() : inline_masks(true) {}
-            bool any() const { return !solo_lane_id.empty() || !overlay_lane_id.empty(); }
+            bool any() const { return !solo_lane_id.empty() || !overlay_lane_id.empty() || !focus_lane_id.empty(); }
         };
 
         RenderPlan() = default;

@@ -27,6 +27,7 @@ namespace MediaDedup::Adjustments
                 lc.steps = l.steps ? std::make_shared<RenderPlan>(*l.steps) : nullptr;
                 lc.blend = l.blend;
                 lc.strength = l.strength;
+                lc.no_op = l.no_op;
                 c.lanes.push_back(std::move(lc));
             }
             c.prefix_hash = n.prefix_hash;
@@ -250,6 +251,7 @@ namespace MediaDedup::Adjustments
         Frame fork;
         fork.pixels = frame.pixels.clone();
         fork.base_to_canvas = frame.base_to_canvas;
+        cv::Mat focus; // the focused lane's coverage, when it is one of these
         for (const Lane &lane : node.lanes)
         {
             Frame laneOut;
@@ -273,12 +275,17 @@ namespace MediaDedup::Adjustments
                 frame.pixels = grey;
                 return;
             }
-            cv::Mat blended;
-            if (lane.blend == "normal")
-                blended = laneOut.pixels;
-            else
-                Blend::apply(lane.blend, frame.pixels, laneOut.pixels, blended);
-            mixMasked(frame.pixels, blended, lane.strength, coverage);
+            // A no-op lane merges nothing (mixing its untouched fork back
+            // would undo the lanes before it); it is here to be looked at.
+            if (!lane.no_op)
+            {
+                cv::Mat blended;
+                if (lane.blend == "normal")
+                    blended = laneOut.pixels;
+                else
+                    Blend::apply(lane.blend, frame.pixels, laneOut.pixels, blended);
+                mixMasked(frame.pixels, blended, lane.strength, coverage);
+            }
 
             if (lane.id == options.overlay_lane_id && !options.overlay_lane_id.empty())
             {
@@ -286,6 +293,18 @@ namespace MediaDedup::Adjustments
                 cv::Mat red(frame.pixels.size(), CV_32FC3, cv::Scalar(0.1f, 0.1f, 1.0f));
                 mixMasked(frame.pixels, red, 0.5, coverage);
             }
+            if (lane.id == options.focus_lane_id && !options.focus_lane_id.empty())
+                focus = coverage.clone();
+        }
+        if (!focus.empty())
+        {
+            // The picture as it is where the lane reaches; a dark grey
+            // version of itself everywhere else.
+            cv::Mat grey, dim, outside = 1.0f - focus;
+            cv::transform(frame.pixels, grey, cv::Matx13f(0.0722f, 0.7152f, 0.2126f));
+            grey *= 0.3f;
+            cv::merge(std::vector<cv::Mat>{grey, grey, grey}, dim);
+            mixMasked(frame.pixels, dim, 1.0, outside);
         }
     }
 

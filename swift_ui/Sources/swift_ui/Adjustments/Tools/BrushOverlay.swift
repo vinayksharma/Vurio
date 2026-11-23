@@ -45,7 +45,8 @@ struct BrushStroke {
 /// erase setting) to the selected component's `strokes`; every tick
 /// previews, the release commits. The pointer shows the brush as a circle
 /// of the brush's size; the server tints the lane's coverage red
-/// underneath, so what is painted is what the mask covers.
+/// underneath, so what is painted is what the mask covers. It follows the
+/// viewer's zoom and pan, so a zoomed-in picture is painted where it shows.
 ///
 /// Mouse events come from an AppKit surface (`BrushSurface`) rather than a
 /// SwiftUI `DragGesture`: with a hover tracker on the same view the
@@ -54,6 +55,10 @@ struct BrushOverlay: View {
     @ObservedObject var tool: GenericToolUI
     let frame: PreviewFrame
     let layout: AdjustmentLayout
+    /// The viewer's zoom (about the centre of `area`) and pan.
+    var area: CGSize = .zero
+    var zoom: CGFloat = 1
+    var pan: CGSize = .zero
     let radius: Double
     let erase: Bool
     let colour: Color
@@ -63,7 +68,7 @@ struct BrushOverlay: View {
     @State private var hover: CGPoint?
     @State private var current: BrushStroke?
 
-    private var pointsPerBase: CGFloat { frame.affineScale * layout.fitRatio }
+    private var pointsPerBase: CGFloat { frame.affineScale * layout.fitRatio * zoom }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -112,7 +117,10 @@ struct BrushOverlay: View {
         }
     }
 
-    private func toBase(_ q: CGPoint) -> CGPoint {
+    private func toBase(_ viewPoint: CGPoint) -> CGPoint {
+        // Undo the zoom about the area's centre, and the pan.
+        let q = CGPoint(x: area.width / 2 + (viewPoint.x - area.width / 2 - pan.width) / zoom,
+                        y: area.height / 2 + (viewPoint.y - area.height / 2 - pan.height) / zoom)
         let px = CGPoint(x: (q.x - layout.canvasOrigin.x) / layout.fitRatio, y: (q.y - layout.canvasOrigin.y) / layout.fitRatio)
         let base = frame.unproject(px)
         return CGPoint(x: min(max(base.x, -0.5), 1.5), y: min(max(base.y, -0.5), 1.5))
@@ -120,7 +128,9 @@ struct BrushOverlay: View {
 
     private func toView(_ base: CGPoint) -> CGPoint {
         let px = frame.project(base)
-        return CGPoint(x: layout.canvasOrigin.x + px.x * layout.fitRatio, y: layout.canvasOrigin.y + px.y * layout.fitRatio)
+        let q = CGPoint(x: layout.canvasOrigin.x + px.x * layout.fitRatio, y: layout.canvasOrigin.y + px.y * layout.fitRatio)
+        return CGPoint(x: area.width / 2 + (q.x - area.width / 2) * zoom + pan.width,
+                       y: area.height / 2 + (q.y - area.height / 2) * zoom + pan.height)
     }
 }
 

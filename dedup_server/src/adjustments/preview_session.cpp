@@ -1,3 +1,4 @@
+#include <set>
 #include "adjustments/preview_session.hpp"
 #include "adjustments/chain_engine.hpp"
 #include "adjustments/tool_registry.hpp"
@@ -106,7 +107,7 @@ namespace MediaDedup::Adjustments
                                                  static_cast<double>(scaled.height()) / base_.height(), 0));
         }
         // View modes change every node's output: their own cache lines.
-        const std::string wk = workingKey(scaled) + (options.any() ? "|solo=" + options.solo_lane_id + "|ov=" + options.overlay_lane_id : "");
+        const std::string wk = workingKey(scaled) + (options.any() ? "|solo=" + options.solo_lane_id + "|ov=" + options.overlay_lane_id + "|fo=" + options.focus_lane_id : "");
 
         // Longest cached prefix.
         const auto &nodes = plan.nodes();
@@ -359,8 +360,15 @@ namespace MediaDedup::Adjustments
             if (!text.empty())
             {
                 AdjustmentDocument doc;
+                std::set<std::string> viewed;
+                if (!request.solo_lane_id.empty())
+                    viewed.insert(request.solo_lane_id);
+                if (!request.overlay_lane_id.empty())
+                    viewed.insert(request.overlay_lane_id);
+                if (!request.focus_lane_id.empty())
+                    viewed.insert(request.focus_lane_id);
                 if (!AdjustmentDocument::parse(text, doc, error) ||
-                    !doc.compile(ToolRegistry::instance(), plan, error))
+                    !doc.compile(ToolRegistry::instance(), plan, error, viewed))
                 {
                     response.outcome = Outcome::Invalid;
                     response.error = error;
@@ -393,6 +401,7 @@ namespace MediaDedup::Adjustments
         RenderPlan::RenderOptions options;
         options.solo_lane_id = request.solo_lane_id;
         options.overlay_lane_id = request.overlay_lane_id;
+        options.focus_lane_id = request.focus_lane_id;
         if (!session->render(plan, request.max_side > 0 ? request.max_side : 2560,
                              request.quality > 0 ? request.quality : 85, response.result, error, options))
         {

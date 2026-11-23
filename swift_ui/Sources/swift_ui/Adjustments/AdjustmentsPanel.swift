@@ -750,7 +750,7 @@ private struct LaneRow: View {
         let selected = model.selectedNodeID == lane.id
         let colour = AdjustmentsViewModel.laneColor(laneIndex)
         let solo = model.soloLaneID == lane.id
-        let overlay = model.overlayLaneID == lane.id
+        let overlay = model.shownOverlayLaneID == lane.id
         HStack(spacing: 6) {
             RoundedRectangle(cornerRadius: 1).fill(colour).frame(width: 3)
             Image(systemName: "line.3.horizontal")
@@ -765,6 +765,11 @@ private struct LaneRow: View {
                 .font(.system(size: 11))
                 .foregroundColor(lane.enabled ? Theme.textPrimary : Theme.textSecondary)
                 .frame(width: 16)
+            // What the lane covers: the picture, dark and grey wherever
+            // its mask does not reach. Hover for a larger look.
+            if let thumb = model.laneThumbnails.images[lane.id] {
+                LaneThumbnailView(image: thumb, colour: colour)
+            }
             Text(lane.name)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(lane.enabled ? Theme.textPrimary : Theme.textSecondary)
@@ -974,7 +979,7 @@ private struct LaneInspector: View {
                     }
                     .vurioButtonStyle()
                     .background(RoundedRectangle(cornerRadius: 4)
-                        .fill(model.overlayLaneID == lane.id ? Color(hex: "#E05A5A").opacity(0.35) : Color.clear))
+                        .fill(model.shownOverlayLaneID == lane.id ? Color(hex: "#E05A5A").opacity(0.35) : Color.clear))
                     .help("Tint the lane's coverage red on the picture")
                     Button(action: { model.setSolo(model.soloLaneID == lane.id ? nil : lane.id) }) {
                         Label("Solo", systemImage: "headphones")
@@ -1658,3 +1663,34 @@ private struct CropSection: View {
     static func label(_ option: String) -> String { CropToolUI.aspectLabel(option) }
 }
 
+
+/// A lane's picture in its chain row: small, with a larger copy in a
+/// popover while the pointer rests on it.
+struct LaneThumbnailView: View {
+    let image: NSImage
+    let colour: Color
+    @State private var hovering = false
+
+    var body: some View {
+        Image(nsImage: image)
+            .resizable()
+            .aspectRatio(contentMode: .fill)
+            .frame(width: 34, height: 24)
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+            .overlay(RoundedRectangle(cornerRadius: 3).stroke(colour.opacity(0.8), lineWidth: 1))
+            .onHover { hovering = $0 }
+            .popover(isPresented: $hovering, arrowEdge: .leading) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: 320, maxHeight: 320)
+                    Text("The lit part is what this lane's tools change.")
+                        .font(.caption2)
+                        .foregroundColor(Theme.textSecondary)
+                }
+                .padding(8)
+            }
+            .help("What this lane covers")
+    }
+}

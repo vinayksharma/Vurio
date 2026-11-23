@@ -26,6 +26,7 @@ public:
         req.before = request->before();
         req.solo_lane_id = request->solo_lane_id();
         req.overlay_lane_id = request->overlay_lane_id();
+        req.focus_lane_id = request->focus_lane_id();
         auto response = MediaDedup::Adjustments::PreviewSessionManager::instance().render(request->file_path(), req);
         reply->set_seq(request->seq());
         switch (response.outcome) {

@@ -404,6 +404,61 @@ TEST(LaneTest, SoloAndOverlayViews)
     EXPECT_NEAR(outside[2], outside[0], 1e-5) << "no tint elsewhere";
 }
 
+// A lane with no steps yet changes no pixel and is normally left out of the
+// plan; asked for as a view (the tint while its mask is being painted) it
+// is kept, shows its coverage, and still merges nothing — not even over an
+// earlier lane's result.
+TEST(LaneTest, OverlayShowsTheMaskOfALaneWithNoStepsYet)
+{
+    json mask = {{"components", json::array({{{"source", "luminance"}, {"params", {{"lo", 0.4}, {"hi", 1.0}, {"knee", 0.05}}}}})}};
+    std::string text;
+    compile(json::array({split(json::array({
+        lane(json::object(), json::array({node("exposure", {{"version", 1}, {"ev", 1}})})),
+        lane(mask, json::array())}))}), &text);
+    std::string lane_id = json::parse(text)["chain"][0]["lanes"][1]["id"];
+    AdjustmentDocument doc;
+    std::string error;
+    ASSERT_TRUE(AdjustmentDocument::parse(text, doc, error)) << error;
+
+    RenderPlan plain, viewed;
+    ASSERT_TRUE(doc.compile(ToolRegistry::instance(), plain, error)) << error;
+    EXPECT_FALSE(plain.hasLane(lane_id));
+    ASSERT_TRUE(doc.compile(ToolRegistry::instance(), viewed, error, {lane_id})) << error;
+    ASSERT_TRUE(viewed.hasLane(lane_id));
+
+    auto picture = [] {
+        Frame f = solid(0.2f, 0.2f, 0.2f);
+        f.pixels(cv::Rect(100, 0, 100, 100)).setTo(cv::Scalar(0.3f, 0.3f, 0.3f));
+        return f;
+    };
+    // Without a view the kept lane leaves the first lane's result alone.
+    Frame a = picture(), b = picture();
+    plain.render(a, 0, nullptr, {});
+    viewed.render(b, 0, nullptr, {});
+    EXPECT_LT(cv::norm(a.pixels, b.pixels, cv::NORM_INF), 1e-6);
+
+    RenderPlan::RenderOptions overlay;
+    overlay.overlay_lane_id = lane_id;
+    Frame g = picture();
+    g.pixels(cv::Rect(100, 0, 100, 100)).setTo(cv::Scalar(0.6f, 0.6f, 0.6f));
+    viewed.render(g, 0, nullptr, overlay);
+    cv::Vec3f inside = at(g, 150, 50), outside = at(g, 50, 50);
+    EXPECT_GT(inside[2], inside[0] + 0.3f) << "red tint where the mask covers";
+    EXPECT_NEAR(outside[2], outside[0], 1e-5) << "no tint elsewhere";
+
+    // The thumbnail view: the picture where the lane reaches, dark grey elsewhere.
+    RenderPlan::RenderOptions focus;
+    focus.focus_lane_id = lane_id;
+    Frame t = solid(0.2f, 0.3f, 0.1f);
+    t.pixels(cv::Rect(100, 0, 100, 100)).setTo(cv::Scalar(0.6f, 0.7f, 0.5f));
+    viewed.render(t, 0, nullptr, focus);
+    cv::Vec3f lit = at(t, 150, 50), dimmed = at(t, 50, 50);
+    EXPECT_GT(lit[1], 0.9f) << "covered and exposed by the first lane: unchanged by the view";
+    EXPECT_NEAR(dimmed[0], dimmed[1], 1e-5) << "grey outside the lane";
+    EXPECT_NEAR(dimmed[1], dimmed[2], 1e-5);
+    EXPECT_LT(dimmed[1], 0.25f) << "and dark";
+}
+
 TEST(LaneTest, SplitWithinTheEngineEndToEnd)
 {
     // A split after a crop and before a gamma: the lane's radial mask is

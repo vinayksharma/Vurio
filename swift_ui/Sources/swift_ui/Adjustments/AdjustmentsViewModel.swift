@@ -63,7 +63,9 @@ final class AdjustmentsViewModel: ObservableObject {
     @Published private(set) var soloLaneID: String?
     @Published private(set) var overlayLaneID: String?
     @Published private(set) var document = ChainDocument()
-    @Published var selectedNodeID: String?
+    @Published var selectedNodeID: String? {
+        didSet { if selectedNodeID != oldValue, isBrushMode { setBrushMode(false) } }
+    }
     @Published private(set) var filePath: String?
     /// Pixel size of the full-resolution base (EXIF-oriented).
     @Published var baseSize: CGSize = .zero
@@ -108,8 +110,9 @@ final class AdjustmentsViewModel: ObservableObject {
     /// picture is not in the crop editor.
     var isPicking: Bool { pickingNodeID != nil && pickingNodeID == selectedNodeID && !isCropEditing }
     /// CHAIN-7c: painting the selected lane's brush component. Entered from
-    /// the lane inspector, left with Esc or the button; the lane's mask
-    /// overlay is shown while painting so the strokes read as coverage.
+    /// the lane inspector, left with Esc, the button, or by selecting
+    /// something else; the lane's mask tint is shown while painting (and
+    /// only while painting) so the strokes read as coverage.
     @Published var isBrushMode = false
     @Published var brushRadius: Double = 0.03
     @Published var brushErase = false
@@ -180,6 +183,7 @@ final class AdjustmentsViewModel: ObservableObject {
         isCatalogueCollapsed = UserDefaults.standard.object(forKey: Self.catalogueKey) as? Bool ?? false
         isRecipesCollapsed = UserDefaults.standard.object(forKey: Self.recipesKey) as? Bool ?? true
         previewSubscription = preview.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        thumbnailSubscription = laneThumbnails.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         frameSubscription = preview.$frame.sink { [weak self] frame in
             // The server knows the true full-resolution base; the bitmap the
             // viewer decoded is only the preview.
@@ -190,10 +194,14 @@ final class AdjustmentsViewModel: ObservableObject {
             .compactMap { $0.userInfo?["filePath"] as? String }
             .sink { [weak self] path in
                 guard let self, path == self.filePath else { return }
+                self.laneThumbnails.invalidate()
                 self.requestPreview()
             }
     }
     private var frameSubscription: AnyCancellable?
+    private var thumbnailSubscription: AnyCancellable?
+    /// A picture per lane of what it covers, for the chain rows.
+    let laneThumbnails = LaneThumbnails()
     private var maskSubscription: AnyCancellable?
 
     /// CHAIN-5: lanes the last frame rendered as no-ops because their
@@ -231,7 +239,7 @@ final class AdjustmentsViewModel: ObservableObject {
 
     /// The viewer draws the server's frame instead of the base bitmap.
     var usesServerFrame: Bool {
-        filePath != nil && (!isIdentityChain || isCropEditing || showBefore || soloLaneID != nil || overlayLaneID != nil)
+        filePath != nil && (!isIdentityChain || isCropEditing || showBefore || soloLaneID != nil || shownOverlayLaneID != nil)
     }
 
     func tool(for nodeID: String) -> (any AdjustmentToolUI)? { tools[nodeID] }
@@ -260,6 +268,7 @@ final class AdjustmentsViewModel: ObservableObject {
     }
     func selectMaskComponent(_ laneID: String, _ index: Int) {
         selectedMaskComponent[laneID] = index
+        leaveBrushModeIfNotPainting()
     }
 
     /// The lane an "add" lands in: the selected lane, or the lane that
@@ -775,7 +784,37 @@ final class AdjustmentsViewModel: ObservableObject {
     func setBrushMode(_ on: Bool) {
         guard isBrushMode != on else { return }
         isBrushMode = on
-        if on, let lane = selectedLane { setOverlay(lane.id) }
+        requestPreview()
+    }
+
+    /// The lane whose coverage the picture shows tinted red: the one being
+    /// painted, else the one the M toggle chose. The painting tint ends
+    /// with the painting, so it never sits over the lane's adjustments.
+    var shownOverlayLaneID: String? { brushLaneID ?? overlayLaneID }
+
+    /// Paint mode belongs to the brush it was entered on: a different mask
+    /// component selected on the lane ends it (a different node selected
+    /// ends it in `selectedNodeID`).
+    private func leaveBrushModeIfNotPainting() {
+        guard isBrushMode, brushLaneID == nil else { return }
+        isBrushMode = false
+        requestPreview()
+    }
+
+    static let brushRadiusRange = 0.005...0.2
+
+    /// The wheel over the picture while painting: a mouse notch is one
+    /// step of the Brush size slider, a trackpad scroll glides.
+    func scrollBrushRadius(_ deltaY: CGFloat, isPrecise: Bool) {
+        guard deltaY != 0 else { return }
+        let range = Self.brushRadiusRange
+        var r = brushRadius
+        if isPrecise {
+            r += Double(deltaY) * 0.0004
+        } else {
+            r = ((r / 0.005).rounded() + (deltaY > 0 ? 1 : -1)) * 0.005
+        }
+        brushRadius = min(max(r, range.lowerBound), range.upperBound)
     }
 
     func clearBrushStrokes(_ laneID: String) {
@@ -1592,8 +1631,16 @@ final class AdjustmentsViewModel: ObservableObject {
 
     // MARK: - Preview
 
+    /// The lane rows' pictures follow the chain once a drag has ended.
+    private func refreshLaneThumbnails() {
+        guard !isInteracting, !isCropEditing else { return }
+        let lanes = document.nodes.flatMap { $0.lanes ?? [] }.map(\.id)
+        laneThumbnails.update(filePath: filePath, documentJSON: lanes.isEmpty ? "" : document.serialize(), laneIDs: lanes)
+    }
+
     /// Ask the server for the frame the viewer should show now (docs §5.4).
     func requestPreview() {
+        refreshLaneThumbnails()
         guard let path = filePath, usesServerFrame else {
             preview.clear()
             return
@@ -1603,7 +1650,7 @@ final class AdjustmentsViewModel: ObservableObject {
         if isCropEditing, let id = editingCropID { req.truncateAtNodeID = id }
         req.before = showBefore
         req.soloLaneID = soloLaneID ?? ""
-        req.overlayLaneID = overlayLaneID ?? ""
+        req.overlayLaneID = shownOverlayLaneID ?? ""
         preview.request(req)
     }
 

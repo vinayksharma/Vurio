@@ -233,32 +233,39 @@ struct GenericInspector: View {
         VStack(alignment: .leading, spacing: 8) {
             if !tool.descriptor.pickHint.isEmpty {
                 let picking = model.pickingNodeID == nodeID
-                HStack(spacing: 8) {
-                    Button(action: { model.togglePick(nodeID) }) {
-                        Image(systemName: "eyedropper")
+                // One bordered box: the eyedropper and what it adjusts belong
+                // together, apart from the tool's own controls below.
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Button(action: { model.togglePick(nodeID) }) {
+                            Image(systemName: "eyedropper")
+                        }
+                        .buttonStyle(.vurioIcon(tint: picking ? Theme.textAccent : Theme.textPrimary, size: 24, bordered: true))
+                        .disabled(!hasImage)
+                        .help(picking ? "\(tool.descriptor.pickHint) (Esc to cancel)" : "Eyedropper: \(tool.descriptor.pickHint.prefix(1).lowercased() + tool.descriptor.pickHint.dropFirst())")
+                        Text(picking ? tool.descriptor.pickHint : "Eyedropper")
+                            .font(.system(size: 11))
+                            .foregroundColor(picking ? Theme.textAccent : Theme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .buttonStyle(.vurioIcon(tint: picking ? Theme.textAccent : Theme.textPrimary, size: 24, bordered: true))
-                    .disabled(!hasImage)
-                    .help(picking ? "\(tool.descriptor.pickHint) (Esc to cancel)" : "Eyedropper: \(tool.descriptor.pickHint.prefix(1).lowercased() + tool.descriptor.pickHint.dropFirst())")
-                    Text(picking ? tool.descriptor.pickHint : "Eyedropper")
-                        .font(.system(size: 11))
-                        .foregroundColor(picking ? Theme.textAccent : Theme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                // With every group on show the press-and-drag eyedropper
-                // needs telling which one it moves.
-                if tool.descriptor.pickDrag, currentGroup == Self.allGroups {
-                    HStack(spacing: 6) {
-                        Text("Adjusts").font(.system(size: 10)).foregroundColor(Theme.textSecondary)
-                        GroupChips(groups: groups, selected: model.pickGroup, edited: []) { model.pickGroup = $0 }
+                    // With every group on show the press-and-drag eyedropper
+                    // needs telling which one it moves.
+                    if tool.descriptor.pickDrag, currentGroup == Self.allGroups {
+                        HStack(spacing: 6) {
+                            Text("Adjusts").font(.system(size: 10)).foregroundColor(Theme.textSecondary)
+                            GroupChips(groups: groups, selected: model.pickGroup, edited: []) { model.pickGroup = $0 }
+                        }
+                    }
+                    if let remark = model.pickRemark, remark.node == nodeID {
+                        Text(remark.text)
+                            .font(.caption)
+                            .foregroundColor(Theme.warning)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                if let remark = model.pickRemark, remark.node == nodeID {
-                    Text(remark.text)
-                        .font(.caption)
-                        .foregroundColor(Theme.warning)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.borderActive.opacity(0.5), lineWidth: 1))
             }
             ForEach(tool.descriptor.params.filter { $0.group.isEmpty }, id: \.id) { param in
                 row(param)

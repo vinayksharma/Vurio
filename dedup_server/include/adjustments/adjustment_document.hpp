@@ -10,6 +10,7 @@
 // [rotate, crop] order they rendered in and are rewritten as format 2 on the
 // next commit.
 
+#include <set>
 #include "adjustments/render_plan.hpp"
 #include "adjustments/tool_registry.hpp"
 #include <cstdint>
@@ -70,7 +71,11 @@ namespace MediaDedup::Adjustments
         // Compile the enabled, known, non-identity nodes into a plan in
         // document order. Fails on a malformed or out-of-range node, a
         // blend/strength on a geometry node, or a split (CHAIN-4).
-        bool compile(const ToolRegistry &registry, RenderPlan &out, std::string &error) const;
+        // `keep_lanes`: lane ids to keep in the plan even when they change
+        // no pixel (no steps yet, or merge strength 0), flagged `no_op` —
+        // the preview's solo and mask-tint views need the lane to exist.
+        bool compile(const ToolRegistry &registry, RenderPlan &out, std::string &error,
+                     const std::set<std::string> &keep_lanes = {}) const;
 
         // Identity: every enabled node is a known tool at its identity.
         bool isIdentity(const ToolRegistry &registry) const;
