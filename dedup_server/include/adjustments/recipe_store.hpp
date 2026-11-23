@@ -114,6 +114,9 @@ namespace MediaDedup::Adjustments
         RecipeRow rowFor(const std::string &id, const std::string &name, const std::string &description,
                          const nlohmann::json &chain, bool includes_geometry, const std::string &source) const;
         static std::string newId();
+        // On a node of a photo's chain: {"id", "name"} of the recipe
+        // application it came from. Client grouping only.
+        static constexpr const char *kGroupKey = "group";
         static int64_t nowSeconds();
 
         mutable std::mutex mutex_;

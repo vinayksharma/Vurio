@@ -227,6 +227,15 @@ void GrpcServerCore::start(const std::string& instance_dir,
                 if (row->exif_exposure_time) e.shutter_seconds = static_cast<double>(*row->exif_exposure_time);
                 if (row->exif_f_number) e.aperture = static_cast<double>(*row->exif_f_number);
                 return e;
+            },
+            // The base loader above serves a quick identity render for a
+            // RAW until its QHD preview is cached; that is a different
+            // picture, so its reading is not kept.
+            [cfg, db_shared](const std::string& file_path) {
+                if (!TranscodingPipeline::NeedsQhdPreviewCache(file_path, cfg)) return false;
+                if (!db_shared) return true;
+                auto cached = MediaDedup::PreviewCacheOps::getPreview(*db_shared, file_path);
+                return !(cached && std::filesystem::exists(cached->cached_path));
             });
 
         // CHAIN-6 (docs §8): export. Native-resolution base through the

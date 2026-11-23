@@ -156,7 +156,9 @@ struct ViewerView: View {
         }
         .onChange(of: model.items.count) { _, _ in
             adjustments.batchPaths = model.selectionPaths
+            adjustments.stripPaths = model.images.map(\.filePath)
         }
+        .onAppear { adjustments.stripPaths = model.images.map(\.filePath) }
         .onChange(of: model.selectedID) { _, _ in
             // A ramp still running would fight the reset below, and it is
             // zooming an image that is on its way out.
@@ -394,6 +396,15 @@ struct ViewerView: View {
                                 onChange: { rect in adjustments.setCropRect(rect) },
                                 onEnded: { adjustments.commitCrop() })
                         .frame(width: area.width, height: area.height)
+                }
+
+                // While Perspective is dragged: the photo's grid, warped as
+                // the frame is, following zoom and pan like the picture.
+                if !editing, adjustments.showsPerspectiveGrid {
+                    PerspectiveGridOverlay(frame: frame, layout: layout)
+                        .frame(width: area.width, height: area.height)
+                        .scaleEffect(scale)
+                        .offset(panOffset)
                 }
 
                 // CHAIN-4 (docs §9.2): the selected lane's gradient pins,

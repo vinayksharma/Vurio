@@ -78,7 +78,10 @@ namespace MediaDedup::Adjustments
         nlohmann::json toJson() const;
     };
 
-    // Signals per file, measured once and remembered.
+    // Signals per file, measured once and remembered. A measurement made
+    // while the file's base is only a stand-in (a RAW whose preview has not
+    // been generated yet decodes differently, by stops) is answered but not
+    // remembered, so the reading settles once the real base exists.
     class SignalService
     {
     public:
@@ -86,7 +89,10 @@ namespace MediaDedup::Adjustments
         using ExposureLookup = std::function<SceneSignals::Exposure(const std::string &file_path)>;
 
         static SignalService &instance();
-        void configure(BaseLoader loader, ExposureLookup exposure);
+        // True while the loader would return a stand-in for the file.
+        using Provisional = std::function<bool(const std::string &file_path)>;
+
+        void configure(BaseLoader loader, ExposureLookup exposure, Provisional provisional = nullptr);
         void reset();
 
         // Empty `values` when the file cannot be read and has no metadata.
@@ -98,6 +104,7 @@ namespace MediaDedup::Adjustments
         std::mutex mutex_;
         BaseLoader loader_;
         ExposureLookup exposure_;
+        Provisional provisional_;
         std::map<std::string, SceneSignals> cache_;
     };
 }

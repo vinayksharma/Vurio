@@ -335,6 +335,11 @@ struct GenericInspector: View {
                                                               model.paramDragged() }),
                         range: p.min...p.max, step: p.step, defaultValue: p.defaultValue,
                         trackColors: p.trackColors.map { Color(hex: $0) },
+                        // LOOK-6. "strength" names the node's blend strength
+                        // in a driver, so a parameter of that id cannot link.
+                        link: p.id == ChainDrivers.strength ? nil
+                            : model.sliderLink(nodeID: nodeID, target: p.id, label: label(p),
+                                               value: { tool.numbers[p.id] ?? p.defaultValue }),
                         onEditing: { editing in
                             model.paramChanged(nodeID: nodeID, label: label(p), interactive: editing)
                         })
@@ -457,18 +462,29 @@ struct ParamSlider: View {
     let step: Double
     var defaultValue: Double? = nil
     var trackColors: [Color] = []
+    /// LOOK-6: offered when the number can follow a scene signal.
+    var link: SliderLink? = nil
     let onEditing: (Bool) -> Void
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.system(size: 11)).foregroundColor(Theme.textSecondary)
+            HStack(spacing: 4) {
+                Text(label).font(.system(size: 11)).foregroundColor(Theme.textSecondary)
+                if let link {
+                    Spacer()
+                    LinkMenu(link: link)
+                }
+            }
             HStack(spacing: 6) {
                 NumericReadout(value: $value, range: range, step: step, defaultValue: defaultValue,
                                format: { Self.text($0, in: range) }, decimals: Self.decimals(for: range),
                                isEnabled: isEnabled, onEditing: onEditing)
                 TickSlider(value: $value, range: range, step: step, defaultValue: defaultValue,
                            trackColors: trackColors, onEditing: onEditing)
+            }
+            if let link, let driver = link.driver {
+                DriverStrip(driver: driver, signal: link.signal, valueRange: range)
             }
         }
     }

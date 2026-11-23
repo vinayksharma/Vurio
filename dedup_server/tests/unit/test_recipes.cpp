@@ -300,6 +300,38 @@ TEST_F(RecipeStoreTest, ADrivenRecipeIsResolvedForThePhotoItIsAppliedTo)
     EXPECT_TRUE(chain[0].contains("drivers")) << "the photo's node still knows what it follows";
 }
 
+TEST_F(RecipeStoreTest, AnAppliedRecipeIsOneGroupOnThePhoto)
+{
+    auto &store = RecipeStore::instance();
+    const std::string two = R"([{"tool":"grain","params":{"version":1,"amount":0.2}},
+                                {"tool":"vignette","params":{"version":1,"amount":0.1}}])";
+    auto saved = store.save("Two steps", "", two, "", false);
+    ASSERT_EQ(saved.outcome, RecipeStore::Outcome::Ok) << saved.error;
+    EXPECT_EQ(saved.recipe->chain.find("\"group\""), std::string::npos);
+
+    ASSERT_EQ(store.apply(asset_, saved.recipe->id, RecipeStore::ApplyMode::Replace, 0).outcome, AdjustmentStore::Outcome::Ok);
+    auto appended = store.apply(asset_, saved.recipe->id, RecipeStore::ApplyMode::Append, 0);
+    ASSERT_EQ(appended.outcome, AdjustmentStore::Outcome::Ok) << appended.error;
+    json chain;
+    std::string error;
+    ASSERT_TRUE(RecipeStore::parseChain(AdjustmentStore::instance().documentJsonFor(asset_), chain, error)) << error;
+    ASSERT_EQ(chain.size(), 4u);
+    for (const auto &n : chain)
+        EXPECT_EQ(n["group"]["name"], "Two steps");
+    EXPECT_EQ(chain[0]["group"]["id"], chain[1]["group"]["id"]) << "one application, one group";
+    EXPECT_EQ(chain[2]["group"]["id"], chain[3]["group"]["id"]);
+    EXPECT_NE(chain[0]["group"]["id"], chain[2]["group"]["id"]) << "a second application is its own group";
+
+    // The group is the photo's, not the recipe's: saving the chain drops it,
+    // and it is no part of what the chain renders.
+    for (const auto &n : RecipeStore::prepared(chain, true))
+        EXPECT_FALSE(n.contains("group"));
+    json bare = chain;
+    for (auto &n : bare)
+        n.erase("group");
+    EXPECT_EQ(Adjustments::AdjustmentDocument::canonicalOf(chain), Adjustments::AdjustmentDocument::canonicalOf(bare));
+}
+
 TEST_F(RecipeStoreTest, StarterRecipesAreOfferedToALibraryOnce)
 {
     auto &store = RecipeStore::instance();

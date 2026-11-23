@@ -1,6 +1,6 @@
 # LOOK-1..6 — Film looks built from generic tools, driven by the scene
 
-Designed 2026-11-23. Goal: a look such as CineStill 800T is a **recipe made of
+Designed and implemented 2026-11-23. Goal: a look such as CineStill 800T is a **recipe made of
 ordinary tools**, never a dedicated filter, and a recipe can adapt to the photo
 it is applied to (grain by scene brightness, a lane that only runs at night).
 The reference look is 800T: tungsten balance, teal shadows, soft shoulder,
@@ -98,8 +98,13 @@ memory by `SignalService` (the preview's base decode, EXIF from
   `shutter`, `aperture`, `exposure_value`.
 - Measured on a copy no larger than 256 px, so every render size agrees.
 - Not persisted: a server restart measures again on first use.
+- [x] A reading taken from a stand-in base is answered but not remembered.
+  A RAW whose QHD preview is not cached yet decodes through a quick identity
+  render that is about two stops from the real base, so a photo without
+  EXIF read 0.16 on first open and 0.43 afterwards. Open point: a recipe
+  applied in those first seconds still resolves against the stand-in.
 
-### LOOK-5 — Drivers (server implemented 2026-11-23)
+### LOOK-5 — Drivers (implemented 2026-11-23)
 
 `drivers.hpp`.
 
@@ -125,17 +130,74 @@ DRIVER:     {"signal": "<id>", "points": [[signal, value], …]}   1–8 points
 - [x] "CineStill 800T" follows the scene: grain amount and the tungsten shift
   by `scene_brightness`, a leading `denoise` by `noise` (identity, so
   dropped, on a clean photo).
-- [ ] Copying edits between photos outside a recipe does not re-resolve.
+- [x] A pasted chain is resolved for the photo it lands on: the client asks
+  `ResolveDrivers` for the incoming nodes before it merges and commits them
+  ("Paste chain", replacing or appending). The photo's own nodes are left
+  as they are when appending. A chain whose drivers the server refuses is
+  not pasted.
 
-### LOOK-6 — Client (open)
+### LOOK-6 — Client (implemented 2026-11-23)
 
-- The panel must keep a node's `drivers` when it sends a chain back, and
-  drop the one for a value the user moves by hand.
-- Link mark on a slider: choose what it follows, then set the slider. Each
-  photo it is set on becomes an example point ("link by example").
-- A strip under a linked slider shows the range, the points and this photo.
-- Lane "When": Always, In dark scenes, In bright scenes, Custom, plus softness.
-- Test strip: the recipe on a few photos across the range.
+`ChainDrivers.swift` (the model), `DriverViews.swift` (the views),
+`TestStrip.swift`.
+
+- [x] The panel keeps `drivers` when it sends a chain back (a node's and a
+  lane's both round-trip).
+- [x] **Link mark** on every number slider and on a node's Strength: a menu
+  of the signals (camera ones apart, the ones this photo lacks disabled)
+  and "Stop following". Linking takes the slider's value on this photo as
+  the first point.
+- [x] **Link by example.** A linked value moved by hand becomes a point at
+  this photo's reading (`ChainDocument.reconcileDrivers`, run whenever the
+  chain is read for a commit or a copy, against the chain as the server
+  last had it). A point within 2 % of the signal's span is the same example
+  and takes the new value; a ninth point replaces the nearest. Where the
+  photo lacks the signal the driver is dropped instead, so the hand-set
+  value is never resolved again elsewhere. Until the readings have arrived
+  nothing is touched.
+- [x] **Strip** under a linked slider: the signal's range left to right
+  with its end names, the points, and this photo as the accent line. The
+  height is the span the points cover, so a gentle slope still reads.
+- [x] **Lane "When"**: Always, In dark scenes, In bright scenes, Custom.
+  The presets are two-point ramps on `scene_brightness` (dark centred on
+  0.45, bright on 0.55) with a Softness slider (the ramp's width, 0.02 to
+  0.6 of the span); Custom adds the signal, which end is on, and the
+  threshold. The lane's strength takes the value the ramp gives on this
+  photo at once. Setting the strength by hand where the lane is on scales
+  the ramp; where it is off it becomes an example point.
+- [x] **Test strip** (recipes menu, enabled when the chain follows
+  anything): up to five photos spread across the signal's range, the open
+  one always among them, each rendered with the chain resolved for it.
+  Chosen from the strip's selection, else from the open photo's 24 nearest
+  neighbours. Geometry nodes are left out. Nothing is committed, and the
+  render sessions opened for it are released when it closes.
+- Drivers live on each photo's chain: examples gathered on one photo reach
+  another by copying the chain or saving it as a recipe.
+
+### LOOK-7 — A recipe is one row (implemented 2026-11-23)
+
+`ChainGroups.swift`; `RecipeStore::apply` and `prepared`.
+
+- [x] The server tags the steps of one application with
+  `"group": {"id", "name"}` (a fresh id per application, the recipe's
+  name). The engine, the canonical chain and the revision never read it; a
+  recipe saved from a chain drops it.
+- [x] The chain list shows each run of trunk nodes sharing a group as one
+  row (book icon, name, step count), selected when the recipe lands. Its
+  eye mutes every step, its bin removes them, it drags and moves (⌘↑/⌘↓)
+  whole, past the whole of a neighbouring recipe.
+- [x] The chevron (or a double-click) shows the steps indented under the
+  row; they are ordinary nodes and adjust as before.
+- [x] Selected, the row's inspector lists the steps and offers Show/Hide
+  steps and Ungroup (the steps become ordinary nodes).
+- [x] A tool added with the recipe selected goes after it. A node placed
+  between two steps joins the recipe; a step moved past the recipe's edge
+  leaves it (one move takes it out, in place); an ordinary node steps over
+  a closed recipe and into an open one.
+- [x] If something splits a recipe (another recipe dropped inside it) the
+  longer run keeps the name. A pasted chain's recipes get fresh ids.
+- Chains applied before this have no tag and stay as separate steps.
+- Not built: a strength for the whole recipe.
 
 ## 3. Deliberately out of scope
 

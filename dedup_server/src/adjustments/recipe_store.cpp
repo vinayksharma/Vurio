@@ -171,6 +171,9 @@ namespace MediaDedup::Adjustments
                 id = AdjustmentDocument::newNodeId();
             while (!ids.insert(id).second);
             n["id"] = id;
+            // Which recipe a node came from belongs to one application of
+            // it on one photo, never to the recipe itself.
+            n.erase(kGroupKey);
             out.push_back(n);
         }
         return out;
@@ -390,6 +393,14 @@ namespace MediaDedup::Adjustments
         // LOOK-5: the recipe's driven values, for this photo's scene.
         if (Drivers::hasAny(incoming))
             Drivers::resolve(incoming, SignalService::instance().forFile(file_path), ToolRegistry::instance());
+        // The steps of one application carry one group, so the client can
+        // show the recipe as a single row with its steps folded under it.
+        // The engine and the revision never read it.
+        {
+            const std::string group_id = AdjustmentDocument::newNodeId();
+            for (auto &n : incoming)
+                n[kGroupKey] = {{"id", group_id}, {"name", recipe->name}};
+        }
 
         nlohmann::json current = nlohmann::json::array();
         std::string current_text = AdjustmentStore::instance().documentJsonFor(file_path);

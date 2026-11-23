@@ -170,6 +170,30 @@ final class RecipesModel: ObservableObject {
         }
     }
 
+    /// LOOK-4: the signals the server offers, with this photo's readings.
+    func sceneSignals(filePath: String) async -> [SceneSignal] {
+        guard let client = VurioGrpcClient.shared.recipes else { return [] }
+        let response = try? await client.getSceneSignals(Vurio_Dedup_SceneSignalsRequest.with { $0.filePath = filePath })
+        return response?.signals.map(SceneSignal.init) ?? []
+    }
+
+    /// LOOK-5: the chain with every driven value written for this photo's
+    /// scene. Nothing is committed. Nil with the reason when it is refused.
+    func resolveDrivers(chainJSON: String, filePath: String) async -> (chain: ChainDocument?, error: String) {
+        guard let client = VurioGrpcClient.shared.recipes else { return (nil, "Not connected") }
+        do {
+            let r = try await client.resolveDrivers(Vurio_Dedup_ResolveDriversRequest.with {
+                $0.filePath = filePath
+                $0.chainJson = chainJSON
+            })
+            guard r.ok else { return (nil, r.errorMessage) }
+            guard let chain = ChainDocument.parseChainText(r.chainJson) else { return (nil, "The server returned no chain") }
+            return (chain, "")
+        } catch {
+            return (nil, Self.message(error))
+        }
+    }
+
     /// Apply onto a photo; returns the commit response (revision, history).
     func apply(_ recipeID: String, to filePath: String, mode: String, index: Int) async -> Vurio_Dedup_SetAdjustmentsResponse? {
         guard let client = VurioGrpcClient.shared.recipes else { return nil }

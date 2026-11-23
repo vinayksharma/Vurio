@@ -58,14 +58,29 @@ final class AdjustmentsViewModel: ObservableObject {
         return filePath.map { [$0] } ?? []
     }
     var isBatch: Bool { batchPaths.count >= 2 }
+    /// LOOK-6: every photo of the strip, in order, kept current by the
+    /// viewer; the test strip chooses from the open photo's neighbours.
+    var stripPaths: [String] = []
+    let testStrip = TestStrip()
+    /// LOOK-4: the open photo's scene readings; nil until measured.
+    @Published private(set) var sceneSignals: [SceneSignal]?
     /// CHAIN-4 view modes (docs §9.2): a lane alone over grey, a lane's
     /// coverage tinted red. View-only, never committed.
     @Published private(set) var soloLaneID: String?
     @Published private(set) var overlayLaneID: String?
     @Published private(set) var document = ChainDocument()
     @Published var selectedNodeID: String? {
-        didSet { if selectedNodeID != oldValue, isBrushMode { setBrushMode(false) } }
+        didSet {
+            if selectedNodeID != oldValue, isBrushMode { setBrushMode(false) }
+            if renamingLaneID != nil, renamingLaneID != selectedNodeID { renamingLaneID = nil }
+        }
     }
+    /// A recipe applied to the photo is one row (ChainGroups.swift); the
+    /// groups listed here show their steps. A group's id can be the
+    /// selection, like a node's or a lane's.
+    @Published var expandedGroups: Set<String> = []
+    var visibleRows: [ChainRowItem] { document.visibleRows(expanded: expandedGroups) }
+    var selectedGroup: ChainGroup? { selectedNodeID.flatMap { document.group($0) } }
     @Published private(set) var filePath: String?
     /// Pixel size of the full-resolution base (EXIF-oriented).
     @Published var baseSize: CGSize = .zero
@@ -155,6 +170,9 @@ final class AdjustmentsViewModel: ObservableObject {
     static let recipesKey = "adjustmentsRecipesCollapsed"
     static let minWidth: CGFloat = 280
     static let maxWidth: CGFloat = 440
+    /// Until the user drags the border: wide enough for a lane row to
+    /// show its name, mask and merge without truncating.
+    static let defaultWidth: CGFloat = 436
     static let railWidth: CGFloat = 28
 
     /// Node id → its tool UI (known tools only), trunk and lane steps alike.
@@ -174,12 +192,17 @@ final class AdjustmentsViewModel: ObservableObject {
     private var previewSubscription: AnyCancellable?
     /// True between a gesture's first change and its end: frames are asked
     /// at the drag size.
-    private var isInteracting = false
+    @Published private(set) var isInteracting = false
+    /// Perspective being dragged: the viewer lays the photo's own grid,
+    /// warped as the frame is, over the picture.
+    var showsPerspectiveGrid: Bool {
+        isInteracting && !isCropEditing && selectedNode?.tool == "perspective" && selectedNode?.enabled == true
+    }
 
     init() {
         isCollapsed = UserDefaults.standard.object(forKey: Self.collapsedKey) as? Bool ?? false
         let storedWidth = UserDefaults.standard.object(forKey: Self.widthKey) as? Double
-        panelWidth = min(max(CGFloat(storedWidth ?? Double(Self.minWidth)), Self.minWidth), Self.maxWidth)
+        panelWidth = min(max(CGFloat(storedWidth ?? Double(Self.defaultWidth)), Self.minWidth), Self.maxWidth)
         isCatalogueCollapsed = UserDefaults.standard.object(forKey: Self.catalogueKey) as? Bool ?? false
         isRecipesCollapsed = UserDefaults.standard.object(forKey: Self.recipesKey) as? Bool ?? true
         previewSubscription = preview.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
@@ -384,6 +407,7 @@ final class AdjustmentsViewModel: ObservableObject {
             }
             descriptorsLoaded = true
             rebuildTools()
+            driverBaseline = editedDocument()
         } catch {
             logDebug("DescribeTools failed: \(error)")
         }
@@ -409,6 +433,7 @@ final class AdjustmentsViewModel: ObservableObject {
         lastError = nil
         document = ChainDocument()
         selectedNodeID = nil
+        expandedGroups = []
         historyIndex = -1
         historySteps = []
         snapshots = []
@@ -421,7 +446,14 @@ final class AdjustmentsViewModel: ObservableObject {
         isSpooled = false
         sidecarPath = ""
         preview.clear()
+        sceneSignals = nil
+        testStrip.clear(keeping: newPath)
         guard let newPath else { return }
+        Task { [weak self] in
+            let signals = await RecipesModel.shared.sceneSignals(filePath: newPath)
+            guard let self, generation == self.loadGeneration, !signals.isEmpty else { return }
+            self.sceneSignals = signals
+        }
         await ensureDescriptors()
         guard let client = VurioGrpcClient.shared.adjustments else { return }
         do {
@@ -449,7 +481,8 @@ final class AdjustmentsViewModel: ObservableObject {
             document = ChainDocument()
         }
         rebuildTools()
-        if let sel = selectedNodeID, document.locate(sel) == nil { selectedNodeID = nil }
+        driverBaseline = editedDocument()
+        if let sel = selectedNodeID, document.locate(sel) == nil, document.group(sel) == nil { selectedNodeID = nil }
         if let solo = soloLaneID, document.lane(solo) == nil { soloLaneID = nil }
         if let ov = overlayLaneID, document.lane(ov) == nil { overlayLaneID = nil }
         requestPreview()
@@ -466,6 +499,7 @@ final class AdjustmentsViewModel: ObservableObject {
         self.baseSize = baseSize
         self.document = document
         rebuildTools()
+        driverBaseline = editedDocument()
     }
 
     private func rebuildTools() {
@@ -526,9 +560,84 @@ final class AdjustmentsViewModel: ObservableObject {
         }
     }
 
+    /// LOOK-5: the chain as the server last had it, read back through the
+    /// editors, so a value that differs from it was moved by hand.
+    private var driverBaseline = ChainDocument()
+
     /// The document with every known node's params (and every lane's mask
-    /// params) refreshed from its editor.
+    /// params) refreshed from its editor. A value moved by hand loses its
+    /// driver here, so no copy of the chain resolves it again.
     func currentDocument() -> ChainDocument {
+        var doc = editedDocument()
+        doc.reconcileDrivers(since: driverBaseline, signals: signalReadings, spans: signalSpans)
+        return doc
+    }
+
+    // MARK: - Drivers (LOOK-6)
+
+    /// This photo's readings by signal id; nil while they are being measured.
+    private var signalReadings: [String: Double]? {
+        sceneSignals.map { Dictionary($0.filter(\.available).map { ($0.id, $0.value) }, uniquingKeysWith: { a, _ in a }) }
+    }
+
+    private var signalSpans: [String: Double] {
+        Dictionary((sceneSignals ?? []).map { ($0.id, $0.span) }, uniquingKeysWith: { a, _ in a })
+    }
+
+    func signal(_ id: String) -> SceneSignal? { sceneSignals?.first { $0.id == id } }
+
+    /// Make a node's number follow a signal. The value it has on this photo
+    /// is the first example; every photo it is set on afterwards adds one.
+    func link(nodeID: String, target: String, signalID: String, value: Double, label: String) {
+        guard let s = signal(signalID), s.available, document.node(nodeID) != nil else { return }
+        let driver = Driver(signal: signalID, points: [.init(x: s.value, y: value)])
+        document.update(nodeID) { $0.setDriver(driver, for: target) }
+        chainChanged(label: "\(label) follows \(s.label)")
+    }
+
+    func unlink(nodeID: String, target: String, label: String) {
+        guard document.node(nodeID)?.driver(for: target) != nil else { return }
+        document.update(nodeID) { $0.setDriver(nil, for: target) }
+        chainChanged(label: "\(label) follows nothing")
+    }
+
+    /// A lane's "When": what its merge strength follows. The strength takes
+    /// the value the driver gives on this photo; without a driver it goes
+    /// back to the strength the lane had when on.
+    func setLaneDriver(_ laneID: String, _ driver: Driver?, label: String, interactive: Bool = false) {
+        guard let lane = document.lane(laneID)?.lane else { return }
+        let readings = signalReadings
+        document.updateLane(laneID) { l in
+            l.strengthDriver = driver
+            if let driver {
+                if let reading = readings?[driver.signal] { l.strength = min(max(driver.evaluate(reading), 0), 1) }
+            } else if let on = lane.strengthDriver?.ramp?.onValue {
+                l.strength = on
+            }
+        }
+        paramChanged(nodeID: laneID, label: label, interactive: interactive)
+    }
+
+    /// The chain on photos across the range of `signalID` (default: the
+    /// signal the chain follows most). Geometry stays with this photo.
+    func runTestStrip(signalID: String? = nil) {
+        var doc = currentDocument()
+        doc.nodes.removeAll { descriptor(for: $0.tool)?.category == .geometry }
+        guard let id = signalID ?? doc.driverSignals.first else { return }
+        var candidates = batchPaths
+        if candidates.count < 2, let path = filePath {
+            // The open photo's neighbours, nearest first.
+            let all = stripPaths
+            if let at = all.firstIndex(of: path) {
+                candidates = all.indices.sorted { abs($0 - at) < abs($1 - at) }.prefix(TestStrip.candidateLimit).map { all[$0] }
+            } else {
+                candidates = [path]
+            }
+        }
+        testStrip.run(document: doc, signalID: id, candidates: candidates, current: filePath)
+    }
+
+    private func editedDocument() -> ChainDocument {
         var doc = document
         for node in doc.allNodes where !node.isSplit {
             if let tool = tools[node.id], let params = tool.encode() {
@@ -620,7 +729,9 @@ final class AdjustmentsViewModel: ObservableObject {
             }
             return insertTool(toolID, inLane: laneID, at: index)
         }
-        let index = selectedNodeID.flatMap(document.index(of:)).map { $0 + 1 } ?? document.nodes.count
+        // After the selection; after the whole recipe when one is selected.
+        let index = selectedGroup?.range.upperBound
+            ?? selectedNodeID.flatMap(document.index(of:)).map { $0 + 1 } ?? document.nodes.count
         return insertTool(toolID, at: index)
     }
 
@@ -637,6 +748,8 @@ final class AdjustmentsViewModel: ObservableObject {
         document = currentDocument()
         let node = freshNode(descriptor)
         document.insert(node, at: index)
+        // Dropped between two steps of a recipe it becomes one of them.
+        document.regroupTrunkNode(node.id)
         rebuildTools()
         selectedNodeID = node.id
         chainChanged(label: "Add \(descriptor.label)")
@@ -686,6 +799,16 @@ final class AdjustmentsViewModel: ObservableObject {
         if selectedNodeID == laneID { selectedNodeID = nil }
         rebuildTools()
         chainChanged(label: "Remove lane")
+    }
+
+    /// The lane whose name is being typed in its inspector.
+    @Published var renamingLaneID: String?
+
+    /// Selects the lane and opens its name for typing.
+    func beginRenamingLane(_ laneID: String) {
+        guard document.lane(laneID) != nil else { return }
+        selectedNodeID = laneID
+        renamingLaneID = laneID
     }
 
     func renameLane(_ laneID: String, to name: String) {
@@ -859,6 +982,68 @@ final class AdjustmentsViewModel: ObservableObject {
     func moveRow(id movedID: String, before destination: Int) {
         guard let from = document.rows.firstIndex(where: { $0.id == movedID }) else { return }
         moveRow(at: from, before: destination)
+    }
+
+    // MARK: - Recipe groups
+
+    /// The trunk index a drop before visible row `index` lands at: before
+    /// the trunk node (or recipe) that row belongs to, or at the end.
+    func trunkIndex(forVisibleRow index: Int) -> Int {
+        let rows = visibleRows
+        var i = index
+        while i < rows.count, rows[i].depth > 0 { i += 1 }
+        guard i < rows.count else { return document.nodes.count }
+        if case .group(let group) = rows[i].kind { return group.range.lowerBound }
+        return document.index(of: rows[i].id) ?? document.nodes.count
+    }
+
+    /// A row of the list as shown (recipes folded) dragged and dropped
+    /// before visible row `destination`. A recipe moves whole.
+    func moveVisibleRow(id movedID: String, before destination: Int) {
+        if document.group(movedID) != nil {
+            if document.moveGroup(movedID, before: trunkIndex(forVisibleRow: destination)) { chainChanged(label: "Reorder") }
+            return
+        }
+        // The same drop in the unfolded list's own row numbers.
+        let visible = visibleRows
+        let flat = document.rows
+        let flatDestination: Int
+        if destination >= visible.count {
+            flatDestination = flat.count
+        } else if case .group(let group) = visible[destination].kind {
+            flatDestination = flat.firstIndex { $0.id == group.nodeIDs[0] } ?? flat.count
+        } else {
+            flatDestination = flat.firstIndex { $0.id == visible[destination].id } ?? flat.count
+        }
+        moveRow(id: movedID, before: flatDestination)
+        if case .trunk = document.locate(movedID) {
+            let before = document
+            document.regroupTrunkNode(movedID)
+            if document != before { chainChanged(label: "Reorder") }
+        }
+    }
+
+    func toggleGroupExpanded(_ id: String) {
+        if expandedGroups.contains(id) {
+            expandedGroups.remove(id)
+            // A step that is no longer on show hands the selection to its recipe.
+            if let sel = selectedNodeID, document.group(id)?.nodeIDs.contains(where: { nodeID in
+                nodeID == sel || document.node(nodeID)?.lanes?.contains { $0.id == sel || $0.steps.contains { $0.id == sel } } == true
+            }) == true {
+                selectedNodeID = id
+            }
+        } else {
+            expandedGroups.insert(id)
+        }
+    }
+
+    /// The recipe's steps become ordinary nodes of the chain.
+    func ungroup(_ id: String) {
+        guard let group = document.group(id) else { return }
+        document.ungroup(id)
+        expandedGroups.remove(id)
+        if selectedNodeID == id { selectedNodeID = group.nodeIDs.first }
+        chainChanged(label: "Ungroup \(group.name)")
     }
 
     private func moveRow(at from: Int, before destination: Int) {
@@ -1151,6 +1336,16 @@ final class AdjustmentsViewModel: ObservableObject {
 
     func removeNode(_ id: String) {
         if document.lane(id) != nil { removeLane(id); return }
+        if let group = document.group(id) {
+            if let crop = editingCropID, group.nodeIDs.contains(crop) { exitCropEditing() }
+            document = currentDocument()
+            for nodeID in group.nodeIDs { document.removeAny(id: nodeID) }
+            rebuildTools()
+            expandedGroups.remove(id)
+            if selectedNodeID == id { selectedNodeID = nil }
+            chainChanged(label: "Remove \(group.name)")
+            return
+        }
         guard let node = document.node(id) else { return }
         if editingCropID == id { exitCropEditing() }
         document = currentDocument()
@@ -1190,6 +1385,32 @@ final class AdjustmentsViewModel: ObservableObject {
     }
 
     func moveNode(_ id: String, by delta: Int) {
+        if document.group(id) != nil {
+            if document.moveGroup(id, by: delta) { chainChanged(label: "Reorder") }
+            return
+        }
+        // A trunk node at the edge of a recipe: one step takes it out of
+        // the recipe (or into an open one) without changing the order; a
+        // closed recipe is stepped over whole.
+        if case .trunk(let i) = document.locate(id), delta != 0 {
+            let j = i + (delta > 0 ? 1 : -1)
+            let own = document.nodes[i].groupID
+            let other = document.nodes.indices.contains(j) ? document.nodes[j].group : nil
+            if own != nil, other?.id != own {
+                document.update(id) { $0.setGroup(nil) }
+                chainChanged(label: "Reorder")
+                return
+            }
+            if own == nil, let other, let group = document.group(other.id) {
+                if expandedGroups.contains(other.id) {
+                    document.update(id) { $0.setGroup(other) }
+                } else {
+                    document.moveAny(id: id, by: delta > 0 ? group.count : -group.count)
+                }
+                chainChanged(label: "Reorder")
+                return
+            }
+        }
         let before = document.rows.map(\.id)
         document.moveAny(id: id, by: delta)
         guard document.rows.map(\.id) != before else { return }
@@ -1202,6 +1423,13 @@ final class AdjustmentsViewModel: ObservableObject {
 
     func setNodeEnabled(_ id: String, _ enabled: Bool) {
         if document.lane(id) != nil { setLaneEnabled(id, enabled); return }
+        if let group = document.group(id) {
+            guard group.enabled != enabled else { return }
+            for nodeID in group.nodeIDs { document.update(nodeID) { $0.enabled = enabled } }
+            if !enabled, let crop = editingCropID, group.nodeIDs.contains(crop) { exitCropEditing() }
+            chainChanged(label: enabled ? "Unmute \(group.name)" : "Mute \(group.name)")
+            return
+        }
         guard let node = document.node(id), node.enabled != enabled else { return }
         document.update(id) { $0.enabled = enabled }
         if !enabled, editingCropID == id { exitCropEditing() }
@@ -1211,6 +1439,7 @@ final class AdjustmentsViewModel: ObservableObject {
 
     func toggleNodeEnabled(_ id: String) {
         if let found = document.lane(id) { setLaneEnabled(id, !found.lane.enabled); return }
+        if let group = document.group(id) { setNodeEnabled(id, !group.enabled); return }
         guard let node = document.node(id) else { return }
         setNodeEnabled(id, !node.enabled)
     }
@@ -1267,6 +1496,7 @@ final class AdjustmentsViewModel: ObservableObject {
     /// document, ask for a frame and commit.
     private func chainChanged(label: String, interactive: Bool = false) {
         document = currentDocument()
+        if !interactive { document.normalizeGroups() }
         requestPreview()
         if !interactive { scheduleCommit(label: label) }
     }
@@ -1606,9 +1836,12 @@ final class AdjustmentsViewModel: ObservableObject {
         await flushPendingCommit()
         guard let path = filePath else { return }
         if isCropEditing { exitCropEditing() }
+        let known = Set(document.groups.map(\.id))
         guard let response = await RecipesModel.shared.apply(recipeID, to: path, mode: mode, index: index) else { return }
         guard filePath == path else { return }
         await reloadDocument()
+        // The recipe arrives as one row: select it.
+        if let added = document.groups.first(where: { !known.contains($0.id) }) { selectedNodeID = added.id }
         NotificationCenter.default.post(name: .adjustmentsChanged, object: nil, userInfo: [
             "filePath": path,
             "renderRevision": Int(response.renderRevision),
@@ -1661,6 +1894,19 @@ final class AdjustmentsViewModel: ObservableObject {
         // Fresh ids: a pasted chain must never collide with the photo's own.
         var incoming = pasted
         for i in incoming.nodes.indices { incoming.nodes[i].id = ChainNode.newID() }
+        incoming.renewGroupIDs()
+        // LOOK-5: what the chain follows is worked out again for this
+        // photo; the copied numbers belong to the scene they came from.
+        if incoming.hasDrivers {
+            let resolved = await RecipesModel.shared.resolveDrivers(chainJSON: incoming.serialize(), filePath: path)
+            guard filePath == path else { return }
+            guard let chain = resolved.chain, chain.nodes.count == incoming.nodes.count else {
+                lastError = resolved.error
+                MessageCenter.shared.post("Paste refused: \(resolved.error)")
+                return
+            }
+            incoming = chain
+        }
         var merged = append ? currentDocument() : ChainDocument()
         merged.nodes.append(contentsOf: incoming.nodes)
         let (ok, error) = await RecipesModel.shared.validate(chainJSON: merged.serialize(), filePath: path)
@@ -1870,6 +2116,7 @@ final class AdjustmentsViewModel: ObservableObject {
             }
             let response = try await client.setAdjustments(request)
             guard filePath == path else { return }
+            if response.success { driverBaseline = document }
             renderRevision = Int(response.renderRevision)
             isSpooled = response.sidecarSpooled
             sidecarPath = response.sidecarPath

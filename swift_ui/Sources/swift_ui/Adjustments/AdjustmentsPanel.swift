@@ -17,9 +17,9 @@ struct AdjustmentsPanel: View {
     @State private var namingSnapshot = false
     @State private var renamingSnapshotID: String?
     @FocusState private var snapshotFieldFocused: Bool
-    @State private var dragStartWidth: CGFloat?
     @ObservedObject private var recipes = RecipesModel.shared
     @State private var saveRecipeShown = false
+    @State private var testStripShown = false
     @State private var recipeName = ""
     @State private var recipeDescription = ""
     @State private var recipeIncludeGeometry = false
@@ -41,21 +41,11 @@ struct AdjustmentsPanel: View {
         // CHAIN-1 (docs §9.1): drag the left edge to resize, 280–440 pt.
         .overlay(alignment: .leading) {
             if !model.isCollapsed {
-                Color.clear
-                    .frame(width: 7)
-                    .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                            .onChanged { value in
-                                if dragStartWidth == nil { dragStartWidth = model.panelWidth }
-                                let proposed = (dragStartWidth ?? model.panelWidth) - value.translation.width
-                                model.panelWidth = min(max(proposed, AdjustmentsViewModel.minWidth), AdjustmentsViewModel.maxWidth)
-                            }
-                            .onEnded { _ in dragStartWidth = nil }
-                    )
-                    .onHover { inside in
-                        if inside { NSCursor.resizeLeftRight.set() } else { NSCursor.arrow.set() }
-                    }
+                PanelResizeGrip(width: { model.panelWidth }) { startWidth, travel in
+                    model.panelWidth = min(max(startWidth - travel, AdjustmentsViewModel.minWidth), AdjustmentsViewModel.maxWidth)
+                }
+                .frame(width: PanelResizeGrip.thickness)
+                .help("Drag to resize the panel")
             }
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: model.isCollapsed)
@@ -121,7 +111,7 @@ struct AdjustmentsPanel: View {
                         .frame(maxHeight: .infinity)
                 } else {
                     ChainListView(model: model, hasImage: hasImage)
-                        .frame(minHeight: 44, maxHeight: Self.chainHeight(rows: model.document.rows.count))
+                        .frame(minHeight: 44, maxHeight: Self.chainHeight(rows: model.visibleRows.count))
                         .layoutPriority(1)
                 }
                 Divider().background(Theme.border)
@@ -231,6 +221,10 @@ struct AdjustmentsPanel: View {
                 .keyboardShortcut("v", modifiers: [.command, .shift, .option])
                 .disabled(!hasImage)
             Divider()
+            // LOOK-6: the chain on photos across the range it follows.
+            Button("Test strip…") { testStripShown = true }
+                .disabled(!hasImage || !model.document.hasDrivers)
+            Divider()
             // CHAIN-6 (docs §9.2): the same sheet the viewer's ⇧⌘E opens.
             Button("Export…" + (model.isBatch ? " (\(model.batchPaths.count) photos)" : "")) { model.isExportPresented = true }
                 .disabled(!hasImage)
@@ -243,6 +237,9 @@ struct AdjustmentsPanel: View {
         .help("Recipes")
         .task { await recipes.ensureLoaded() }
         .sheet(isPresented: $saveRecipeShown) { saveRecipeSheet }
+        .popover(isPresented: $testStripShown, arrowEdge: .bottom) {
+            TestStripView(model: model, strip: model.testStrip)
+        }
     }
 
     private var saveRecipeSheet: some View {
@@ -424,7 +421,9 @@ struct AdjustmentsPanel: View {
     @ViewBuilder
     private var inspector: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let lane = model.selectedLane {
+            if let group = model.selectedGroup {
+                GroupInspector(model: model, group: group, hasImage: hasImage)
+            } else if let lane = model.selectedLane {
                 LaneInspector(model: model, lane: lane, hasImage: hasImage)
             } else if let node = model.selectedNode, node.isSplit {
                 SplitInspector(model: model, node: node, hasImage: hasImage)
@@ -527,7 +526,8 @@ private struct ChainListView: View {
             // CHAIN-4 (docs §9.2): the tree flattened — a split's lanes
             // indented under it, a lane's steps under the lane, each lane
             // with its own rail colour.
-            let rows = model.document.rows
+            // A recipe is one row; its steps show under it when expanded.
+            let rows = model.visibleRows
             List(selection: Binding(get: { model.selectedNodeID },
                                     set: { model.selectedNodeID = $0 })) {
                 ForEach(rows) { row in
@@ -539,8 +539,12 @@ private struct ChainListView: View {
                         case .lane(let lane, let splitID, let laneIndex):
                             LaneRow(model: model, lane: lane, splitID: splitID, laneIndex: laneIndex)
                                 .contextMenu { laneMenu(lane, splitID: splitID) }
+                        case .group(let group):
+                            GroupRow(model: model, group: group)
+                                .contextMenu { groupMenu(group) }
                         }
                     }
+                    .padding(.leading, row.inGroup ? 12 : 0)
                     .tag(row.id)
                     .listRowInsets(EdgeInsets(top: 2, leading: 6, bottom: 2, trailing: 6))
                     .listRowBackground(Color.clear)
@@ -549,7 +553,7 @@ private struct ChainListView: View {
                 // drag goes dead once rows have been added, so the rows
                 // provide their own item); the drop lands in onInsert.
                 .onInsert(of: [.plainText]) { index, providers in
-                    _ = insertDropped(providers, atRow: index, rows: rows)
+                    _ = insertDropped(providers, atRow: index)
                 }
             }
             .listStyle(.plain)
@@ -573,7 +577,20 @@ private struct ChainListView: View {
     }
 
     @ViewBuilder
+    private func groupMenu(_ group: ChainGroup) -> some View {
+        Button(group.enabled ? "Mute" : "Unmute") { model.toggleNodeEnabled(group.id) }
+        Button(model.expandedGroups.contains(group.id) ? "Hide steps" : "Show steps") { model.toggleGroupExpanded(group.id) }
+        Button("Ungroup") { model.ungroup(group.id) }
+        Divider()
+        Button("Move up") { model.moveNode(group.id, by: -1) }
+        Button("Move down") { model.moveNode(group.id, by: 1) }
+        Divider()
+        Button("Remove", role: .destructive) { model.removeNode(group.id) }
+    }
+
+    @ViewBuilder
     private func laneMenu(_ lane: Lane, splitID: String) -> some View {
+        Button("Rename…") { model.beginRenamingLane(lane.id) }
         Button(lane.enabled ? "Mute lane" : "Unmute lane") { model.setLaneEnabled(lane.id, !lane.enabled) }
         Button(model.soloLaneID == lane.id ? "Unsolo" : "Solo") {
             model.setSolo(model.soloLaneID == lane.id ? nil : lane.id)
@@ -594,16 +611,6 @@ private struct ChainListView: View {
         return AdjustmentsViewModel.laneColor(li)
     }
 
-    /// A drop at a row index lands on the trunk, before the trunk node that
-    /// row belongs to (or at the end).
-    private func trunkIndex(forRow index: Int, rows: [ChainRowItem]) -> Int {
-        guard index < rows.count else { return model.document.nodes.count }
-        var i = index
-        while i < rows.count, rows[i].depth > 0 { i += 1 }
-        guard i < rows.count else { return model.document.nodes.count }
-        return model.document.index(of: rows[i].id) ?? model.document.nodes.count
-    }
-
     static let nodeDragPrefix = "vurio-node:"
 
     /// A catalogue chip is dragged as "vurio-tool:<id>"; a recipe as
@@ -614,8 +621,8 @@ private struct ChainListView: View {
         insertDropped(providers, atRow: nil, trunkIndex: index)
     }
 
-    private func insertDropped(_ providers: [NSItemProvider], atRow row: Int, rows: [ChainRowItem]) -> Bool {
-        insertDropped(providers, atRow: row, trunkIndex: trunkIndex(forRow: row, rows: rows))
+    private func insertDropped(_ providers: [NSItemProvider], atRow row: Int) -> Bool {
+        insertDropped(providers, atRow: row, trunkIndex: model.trunkIndex(forVisibleRow: row))
     }
 
     private func insertDropped(_ providers: [NSItemProvider], atRow row: Int?, trunkIndex index: Int) -> Bool {
@@ -630,7 +637,7 @@ private struct ChainListView: View {
                 Task { @MainActor in model.applyRecipe(recipeID, mode: "insert", index: index) }
             } else if text.hasPrefix(ChainListView.nodeDragPrefix) {
                 let nodeID = String(text.dropFirst(ChainListView.nodeDragPrefix.count))
-                Task { @MainActor in model.moveRow(id: nodeID, before: row ?? 0) }
+                Task { @MainActor in model.moveVisibleRow(id: nodeID, before: row ?? 0) }
             }
         }
         return true
@@ -749,6 +756,117 @@ private struct ChainRow: View {
     }
 }
 
+/// A recipe applied to the photo: one row for all its steps. The chevron
+/// shows them underneath; mute, drag and delete act on the whole recipe.
+private struct GroupRow: View {
+    @ObservedObject var model: AdjustmentsViewModel
+    let group: ChainGroup
+
+    var body: some View {
+        let selected = model.selectedNodeID == group.id
+        let expanded = model.expandedGroups.contains(group.id)
+        HStack(spacing: 6) {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 9))
+                .foregroundColor(Theme.textSecondary.opacity(0.6))
+            Button(action: { model.toggleGroupExpanded(group.id) }) {
+                Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .frame(width: 12, height: 16)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(Theme.textSecondary)
+            .help(expanded ? "Hide the recipe's steps" : "Show the recipe's steps")
+            Image(systemName: "book.closed")
+                .font(.system(size: 11))
+                .foregroundColor(group.enabled ? Theme.textAccent : Theme.textSecondary)
+                .frame(width: 16)
+            Text(group.name)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(group.enabled ? Theme.textPrimary : Theme.textSecondary)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Text(group.count == 1 ? "1 step" : "\(group.count) steps")
+                .font(.custom("Menlo", size: 9))
+                .foregroundColor(Theme.textSecondary)
+                .lineLimit(1)
+            RowMuteButton(enabled: group.enabled, what: "the recipe") { model.toggleNodeEnabled(group.id) }
+            RowDeleteButton(help: "Remove the recipe and its steps") { model.removeNode(group.id) }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Theme.surfaceElevated : Theme.surface))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(selected ? Theme.borderActive : Theme.border, lineWidth: 1))
+        .opacity(group.enabled ? 1 : 0.6)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) { model.toggleGroupExpanded(group.id) }
+        .onTapGesture { model.selectedNodeID = group.id }
+        .onDrag { NSItemProvider(object: NSString(string: ChainListView.nodeDragPrefix + group.id)) }
+    }
+}
+
+/// The inspector of a selected recipe row: what it holds and the actions
+/// on the whole of it. Its steps are adjusted by expanding the row.
+private struct GroupInspector: View {
+    @ObservedObject var model: AdjustmentsViewModel
+    let group: ChainGroup
+    let hasImage: Bool
+
+    var body: some View {
+        let expanded = model.expandedGroups.contains(group.id)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "book.closed")
+                    .foregroundColor(group.enabled ? Theme.textAccent : Theme.textSecondary)
+                Text(group.name)
+                    .font(.system(size: 11, weight: .semibold))
+                    .textCase(.uppercase)
+                    .foregroundColor(Theme.textPrimary)
+                    .lineLimit(1)
+                Spacer()
+                Button(action: { model.toggleNodeEnabled(group.id) }) {
+                    Image(systemName: group.enabled ? "eye" : "eye.slash")
+                }
+                .buttonStyle(.vurioIcon)
+                .help(group.enabled ? "Mute the recipe (⌘E)" : "Unmute the recipe (⌘E)")
+                Button(action: { model.removeNode(group.id) }) {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.vurioIcon)
+                .help("Remove the recipe and its steps (⌘⌫)")
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(steps)
+                    .font(.system(size: 11))
+                    .foregroundColor(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    Button(expanded ? "Hide steps" : "Show steps") { model.toggleGroupExpanded(group.id) }
+                        .vurioButtonStyle()
+                        .help("The recipe's steps appear under its row; select one to adjust it")
+                    Button("Ungroup") { model.ungroup(group.id) }
+                        .vurioButtonStyle()
+                        .help("Turn the steps into ordinary nodes of the chain")
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
+            .disabled(!hasImage)
+        }
+    }
+
+    /// "9 steps: Denoise, Split, White Balance, …"
+    private var steps: String {
+        let names = group.nodeIDs.compactMap { id in
+            model.document.node(id).map { model.descriptor(for: $0.tool)?.label ?? $0.tool }
+        }
+        return "\(group.count == 1 ? "1 step" : "\(group.count) steps"): \(names.joined(separator: ", ")). They mute, move and remove together."
+    }
+}
+
 /// CHAIN-4 (docs §9.2): a lane under its split — rail colour, name, mask
 /// summary, merge summary, solo and mask-overlay toggles.
 private struct LaneRow: View {
@@ -821,6 +939,7 @@ private struct LaneRow: View {
         .overlay(RoundedRectangle(cornerRadius: 6).stroke(selected ? Theme.borderActive : Theme.border, lineWidth: 1))
         .opacity(lane.enabled ? 1 : 0.6)
         .contentShape(Rectangle())
+        .onTapGesture(count: 2) { model.beginRenamingLane(lane.id) }
         .onTapGesture { model.selectedNodeID = lane.id }
         .onDrag { NSItemProvider(object: NSString(string: ChainListView.nodeDragPrefix + lane.id)) }
     }
@@ -909,29 +1028,43 @@ private struct LaneInspector: View {
     let lane: Lane
     let hasImage: Bool
     @State private var nameDraft = ""
-    @State private var editingName = false
+    @FocusState private var nameFocused: Bool
+
+    /// Return and clicking away keep the typed name; Escape drops it.
+    private func endRenaming(keep: Bool) {
+        guard model.renamingLaneID == lane.id else { return }
+        model.renamingLaneID = nil
+        if keep { model.renameLane(lane.id, to: nameDraft) }
+    }
 
     var body: some View {
+        let editingName = model.renamingLaneID == lane.id
         let colour = model.document.lane(lane.id).map { AdjustmentsViewModel.laneColor($0.laneIndex) } ?? Theme.textAccent
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 RoundedRectangle(cornerRadius: 2).fill(colour).frame(width: 4, height: 14)
                 if editingName {
-                    TextField("Lane name", text: $nameDraft, onCommit: {
-                        model.renameLane(lane.id, to: nameDraft)
-                        editingName = false
-                    })
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 11))
-                    .frame(maxWidth: 160)
+                    TextField("Lane name", text: $nameDraft)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 11))
+                        .frame(maxWidth: 180)
+                        .focused($nameFocused)
+                        .onSubmit { endRenaming(keep: true) }
+                        .onExitCommand { endRenaming(keep: false) }
+                        .onChange(of: nameFocused) { focused in if !focused { endRenaming(keep: true) } }
+                        .onAppear { nameDraft = lane.name; nameFocused = true }
                 } else {
                     Text(lane.name)
                         .font(.system(size: 11, weight: .semibold))
                         .textCase(.uppercase)
                         .foregroundColor(Theme.textPrimary)
                         .lineLimit(1)
-                        .onTapGesture(count: 2) { nameDraft = lane.name; editingName = true }
-                        .help("Double-click to rename")
+                        .onTapGesture(count: 2) { model.beginRenamingLane(lane.id) }
+                    Button(action: { model.beginRenamingLane(lane.id) }) {
+                        Image(systemName: "pencil")
+                    }
+                    .buttonStyle(.vurioIcon)
+                    .help("Rename the lane")
                 }
                 Spacer()
                 Button(action: { model.setLaneEnabled(lane.id, !lane.enabled) }) {
@@ -1046,6 +1179,7 @@ private struct LaneInspector: View {
                                 if !editing { model.setLaneStrength(lane.id, lane.strength, interactive: false) }
                             })
                     .disabled(!hasImage)
+                LaneWhenControls(model: model, lane: lane, hasImage: hasImage)
             }
             .padding(8)
             .background(RoundedRectangle(cornerRadius: 6).fill(Theme.background.opacity(0.5)))
@@ -1377,6 +1511,9 @@ private struct BlendStrengthHeader: View {
                         value: Binding(get: { node.strength ?? 1 },
                                        set: { model.setStrength($0, nodeID: node.id, interactive: true) }),
                         range: 0...1, step: 0.01, defaultValue: 1,
+                        link: model.sliderLink(nodeID: node.id, target: ChainDrivers.strength,
+                                               label: "\(model.descriptor(for: node.tool)?.label ?? node.tool) Strength",
+                                               value: { model.document.node(node.id)?.strength ?? 1 }),
                         onEditing: { editing in
                             if !editing { model.setStrength(node.strength ?? 1, nodeID: node.id, interactive: false) }
                         })

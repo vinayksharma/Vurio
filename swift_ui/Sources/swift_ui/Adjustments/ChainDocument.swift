@@ -157,6 +157,17 @@ struct Lane: Identifiable, Equatable {
     var steps: [ChainNode]
     var blend: String   // merge
     var strength: Double
+    /// Keys this build does not model (`drivers`, anything newer) round-trip
+    /// verbatim, as a node's do.
+    var extras: [String: Any] = [:]
+
+    private static let knownKeys: Set<String> = ["id", "name", "enabled", "mask", "steps", "merge"]
+
+    static func == (lhs: Lane, rhs: Lane) -> Bool {
+        lhs.id == rhs.id && lhs.name == rhs.name && lhs.enabled == rhs.enabled && lhs.mask == rhs.mask
+            && lhs.steps == rhs.steps && lhs.blend == rhs.blend && lhs.strength == rhs.strength
+            && NSDictionary(dictionary: lhs.extras).isEqual(to: rhs.extras)
+    }
 
     init(id: String = ChainNode.newID(), name: String, enabled: Bool = true, mask: MaskSpec = MaskSpec(),
          steps: [ChainNode] = [], blend: String = "normal", strength: Double = 1.0) {
@@ -178,11 +189,16 @@ struct Lane: Identifiable, Equatable {
         let merge = json["merge"] as? [String: Any] ?? [:]
         blend = merge["blend"] as? String ?? "normal"
         strength = (merge["strength"] as? NSNumber)?.doubleValue ?? 1.0
+        extras = json.filter { !Lane.knownKeys.contains($0.key) }
     }
 
     func toJSON() -> [String: Any] {
-        var o: [String: Any] = ["id": id, "name": name, "mask": mask.toJSON(), "steps": steps.map { $0.toJSON() },
-                                "merge": ["blend": blend, "strength": strength]]
+        var o = extras
+        o["id"] = id
+        o["name"] = name
+        o["mask"] = mask.toJSON()
+        o["steps"] = steps.map { $0.toJSON() }
+        o["merge"] = ["blend": blend, "strength": strength]
         if !enabled { o["enabled"] = false }
         return o
     }
@@ -200,10 +216,14 @@ struct ChainRowItem: Identifiable, Equatable {
     enum Kind: Equatable {
         case node(ChainNode)
         case lane(Lane, splitID: String, laneIndex: Int)
+        /// A recipe application folded into one row (ChainGroups.swift).
+        case group(ChainGroup)
     }
     let id: String
     let kind: Kind
     let depth: Int
+    /// A step shown under its expanded group row.
+    var inGroup = false
 }
 
 struct HistoryStep: Equatable {

@@ -115,11 +115,12 @@ namespace MediaDedup::Adjustments
         return service;
     }
 
-    void SignalService::configure(BaseLoader loader, ExposureLookup exposure)
+    void SignalService::configure(BaseLoader loader, ExposureLookup exposure, Provisional provisional)
     {
         std::lock_guard<std::mutex> lock(mutex_);
         loader_ = std::move(loader);
         exposure_ = std::move(exposure);
+        provisional_ = std::move(provisional);
         cache_.clear();
     }
 
@@ -128,6 +129,7 @@ namespace MediaDedup::Adjustments
         std::lock_guard<std::mutex> lock(mutex_);
         loader_ = nullptr;
         exposure_ = nullptr;
+        provisional_ = nullptr;
         cache_.clear();
     }
 
@@ -141,6 +143,7 @@ namespace MediaDedup::Adjustments
     {
         BaseLoader loader;
         ExposureLookup exposure;
+        Provisional provisional;
         {
             std::lock_guard<std::mutex> lock(mutex_);
             auto it = cache_.find(file_path);
@@ -148,14 +151,18 @@ namespace MediaDedup::Adjustments
                 return it->second;
             loader = loader_;
             exposure = exposure_;
+            provisional = provisional_;
         }
         if (file_path.empty())
             return SceneSignals();
+        // Asked before the decode: a base that turns real meanwhile is
+        // measured again next time, never remembered as the stand-in.
+        const bool stand_in = provisional && provisional(file_path);
         Size full;
         cv::Mat base = loader ? loader(file_path, SceneSignals::kMeasureSide * 2, full) : cv::Mat();
         SceneSignals s = SceneSignals::measure(base, exposure ? exposure(file_path) : SceneSignals::Exposure());
         // An unreadable file is not remembered: it may be readable later.
-        if (!base.empty())
+        if (!base.empty() && !stand_in)
         {
             std::lock_guard<std::mutex> lock(mutex_);
             if (cache_.size() >= kCacheEntries)

@@ -108,6 +108,31 @@ TEST(SceneSignalsTest, WithoutExposureThePictureAloneAnswers)
     EXPECT_TRUE(SceneSignals::measure(cv::Mat(), exposure(100, 0.01, 8)).has("scene_brightness"));
 }
 
+TEST(SceneSignalsTest, AStandInBaseIsMeasuredButNotRemembered)
+{
+    // A RAW without its preview decodes to a stand-in that is stops away
+    // from the real base: the reading must follow the base once it exists.
+    bool stand_in = true;
+    int loads = 0;
+    auto &service = SignalService::instance();
+    service.configure(
+        [&](const std::string &, int, Size &) {
+            ++loads;
+            return cv::Mat(32, 32, CV_8UC3, stand_in ? cv::Scalar(20, 20, 20) : cv::Scalar(120, 120, 120));
+        },
+        [](const std::string &) { return SceneSignals::Exposure(); },
+        [&](const std::string &) { return stand_in; });
+    const double dark = service.forFile("/raw.dng").value(SceneSignals::kSceneBrightness);
+    EXPECT_EQ(service.forFile("/raw.dng").value(SceneSignals::kSceneBrightness), dark);
+    EXPECT_EQ(loads, 2) << "the stand-in is measured each time";
+    stand_in = false;
+    const double real = service.forFile("/raw.dng").value(SceneSignals::kSceneBrightness);
+    EXPECT_GT(real, dark + 0.2) << "the reading follows the real base";
+    EXPECT_EQ(service.forFile("/raw.dng").value(SceneSignals::kSceneBrightness), real);
+    EXPECT_EQ(loads, 3) << "and is remembered from then on";
+    service.reset();
+}
+
 TEST(DriversTest, EvaluateInterpolatesAndHoldsTheEnds)
 {
     json d = {{"signal", "scene_brightness"}, {"points", {{0.2, 0.6}, {0.6, 0.2}, {0.8, 0.1}}}};
