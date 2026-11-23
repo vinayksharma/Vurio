@@ -1196,6 +1196,10 @@ final class AdjustmentsViewModel: ObservableObject {
         chainChanged(label: "Reorder")
     }
 
+    /// The steps the chain's eye muted, so the same press brings back
+    /// exactly those and leaves the ones muted by hand alone.
+    private var chainMutedIDs: Set<String> = []
+
     func setNodeEnabled(_ id: String, _ enabled: Bool) {
         if document.lane(id) != nil { setLaneEnabled(id, enabled); return }
         guard let node = document.node(id), node.enabled != enabled else { return }
@@ -1209,6 +1213,40 @@ final class AdjustmentsViewModel: ObservableObject {
         if let found = document.lane(id) { setLaneEnabled(id, !found.lane.enabled); return }
         guard let node = document.node(id) else { return }
         setNodeEnabled(id, !node.enabled)
+    }
+
+    /// Every step of the chain is muted (and there is at least one).
+    var chainIsMuted: Bool { !document.nodes.isEmpty && document.nodes.allSatisfy { !$0.enabled } }
+
+    /// The whole chain's eye: mute every step that is on, or bring back the
+    /// ones that were on before it was pressed (all of them when that is
+    /// no longer known). One history step either way.
+    func toggleChainEnabled() {
+        let ids = document.nodes.map(\.id)
+        guard !ids.isEmpty else { return }
+        if chainIsMuted {
+            let remembered = chainMutedIDs.intersection(ids)
+            for id in remembered.isEmpty ? Set(ids) : remembered { document.update(id) { $0.enabled = true } }
+            chainMutedIDs = []
+            chainChanged(label: "Unmute chain")
+        } else {
+            chainMutedIDs = Set(document.nodes.filter(\.enabled).map(\.id))
+            if editingCropID != nil { exitCropEditing() }
+            for id in chainMutedIDs { document.update(id) { $0.enabled = false } }
+            chainChanged(label: "Mute chain")
+        }
+    }
+
+    /// Remove every step. One history step, so undo brings the chain back.
+    func removeAllNodes() {
+        guard !document.nodes.isEmpty else { return }
+        if editingCropID != nil { exitCropEditing() }
+        selectedNodeID = nil
+        document = currentDocument()
+        for id in document.nodes.map(\.id) { document.removeAny(id: id) }
+        rebuildTools()
+        chainMutedIDs = []
+        chainChanged(label: "Clear chain")
     }
 
     /// Reset a node's parameters to their defaults (the node stays).

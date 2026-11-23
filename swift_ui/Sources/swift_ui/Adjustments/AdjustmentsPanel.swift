@@ -159,6 +159,16 @@ struct AdjustmentsPanel: View {
             }
             if model.isSpooled { spooledGlyph }
             Spacer()
+            Button(action: { model.toggleChainEnabled() }) {
+                Image(systemName: model.chainIsMuted ? "eye.slash" : "eye")
+            }
+            .buttonStyle(.vurioIcon(tint: model.chainIsMuted ? Theme.warning : Theme.textPrimary))
+            .disabled(!hasImage || model.document.nodes.isEmpty)
+            .help(model.chainIsMuted ? "Unmute the whole chain" : "Mute the whole chain (show the original)")
+            Button(action: { model.removeAllNodes() }) { Image(systemName: "trash") }
+                .buttonStyle(.vurioIcon)
+                .disabled(!hasImage || model.document.nodes.isEmpty)
+                .help("Remove every step (undo brings them back)")
             recipesMenu
             Button(action: { model.undo() }) { Image(systemName: "arrow.uturn.backward") }
                 .buttonStyle(.vurioIcon)
