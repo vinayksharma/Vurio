@@ -102,6 +102,7 @@ set(UNIT_TEST_SOURCES
     unit/test_layer_tools.cpp
     unit/test_recipes.cpp
     unit/test_lanes.cpp
+    unit/test_drivers.cpp
     unit/test_mask_service.cpp
     unit/test_export.cpp
 )
@@ -120,6 +121,8 @@ set(ADJUSTMENTS_SOURCES
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/detail_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/look_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/blend.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/drivers.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/scene_signals.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/masks.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/mask_detectors.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/export_models.cpp
@@ -244,6 +247,12 @@ foreach(test_source ${UNIT_TEST_SOURCES})
         )
     elseif(${test_name} STREQUAL "test_lanes")
         add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="LaneTest.*:MaskSourceTest.*")
+        set_tests_properties(${test_name} PROPERTIES
+            OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
+            TIMEOUT 300
+        )
+    elseif(${test_name} STREQUAL "test_drivers")
+        add_test(NAME ${test_name} COMMAND all_unit_tests --gtest_filter="SceneSignalsTest.*:DriversTest.*")
         set_tests_properties(${test_name} PROPERTIES
             OUTPUT_FILE "${TEST_OUTPUT_DIRECTORY}/${test_name}.log"
             TIMEOUT 300
@@ -869,6 +878,8 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/detail_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/look_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/blend.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/drivers.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/scene_signals.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/masks.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/mask_detectors.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/export_models.cpp
@@ -1091,6 +1102,7 @@ foreach(test_source ${UNIT_TEST_SOURCES})
       NOT ${test_name} STREQUAL "test_recipes" AND
       NOT ${test_name} STREQUAL "test_export" AND
       NOT ${test_name} STREQUAL "test_mask_service" AND
+      NOT ${test_name} STREQUAL "test_drivers" AND
       NOT ${test_name} STREQUAL "test_lanes")
         add_dependencies(${test_name} ${TEST_DATA_DEPENDENCY})
     endif()

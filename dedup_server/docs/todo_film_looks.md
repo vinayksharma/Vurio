@@ -22,17 +22,36 @@ driven UI, gamma sRGB frames in [0,1], see git history for the CHAIN spec).
 | 7 | Grain (already weighted to the shadows) | `grain` |
 | 8 | Vignette | `vignette` |
 
-Halation comes first so that it keys on what the camera clipped, before the
-balance moves any channel. Its key is the brightest channel at 0.95: only
-clipped pixels are sources, a saturated light (a red neon) counts, and a blue
-sky that is merely bright does not. The lane adds in linear light, so the glow
-that is obvious over a night sky is faint over a daylight one, and a clipped
-area cannot get brighter than it is. `exposure` after the blur stands in for
-the energy the clipped source really had.
+Halation comes first so that it keys on what the camera recorded, before the
+balance moves any channel. It was reworked 2026-11-23 against how the film
+behaves (Dehancer's and FilmBox's descriptions): the first version washed
+large white areas pink in ordinary indoor light.
 
-What the fixed recipe cannot know is left for LOOK-5: sensor noise wants
-`denoise` before the grain at high ISO, and the tungsten shift and grain
-amount want to follow the scene's brightness.
+- **Source: red light.** `luma_key` keys on the red channel at 0.95. The glow
+  is light reflected back into the red-sensitive layer, so a blue LED or a
+  blue sky gives none and a tungsten lamp gives a lot.
+- **Points of light, not bright areas.** `luma_key`'s `size_limit` (0.05)
+  keeps a lamp or a specular whole and only a quarter of the edge of a large
+  bright area: a sky or a white wall at clipping is barely over the exposure,
+  a lamp is many stops over, and the clipped pixels alone cannot tell them
+  apart. A ridge against a blown sky keeps a thin red fringe, as on the film.
+- **Only against darker surroundings.** Each lane's mask is a luminance range
+  (full below 0.35, gone by 0.65) measured on the picture entering the split.
+  Halos show on the dark side of a contrast edge; the inside of a bright area
+  and a bright background are left alone.
+- **Orange at the edge, red further out.** The tight lane (radius 0.008) is
+  tinted at hue 22, the wide one (0.03, the "aura" of a stock without its
+  backing) at hue 4, both fully saturated so blue gets nothing.
+- **Stronger the darker the scene.** `exposure` after the blur stands in for
+  how far over the exposure the source really was; it is driven by
+  `scene_brightness`, +1 EV at night down to −1.5 EV in daylight (wide lane
+  +0.5 to −2), where a clipped white is barely over.
+- **Linear light.** The merge is `linear_add`, so a clipped area cannot get
+  brighter than it is.
+
+What a fixed recipe cannot know is driven (LOOK-5): `denoise` before
+everything by the photo's noise, the tungsten shift and the grain amount by
+the scene's brightness.
 
 ## 2. Phases
 
@@ -56,35 +75,62 @@ amount want to follow the scene's brightness.
 
 ### LOOK-3 — The recipe (implemented 2026-11-23)
 
-- [x] Starter recipe "Tungsten 800" (800T style) seeded on an empty table, and
-  shipped as `dedup_server/recipes/tungsten_800.vurio-recipes.json` for import
-  into an existing library.
+- [x] Starter recipe "CineStill 800T", preloaded: starters are offered to
+  every library once (`recipes.builtinsSeeded` in user settings remembers the
+  names), so it reaches an existing library on the next server start and stays
+  deleted if the user removes it.
 
-### LOOK-4 — Signals (open)
+### LOOK-4 — Signals (server implemented 2026-11-23)
 
-Per-photo numbers, computed once on the base and cached with the photo:
+`scene_signals.hpp`. Per-photo numbers, measured once per file and held in
+memory by `SignalService` (the preview's base decode, EXIF from
+`scanned_files`). Served by `RecipesService.GetSceneSignals`.
 
-- From metadata: ISO, shutter, aperture, exposure value
-  (`log2(N²/t) − log2(ISO/100)`), flash.
-- Measured on a fixed small copy of the base (so preview and export agree):
-  mean luminance, clipped-highlight fraction, colour cast, noise level.
-- The user-facing signals are blends in plain words: Scene brightness, Light
-  colour, Noise, Highlights. Raw EXIF values sit under "Advanced".
-- Missing EXIF falls back to the measured signals.
+- [x] Plain signals in [0,1], always available when the file can be read:
+  - `scene_brightness`: with ISO, shutter and aperture,
+    `EV100 = log2(N²/t) − log2(ISO/100)` moved by how far the picture's mean
+    linear luma sits from mid-grey (± 3 EV), mapped −2 EV → 0, 14 EV → 1.
+    Without them, the picture alone: `0.5 + log2(mean/0.18)/8`.
+  - `light_colour`: `0.5 + 0.25·log2(mean R / mean B)` in linear light.
+  - `noise`: `log2(ISO/100)/7`; without an ISO, the measured sigma over 0.04.
+  - `highlights`: the share of pixels with a channel ≥ 250, over 5 %.
+- [x] Camera signals (`advanced`), only when the metadata has them: `iso`,
+  `shutter`, `aperture`, `exposure_value`.
+- Measured on a copy no larger than 256 px, so every render size agrees.
+- Not persisted: a server restart measures again on first use.
 
-### LOOK-5 — Drivers (open)
+### LOOK-5 — Drivers (server implemented 2026-11-23)
 
-- Any numeric param, a node's strength and a lane's merge strength may carry a
-  driver: `{signal, points: [[signal value, param value], …]}`, interpolated,
-  held outside the end points.
-- Resolved at compile, so a driven lane strength of 0 drops the lane for free
-  (the compiler already drops strength-0 lanes). This is the conditional
-  splitter.
-- A value set by hand on a photo wins over the driver for that photo.
-- Recipes carry drivers; a chain without them is unchanged.
+`drivers.hpp`.
+
+```
+tool node:  "drivers": {"<numeric param id>" | "strength": DRIVER}
+lane:       "drivers": {"strength": DRIVER}        (the merge strength)
+DRIVER:     {"signal": "<id>", "points": [[signal, value], …]}   1–8 points
+```
+
+- [x] **Resolved, not rendered.** `Drivers::resolve` writes each driven value
+  into the chain for one photo's signals. The engine, the canonical chain and
+  the revision only ever see plain numbers, so nothing about rendering,
+  caching or history changed, and a value moved by hand simply stays.
+- [x] Resolved when a recipe is applied (`RecipeStore::apply`) and on request
+  (`RecipesService.ResolveDrivers`, nothing committed).
+- [x] A driven lane strength of 0 makes the lane a no-op the compiler already
+  drops: the conditional lane.
+- [x] Validated wherever a chain is compiled: known signal, numeric target of
+  the node's tool, values within the target's limits.
+- [x] A photo without the signal keeps the value the chain has.
+- [x] The drivers stay on the node after resolving, and are part of a
+  recipe's identity (`contentHash`); a chain without drivers hashes as before.
+- [x] "CineStill 800T" follows the scene: grain amount and the tungsten shift
+  by `scene_brightness`, a leading `denoise` by `noise` (identity, so
+  dropped, on a clean photo).
+- [ ] Copying edits between photos outside a recipe does not re-resolve.
 
 ### LOOK-6 — Client (open)
 
+- The panel must keep a node's `drivers` when it sends a chain back, and
+  drop the one for a value the user moves by hand.
 - Link mark on a slider: choose what it follows, then set the slider. Each
   photo it is set on becomes an example point ("link by example").
 - A strip under a linked slider shows the range, the points and this photo.

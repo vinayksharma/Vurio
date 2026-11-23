@@ -4494,6 +4494,16 @@ internal protocol Vurio_Dedup_RecipesServiceClientProtocol: GRPCClient {
     _ request: Vurio_Dedup_ImportRecipesRequest,
     callOptions: CallOptions?
   ) -> UnaryCall<Vurio_Dedup_ImportRecipesRequest, Vurio_Dedup_ImportRecipesResult>
+
+  func getSceneSignals(
+    _ request: Vurio_Dedup_SceneSignalsRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_SceneSignalsRequest, Vurio_Dedup_SceneSignalsResponse>
+
+  func resolveDrivers(
+    _ request: Vurio_Dedup_ResolveDriversRequest,
+    callOptions: CallOptions?
+  ) -> UnaryCall<Vurio_Dedup_ResolveDriversRequest, Vurio_Dedup_ResolveDriversResponse>
 }
 
 extension Vurio_Dedup_RecipesServiceClientProtocol {
@@ -4645,6 +4655,44 @@ extension Vurio_Dedup_RecipesServiceClientProtocol {
       interceptors: self.interceptors?.makeImportRecipesInterceptors() ?? []
     )
   }
+
+  /// LOOK-4: the scene signals a driver may follow, with this photo's
+  /// values (an empty file_path returns the catalogue alone).
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to GetSceneSignals.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func getSceneSignals(
+    _ request: Vurio_Dedup_SceneSignalsRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_SceneSignalsRequest, Vurio_Dedup_SceneSignalsResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.getSceneSignals.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetSceneSignalsInterceptors() ?? []
+    )
+  }
+
+  /// LOOK-5: the chain with every driven value written in for the photo.
+  /// Nothing is committed.
+  ///
+  /// - Parameters:
+  ///   - request: Request to send to ResolveDrivers.
+  ///   - callOptions: Call options.
+  /// - Returns: A `UnaryCall` with futures for the metadata, status and response.
+  internal func resolveDrivers(
+    _ request: Vurio_Dedup_ResolveDriversRequest,
+    callOptions: CallOptions? = nil
+  ) -> UnaryCall<Vurio_Dedup_ResolveDriversRequest, Vurio_Dedup_ResolveDriversResponse> {
+    return self.makeUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.resolveDrivers.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeResolveDriversInterceptors() ?? []
+    )
+  }
 }
 
 @available(*, deprecated)
@@ -4756,6 +4804,16 @@ internal protocol Vurio_Dedup_RecipesServiceAsyncClientProtocol: GRPCClient {
     _ request: Vurio_Dedup_ImportRecipesRequest,
     callOptions: CallOptions?
   ) -> GRPCAsyncUnaryCall<Vurio_Dedup_ImportRecipesRequest, Vurio_Dedup_ImportRecipesResult>
+
+  func makeGetSceneSignalsCall(
+    _ request: Vurio_Dedup_SceneSignalsRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_SceneSignalsRequest, Vurio_Dedup_SceneSignalsResponse>
+
+  func makeResolveDriversCall(
+    _ request: Vurio_Dedup_ResolveDriversRequest,
+    callOptions: CallOptions?
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_ResolveDriversRequest, Vurio_Dedup_ResolveDriversResponse>
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -4863,6 +4921,30 @@ extension Vurio_Dedup_RecipesServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeImportRecipesInterceptors() ?? []
     )
   }
+
+  internal func makeGetSceneSignalsCall(
+    _ request: Vurio_Dedup_SceneSignalsRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_SceneSignalsRequest, Vurio_Dedup_SceneSignalsResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.getSceneSignals.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetSceneSignalsInterceptors() ?? []
+    )
+  }
+
+  internal func makeResolveDriversCall(
+    _ request: Vurio_Dedup_ResolveDriversRequest,
+    callOptions: CallOptions? = nil
+  ) -> GRPCAsyncUnaryCall<Vurio_Dedup_ResolveDriversRequest, Vurio_Dedup_ResolveDriversResponse> {
+    return self.makeAsyncUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.resolveDrivers.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeResolveDriversInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -4962,6 +5044,30 @@ extension Vurio_Dedup_RecipesServiceAsyncClientProtocol {
       interceptors: self.interceptors?.makeImportRecipesInterceptors() ?? []
     )
   }
+
+  internal func getSceneSignals(
+    _ request: Vurio_Dedup_SceneSignalsRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_SceneSignalsResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.getSceneSignals.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeGetSceneSignalsInterceptors() ?? []
+    )
+  }
+
+  internal func resolveDrivers(
+    _ request: Vurio_Dedup_ResolveDriversRequest,
+    callOptions: CallOptions? = nil
+  ) async throws -> Vurio_Dedup_ResolveDriversResponse {
+    return try await self.performAsyncUnaryCall(
+      path: Vurio_Dedup_RecipesServiceClientMetadata.Methods.resolveDrivers.path,
+      request: request,
+      callOptions: callOptions ?? self.defaultCallOptions,
+      interceptors: self.interceptors?.makeResolveDriversInterceptors() ?? []
+    )
+  }
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -5006,6 +5112,12 @@ internal protocol Vurio_Dedup_RecipesServiceClientInterceptorFactoryProtocol: Se
 
   /// - Returns: Interceptors to use when invoking 'importRecipes'.
   func makeImportRecipesInterceptors() -> [ClientInterceptor<Vurio_Dedup_ImportRecipesRequest, Vurio_Dedup_ImportRecipesResult>]
+
+  /// - Returns: Interceptors to use when invoking 'getSceneSignals'.
+  func makeGetSceneSignalsInterceptors() -> [ClientInterceptor<Vurio_Dedup_SceneSignalsRequest, Vurio_Dedup_SceneSignalsResponse>]
+
+  /// - Returns: Interceptors to use when invoking 'resolveDrivers'.
+  func makeResolveDriversInterceptors() -> [ClientInterceptor<Vurio_Dedup_ResolveDriversRequest, Vurio_Dedup_ResolveDriversResponse>]
 }
 
 internal enum Vurio_Dedup_RecipesServiceClientMetadata {
@@ -5021,6 +5133,8 @@ internal enum Vurio_Dedup_RecipesServiceClientMetadata {
       Vurio_Dedup_RecipesServiceClientMetadata.Methods.applyRecipe,
       Vurio_Dedup_RecipesServiceClientMetadata.Methods.exportRecipes,
       Vurio_Dedup_RecipesServiceClientMetadata.Methods.importRecipes,
+      Vurio_Dedup_RecipesServiceClientMetadata.Methods.getSceneSignals,
+      Vurio_Dedup_RecipesServiceClientMetadata.Methods.resolveDrivers,
     ]
   )
 
@@ -5070,6 +5184,18 @@ internal enum Vurio_Dedup_RecipesServiceClientMetadata {
     internal static let importRecipes = GRPCMethodDescriptor(
       name: "ImportRecipes",
       path: "/vurio.dedup.RecipesService/ImportRecipes",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getSceneSignals = GRPCMethodDescriptor(
+      name: "GetSceneSignals",
+      path: "/vurio.dedup.RecipesService/GetSceneSignals",
+      type: GRPCCallType.unary
+    )
+
+    internal static let resolveDrivers = GRPCMethodDescriptor(
+      name: "ResolveDrivers",
+      path: "/vurio.dedup.RecipesService/ResolveDrivers",
       type: GRPCCallType.unary
     )
   }
@@ -8102,6 +8228,14 @@ internal protocol Vurio_Dedup_RecipesServiceProvider: CallHandlerProvider {
   func exportRecipes(request: Vurio_Dedup_RecipeIdsRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_RecipesFile>
 
   func importRecipes(request: Vurio_Dedup_ImportRecipesRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_ImportRecipesResult>
+
+  /// LOOK-4: the scene signals a driver may follow, with this photo's
+  /// values (an empty file_path returns the catalogue alone).
+  func getSceneSignals(request: Vurio_Dedup_SceneSignalsRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_SceneSignalsResponse>
+
+  /// LOOK-5: the chain with every driven value written in for the photo.
+  /// Nothing is committed.
+  func resolveDrivers(request: Vurio_Dedup_ResolveDriversRequest, context: StatusOnlyCallContext) -> EventLoopFuture<Vurio_Dedup_ResolveDriversResponse>
 }
 
 extension Vurio_Dedup_RecipesServiceProvider {
@@ -8188,6 +8322,24 @@ extension Vurio_Dedup_RecipesServiceProvider {
         userFunction: self.importRecipes(request:context:)
       )
 
+    case "GetSceneSignals":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_SceneSignalsRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_SceneSignalsResponse>(),
+        interceptors: self.interceptors?.makeGetSceneSignalsInterceptors() ?? [],
+        userFunction: self.getSceneSignals(request:context:)
+      )
+
+    case "ResolveDrivers":
+      return UnaryServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_ResolveDriversRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_ResolveDriversResponse>(),
+        interceptors: self.interceptors?.makeResolveDriversInterceptors() ?? [],
+        userFunction: self.resolveDrivers(request:context:)
+      )
+
     default:
       return nil
     }
@@ -8252,6 +8404,20 @@ internal protocol Vurio_Dedup_RecipesServiceAsyncProvider: CallHandlerProvider, 
     request: Vurio_Dedup_ImportRecipesRequest,
     context: GRPCAsyncServerCallContext
   ) async throws -> Vurio_Dedup_ImportRecipesResult
+
+  /// LOOK-4: the scene signals a driver may follow, with this photo's
+  /// values (an empty file_path returns the catalogue alone).
+  func getSceneSignals(
+    request: Vurio_Dedup_SceneSignalsRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_SceneSignalsResponse
+
+  /// LOOK-5: the chain with every driven value written in for the photo.
+  /// Nothing is committed.
+  func resolveDrivers(
+    request: Vurio_Dedup_ResolveDriversRequest,
+    context: GRPCAsyncServerCallContext
+  ) async throws -> Vurio_Dedup_ResolveDriversResponse
 }
 
 @available(macOS 10.15, iOS 13, tvOS 13, watchOS 6, *)
@@ -8345,6 +8511,24 @@ extension Vurio_Dedup_RecipesServiceAsyncProvider {
         wrapping: { try await self.importRecipes(request: $0, context: $1) }
       )
 
+    case "GetSceneSignals":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_SceneSignalsRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_SceneSignalsResponse>(),
+        interceptors: self.interceptors?.makeGetSceneSignalsInterceptors() ?? [],
+        wrapping: { try await self.getSceneSignals(request: $0, context: $1) }
+      )
+
+    case "ResolveDrivers":
+      return GRPCAsyncServerHandler(
+        context: context,
+        requestDeserializer: ProtobufDeserializer<Vurio_Dedup_ResolveDriversRequest>(),
+        responseSerializer: ProtobufSerializer<Vurio_Dedup_ResolveDriversResponse>(),
+        interceptors: self.interceptors?.makeResolveDriversInterceptors() ?? [],
+        wrapping: { try await self.resolveDrivers(request: $0, context: $1) }
+      )
+
     default:
       return nil
     }
@@ -8384,6 +8568,14 @@ internal protocol Vurio_Dedup_RecipesServiceServerInterceptorFactoryProtocol: Se
   /// - Returns: Interceptors to use when handling 'importRecipes'.
   ///   Defaults to calling `self.makeInterceptors()`.
   func makeImportRecipesInterceptors() -> [ServerInterceptor<Vurio_Dedup_ImportRecipesRequest, Vurio_Dedup_ImportRecipesResult>]
+
+  /// - Returns: Interceptors to use when handling 'getSceneSignals'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeGetSceneSignalsInterceptors() -> [ServerInterceptor<Vurio_Dedup_SceneSignalsRequest, Vurio_Dedup_SceneSignalsResponse>]
+
+  /// - Returns: Interceptors to use when handling 'resolveDrivers'.
+  ///   Defaults to calling `self.makeInterceptors()`.
+  func makeResolveDriversInterceptors() -> [ServerInterceptor<Vurio_Dedup_ResolveDriversRequest, Vurio_Dedup_ResolveDriversResponse>]
 }
 
 internal enum Vurio_Dedup_RecipesServiceServerMetadata {
@@ -8399,6 +8591,8 @@ internal enum Vurio_Dedup_RecipesServiceServerMetadata {
       Vurio_Dedup_RecipesServiceServerMetadata.Methods.applyRecipe,
       Vurio_Dedup_RecipesServiceServerMetadata.Methods.exportRecipes,
       Vurio_Dedup_RecipesServiceServerMetadata.Methods.importRecipes,
+      Vurio_Dedup_RecipesServiceServerMetadata.Methods.getSceneSignals,
+      Vurio_Dedup_RecipesServiceServerMetadata.Methods.resolveDrivers,
     ]
   )
 
@@ -8448,6 +8642,18 @@ internal enum Vurio_Dedup_RecipesServiceServerMetadata {
     internal static let importRecipes = GRPCMethodDescriptor(
       name: "ImportRecipes",
       path: "/vurio.dedup.RecipesService/ImportRecipes",
+      type: GRPCCallType.unary
+    )
+
+    internal static let getSceneSignals = GRPCMethodDescriptor(
+      name: "GetSceneSignals",
+      path: "/vurio.dedup.RecipesService/GetSceneSignals",
+      type: GRPCCallType.unary
+    )
+
+    internal static let resolveDrivers = GRPCMethodDescriptor(
+      name: "ResolveDrivers",
+      path: "/vurio.dedup.RecipesService/ResolveDrivers",
       type: GRPCCallType.unary
     )
   }

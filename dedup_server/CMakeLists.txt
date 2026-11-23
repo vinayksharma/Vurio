@@ -329,6 +329,8 @@ add_executable(media_dedup_server
     src/adjustments/tools/detail_tools.cpp
     src/adjustments/tools/look_tools.cpp
     src/adjustments/blend.cpp
+    src/adjustments/drivers.cpp
+    src/adjustments/scene_signals.cpp
     src/adjustments/masks.cpp
     src/adjustments/mask_detectors.cpp
     src/adjustments/export_models.cpp

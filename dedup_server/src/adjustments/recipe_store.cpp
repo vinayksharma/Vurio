@@ -1,4 +1,6 @@
 #include "adjustments/recipe_store.hpp"
+#include "adjustments/drivers.hpp"
+#include "database/user_settings_ops.hpp"
 #include "adjustments/adjustment_document.hpp"
 #include "adjustments/tool_registry.hpp"
 #include "config/unified_observable_config.hpp"
@@ -146,7 +148,9 @@ namespace MediaDedup::Adjustments
 
     int64_t RecipeStore::contentHash(const nlohmann::json &chain)
     {
-        return static_cast<int64_t>(AdjustmentDocument::fnv1a32(AdjustmentDocument::canonicalOf(chain)));
+        // LOOK-5: what a recipe follows is part of what it is. A chain
+        // without drivers hashes as it always did.
+        return static_cast<int64_t>(AdjustmentDocument::fnv1a32(AdjustmentDocument::canonicalOf(chain) + Drivers::canonical(chain)));
     }
 
     nlohmann::json RecipeStore::prepared(const nlohmann::json &chain, bool include_geometry)
@@ -383,6 +387,9 @@ namespace MediaDedup::Adjustments
             return result;
         }
         nlohmann::json incoming = prepared(recipe_chain, true); // fresh ids on every apply
+        // LOOK-5: the recipe's driven values, for this photo's scene.
+        if (Drivers::hasAny(incoming))
+            Drivers::resolve(incoming, SignalService::instance().forFile(file_path), ToolRegistry::instance());
 
         nlohmann::json current = nlohmann::json::array();
         std::string current_text = AdjustmentStore::instance().documentJsonFor(file_path);
@@ -598,8 +605,6 @@ namespace MediaDedup::Adjustments
         }
         if (cfg && !cfg->getPropertyValue<bool>("media.adjustments.recipes.builtin", true))
             return 0;
-        if (RecipesOps::count(*d) > 0)
-            return 0;
         struct Starter
         {
             const char *name;
@@ -615,34 +620,74 @@ namespace MediaDedup::Adjustments
             {"Warm vignette", "A warmer balance and a soft dark edge.",
              R"([{"tool":"white_balance","params":{"version":2,"temperature":0.07,"tint":0.0}},
                  {"tool":"vignette","params":{"version":1,"amount":0.4,"midpoint":0.5,"roundness":0.0,"feather":0.5}}])"},
-            // LOOK-3 (docs/todo_film_looks.md): also shipped as
-            // recipes/tungsten_800.vurio-recipes.json; keep the two in step.
-            {"Tungsten 800",
-             "In the style of CineStill 800T: a cool tungsten balance, teal shadows, a soft shoulder, grain, and red halation around light sources. Built from ordinary tools; every step can be adjusted.",
-             R"([{"tool":"split","lanes":[{"name":"Halation","mask":{"components":[{"source":"full"}]},"steps":[{"tool":"luma_key","params":{"version":1,"keep":"highlights","key":"brightest_channel","threshold":0.95,"softness":0.04}},
-                 {"tool":"blur","params":{"version":1,"radius":0.012,"linear":true}},
-                 {"tool":"exposure","params":{"version":1,"ev":1.0}},
-                 {"tool":"color_filter","params":{"version":1,"hue":12,"saturation":0.9,"density":1.0}}],"merge":{"blend":"linear_add","strength":0.8}},{"name":"Halation, wide","mask":{"components":[{"source":"full"}]},"steps":[{"tool":"luma_key","params":{"version":1,"keep":"highlights","key":"brightest_channel","threshold":0.95,"softness":0.04}},
-                 {"tool":"blur","params":{"version":1,"radius":0.04,"linear":true}},
-                 {"tool":"exposure","params":{"version":1,"ev":0.5}},
-                 {"tool":"color_filter","params":{"version":1,"hue":8,"saturation":0.95,"density":1.0}}],"merge":{"blend":"linear_add","strength":0.4}}]},
-                 {"tool":"white_balance","params":{"version":2,"temperature":-0.1,"tint":0.0}},
+            // LOOK-3 (docs/todo_film_looks.md)
+            {"CineStill 800T",
+             "In the style of CineStill 800T: a cool tungsten balance, teal shadows, a soft shoulder, grain, and red halation around light sources. Built from ordinary tools; grain, balance and noise cleaning follow the scene, and every step can be adjusted.",
+             R"([{"tool":"denoise","params":{"version":1,"luminance":0.0,"color":0.0},"drivers":{"luminance":{"signal":"noise","points":[[0.5,0.0],[0.95,0.2]]},"color":{"signal":"noise","points":[[0.5,0.0],[0.95,0.5]]}}},
+                 {"tool":"split","lanes":[{"name":"Halation","mask":{"components":[{"source":"luminance","params":{"lo":0.0,"hi":0.35,"knee":0.3}}]},"steps":[{"tool":"luma_key","params":{"version":1,"keep":"highlights","key":"red","threshold":0.95,"softness":0.04,"size_limit":0.05}},
+                 {"tool":"blur","params":{"version":1,"radius":0.008,"linear":true}},
+                 {"tool":"exposure","params":{"version":1,"ev":0.0},"drivers":{"ev":{"signal":"scene_brightness","points":[[0.3,1.0],[0.7,-1.5]]}}},
+                 {"tool":"color_filter","params":{"version":1,"hue":22,"saturation":1.0,"density":1.0}}],"merge":{"blend":"linear_add","strength":0.8}},{"name":"Halation, wide","mask":{"components":[{"source":"luminance","params":{"lo":0.0,"hi":0.35,"knee":0.3}}]},"steps":[{"tool":"luma_key","params":{"version":1,"keep":"highlights","key":"red","threshold":0.95,"softness":0.04,"size_limit":0.05}},
+                 {"tool":"blur","params":{"version":1,"radius":0.03,"linear":true}},
+                 {"tool":"exposure","params":{"version":1,"ev":0.0},"drivers":{"ev":{"signal":"scene_brightness","points":[[0.3,0.5],[0.7,-2.0]]}}},
+                 {"tool":"color_filter","params":{"version":1,"hue":4,"saturation":1.0,"density":1.0}}],"merge":{"blend":"linear_add","strength":0.35}}]},
+                 {"tool":"white_balance","params":{"version":2,"temperature":-0.1,"tint":0.0},"drivers":{"temperature":{"signal":"scene_brightness","points":[[0.3,-0.04],[0.7,-0.12]]}}},
                  {"tool":"channel_mixer","params":{"version":1,"red_r":0.94,"red_g":0.06,"red_b":0.0,"green_r":0.04,"green_g":0.92,"green_b":0.04,"blue_r":0.0,"blue_g":0.06,"blue_b":0.94}},
                  {"tool":"curves","params":{"version":1,"rgb":[[0,0.03],[0.25,0.22],[0.5,0.5],[0.75,0.77],[1,0.97]],"blue":[[0,0.03],[0.5,0.5],[1,0.98]]}},
                  {"tool":"color_grade","params":{"version":1,"shadows_hue":195,"shadows_amount":0.1,"highlights_hue":40,"highlights_amount":0.08}},
                  {"tool":"hsl","params":{"version":1,"green_hue":12,"green_sat":-0.15,"orange_sat":0.05}},
-                 {"tool":"grain","params":{"version":1,"amount":0.25,"size":0.0025,"color":0.3}},
+                 {"tool":"grain","params":{"version":1,"amount":0.25,"size":0.0007,"color":0.3},"drivers":{"amount":{"signal":"scene_brightness","points":[[0.25,0.4],[0.75,0.18]]}}},
                  {"tool":"vignette","params":{"version":1,"amount":0.15,"midpoint":0.5,"roundness":0.0,"feather":0.5}}])"},
         };
+        // Each starter is offered once per library: the names already
+        // offered are remembered, so a starter the user deleted stays
+        // deleted and one added by a later build still arrives. A library
+        // from before the list existed has had the first three.
+        UserSettingsOps::ensureTable(*d);
+        std::set<std::string> offered;
+        std::string stored;
+        const bool has_list = UserSettingsOps::get(*d, kBuiltinsSeededKey, stored) && !stored.empty();
+        if (has_list)
+        {
+            nlohmann::json list = nlohmann::json::parse(stored, nullptr, false);
+            if (list.is_array())
+                for (const auto &n : list)
+                    if (n.is_string())
+                        offered.insert(n.get<std::string>());
+        }
+        else if (RecipesOps::count(*d) > 0)
+            offered = {"Mono, red filter", "Soft contrast", "Warm vignette"};
         int seeded = 0;
         for (const Starter &s : starters)
         {
+            if (!offered.insert(s.name).second)
+            {
+                // Already in this library. A starter the user has never
+                // edited follows the build's version of it; one they have
+                // changed (or re-made under the same name) is theirs.
+                auto row = RecipesOps::getByName(*d, s.name);
+                nlohmann::json chain;
+                std::string error;
+                if (row && row->source == "builtin" && row->updated_at == row->created_at &&
+                    parseChain(s.chain, chain, error) && contentHash(chain) != row->content_hash &&
+                    validate(s.chain).ok)
+                {
+                    nlohmann::json ready = prepared(chain, true);
+                    row->chain = ready.dump();
+                    row->content_hash = contentHash(ready);
+                    row->description = s.description;
+                    if (RecipesOps::update(*d, *row)) // updated_at stays: still untouched by the user
+                        log().information("Starter recipe '%s' refreshed to this build's version", std::string(s.name));
+                }
+                continue;
+            }
             Result r = save(s.name, s.description, s.chain, "", true, "builtin");
             if (r.outcome == Outcome::Ok)
                 ++seeded;
-            else
+            else if (r.outcome != Outcome::AlreadyExists)
                 log().warning("Starter recipe '%s' not seeded: %s", std::string(s.name), r.error);
         }
+        UserSettingsOps::upsert(*d, kBuiltinsSeededKey, nlohmann::json(offered).dump());
         return seeded;
     }
 }

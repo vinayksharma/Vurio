@@ -63,28 +63,50 @@ namespace MediaDedup::Adjustments
         descriptor_.summary = "{threshold:.2f}";
         descriptor_.active_at_defaults = true;
         choice("keep", "Keep", {"highlights", "shadows"}, "highlights");
-        choice("key", "Measured by", {"brightest_channel", "luminance"}, "brightest_channel");
+        choice("key", "Measured by", {"brightest_channel", "luminance", "red", "green", "blue"}, "brightest_channel");
         number("threshold", "Threshold", 0, 1, 0.8, 0.01);
         number("softness", "Softness", 0, 0.5, 0.1, 0.01);
+        number("size_limit", "Favour areas smaller than (of short side)", 0, 0.2, 0, 0.005);
+        descriptor_.resolution_dependent = true;
     }
 
-    void LumaKeyTool::apply(const ToolState &state, Frame &io, const RenderContext &) const
+    void LumaKeyTool::apply(const ToolState &state, Frame &io, const RenderContext &ctx) const
     {
         const ParamState &s = as(state);
         const bool shadows = s.string("keep") == "shadows";
-        const bool luma = s.string("key") == "luminance";
+        const std::string &key = s.string("key");
+        const bool luma = key == "luminance";
+        // One channel alone (frame order B, G, R), or -1.
+        const int channel = key == "red" ? 2 : key == "green" ? 1 : key == "blue" ? 0 : -1;
         const double th = s.number("threshold", 0.8), soft = s.number("softness", 0.1);
+        cv::Mat weight(io.height(), io.width(), CV_32FC1);
         for (int y = 0; y < io.height(); ++y)
         {
-            cv::Vec3f *row = io.pixels.ptr<cv::Vec3f>(y);
+            const cv::Vec3f *row = io.pixels.ptr<cv::Vec3f>(y);
+            float *wr = weight.ptr<float>(y);
             for (int x = 0; x < io.width(); ++x)
             {
-                cv::Vec3f &p = row[x];
-                float k = luma ? kLumB * p[0] + kLumG * p[1] + kLumR * p[2] : std::max({p[0], p[1], p[2]});
+                const cv::Vec3f &p = row[x];
+                float k = channel >= 0 ? p[channel]
+                                       : luma ? kLumB * p[0] + kLumG * p[1] + kLumR * p[2] : std::max({p[0], p[1], p[2]});
                 float w = static_cast<float>(MaskMath::smoothstep(th - soft, th + soft, k));
-                p *= shadows ? 1.0f - w : w;
+                wr[x] = shadows ? 1.0f - w : w;
             }
         }
+        // How much of a pixel's neighbourhood is kept too: next to nothing
+        // around a point of light, half at the edge of a large area, all of
+        // it inside one. (1 − that)² keeps the points and lets go of the areas.
+        const double limit = s.number("size_limit") * ctx.pixel_scale;
+        if (limit >= 0.5)
+        {
+            cv::Mat around = ChainEngine::gaussianBlur(weight, limit);
+            cv::Mat keep = 1.0f - around;
+            cv::max(keep, 0.0f, keep);
+            weight = weight.mul(keep.mul(keep));
+        }
+        cv::Mat weight3;
+        cv::merge(std::vector<cv::Mat>{weight, weight, weight}, weight3);
+        cv::multiply(io.pixels, weight3, io.pixels);
     }
 
     // -------------------------------------------------------- channel mixer

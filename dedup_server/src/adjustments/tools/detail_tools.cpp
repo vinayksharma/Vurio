@@ -54,7 +54,7 @@ namespace MediaDedup::Adjustments
         descriptor_.summary = "{amount:.2f} · {size:.4f}";
         descriptor_.resolution_dependent = true;
         number("amount", "Amount", 0, 1, 0, 0.01);
-        number("size", "Size (of short side)", 0.001, 0.02, 0.004, 0.0005);
+        number("size", "Size (of short side)", 0.0002, 0.02, 0.004, 0.0001);
         number("color", "Colour", 0, 1, 0, 0.01);
         integer("seed", "Seed", 0, 9999, 1);
     }
@@ -63,16 +63,29 @@ namespace MediaDedup::Adjustments
 
     void GrainTool::fields(int width, int height, double cell_px, int seed, cv::Mat &mono, cv::Mat &colour)
     {
-        double cell = std::max(cell_px, 1e-6);
-        int cw = std::max(1, std::min(width, static_cast<int>(std::lround(width / cell))));
-        int ch = std::max(1, std::min(height, static_cast<int>(std::lround(height / cell))));
-        cv::RNG rng(static_cast<uint64_t>(seed) * 2654435761ULL + 12345ULL);
-        cv::Mat m(ch, cw, CV_32FC1), c(ch, cw, CV_32FC3);
-        rng.fill(m, cv::RNG::NORMAL, 0.0, 1.0);
-        rng.fill(c, cv::RNG::NORMAL, 0.0, 1.0);
-        int interp = (cw < width || ch < height) ? cv::INTER_CUBIC : cv::INTER_NEAREST;
-        cv::resize(m, mono, cv::Size(width, height), 0, 0, interp);
-        cv::resize(c, colour, cv::Size(width, height), 0, 0, interp);
+        // Two octaves: clumps of `cell_px`, and finer grain inside them, so
+        // a coarse setting reads as grain and not as soft blobs.
+        constexpr double kFineRatio = 0.4;
+        constexpr float kFineWeight = 0.7f;
+        auto octave = [&](double cell_in, uint64_t salt, cv::Mat &m_out, cv::Mat &c_out)
+        {
+            double cell = std::max(cell_in, 1e-6);
+            int cw = std::max(1, std::min(width, static_cast<int>(std::lround(width / cell))));
+            int ch = std::max(1, std::min(height, static_cast<int>(std::lround(height / cell))));
+            cv::RNG rng(static_cast<uint64_t>(seed) * 2654435761ULL + 12345ULL + salt);
+            cv::Mat m(ch, cw, CV_32FC1), c(ch, cw, CV_32FC3);
+            rng.fill(m, cv::RNG::NORMAL, 0.0, 1.0);
+            rng.fill(c, cv::RNG::NORMAL, 0.0, 1.0);
+            int interp = (cw < width || ch < height) ? cv::INTER_CUBIC : cv::INTER_NEAREST;
+            cv::resize(m, m_out, cv::Size(width, height), 0, 0, interp);
+            cv::resize(c, c_out, cv::Size(width, height), 0, 0, interp);
+        };
+        cv::Mat fine_m, fine_c;
+        octave(cell_px, 0, mono, colour);
+        octave(cell_px * kFineRatio, 7919, fine_m, fine_c);
+        const float norm = 1.0f / std::sqrt(1.0f + kFineWeight * kFineWeight);
+        mono = (mono + fine_m * kFineWeight) * norm;
+        colour = (colour + fine_c * kFineWeight) * norm;
     }
 
     void GrainTool::apply(const ToolState &state, Frame &io, const RenderContext &ctx) const
@@ -84,8 +97,12 @@ namespace MediaDedup::Adjustments
         double size = s.number("size", 0.004), colour_mix = s.number("color");
         int seed = static_cast<int>(std::lround(s.number("seed", 1)));
         cv::Mat mono, colour;
-        fields(io.width(), io.height(), size * ctx.pixel_scale, seed, mono, colour);
-        const float k = static_cast<float>(amount * 0.2);
+        const double cell_px = size * ctx.pixel_scale;
+        fields(io.width(), io.height(), cell_px, seed, mono, colour);
+        // Grain finer than a pixel averages out within it: a reduced render
+        // shows what the full one looks like from that far away, instead of
+        // per-pixel noise at full strength.
+        const float k = static_cast<float>(amount * 0.2 * std::min(1.0, cell_px));
         const float cm = static_cast<float>(colour_mix);
         for (int y = 0; y < io.height(); ++y)
         {

@@ -20,10 +20,14 @@ namespace MediaDedup::Adjustments
         void apply(const ToolState &, Frame &io, const RenderContext &) const override;
     };
 
-    // out = in × w. k is the pixel's brightest channel or its luma;
+    // out = in × w. k is the pixel's brightest channel, its luma, or one
+    // channel alone (film halation is fed by a source's red light);
     // w = smoothstep(threshold − softness, threshold + softness, k) to keep
     // the highlights, 1 − that to keep the shadows. What is not kept is
-    // black, ready to be blurred and added back.
+    // black, ready to be blurred and added back. With `size_limit` > 0,
+    // w is further scaled by (1 − G(w))², G a Gaussian of sigma
+    // size_limit × short side: a point of light keeps its weight, the edge
+    // of a large bright area keeps a quarter, its inside none.
     class LumaKeyTool final : public ParamTool
     {
     public:

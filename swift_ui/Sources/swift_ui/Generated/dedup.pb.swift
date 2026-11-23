@@ -1496,6 +1496,99 @@ struct Vurio_Dedup_ExportResponse: Sendable {
   init() {}
 }
 
+struct Vurio_Dedup_SceneSignal: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// "scene_brightness"
+  var id: String = String()
+
+  /// "Scene brightness"
+  var label: String = String()
+
+  /// "Dark"
+  var lowLabel: String = String()
+
+  /// "Bright"
+  var highLabel: String = String()
+
+  var min: Double = 0
+
+  var max: Double = 0
+
+  /// a raw camera value (ISO, shutter, …)
+  var advanced: Bool = false
+
+  /// this photo has it
+  var available: Bool = false
+
+  /// when available
+  var value: Double = 0
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_SceneSignalsRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// optional
+  var filePath: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_SceneSignalsResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var signals: [Vurio_Dedup_SceneSignal] = []
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_ResolveDriversRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var filePath: String = String()
+
+  var chainJson: String = String()
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
+struct Vurio_Dedup_ResolveDriversResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  var ok: Bool = false
+
+  var errorMessage: String = String()
+
+  var chainJson: String = String()
+
+  /// how many values were written
+  var resolved: Int32 = 0
+
+  var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  init() {}
+}
+
 struct Vurio_Dedup_Recipe: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -5287,6 +5380,216 @@ extension Vurio_Dedup_ExportResponse: SwiftProtobuf.Message, SwiftProtobuf._Mess
     if lhs.height != rhs.height {return false}
     if lhs.exifCopied != rhs.exifCopied {return false}
     if lhs.warning != rhs.warning {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_SceneSignal: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".SceneSignal"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}label\0\u{3}low_label\0\u{3}high_label\0\u{1}min\0\u{1}max\0\u{1}advanced\0\u{1}available\0\u{1}value\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.label) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.lowLabel) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.highLabel) }()
+      case 5: try { try decoder.decodeSingularDoubleField(value: &self.min) }()
+      case 6: try { try decoder.decodeSingularDoubleField(value: &self.max) }()
+      case 7: try { try decoder.decodeSingularBoolField(value: &self.advanced) }()
+      case 8: try { try decoder.decodeSingularBoolField(value: &self.available) }()
+      case 9: try { try decoder.decodeSingularDoubleField(value: &self.value) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.id.isEmpty {
+      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
+    }
+    if !self.label.isEmpty {
+      try visitor.visitSingularStringField(value: self.label, fieldNumber: 2)
+    }
+    if !self.lowLabel.isEmpty {
+      try visitor.visitSingularStringField(value: self.lowLabel, fieldNumber: 3)
+    }
+    if !self.highLabel.isEmpty {
+      try visitor.visitSingularStringField(value: self.highLabel, fieldNumber: 4)
+    }
+    if self.min.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.min, fieldNumber: 5)
+    }
+    if self.max.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.max, fieldNumber: 6)
+    }
+    if self.advanced != false {
+      try visitor.visitSingularBoolField(value: self.advanced, fieldNumber: 7)
+    }
+    if self.available != false {
+      try visitor.visitSingularBoolField(value: self.available, fieldNumber: 8)
+    }
+    if self.value.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.value, fieldNumber: 9)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_SceneSignal, rhs: Vurio_Dedup_SceneSignal) -> Bool {
+    if lhs.id != rhs.id {return false}
+    if lhs.label != rhs.label {return false}
+    if lhs.lowLabel != rhs.lowLabel {return false}
+    if lhs.highLabel != rhs.highLabel {return false}
+    if lhs.min != rhs.min {return false}
+    if lhs.max != rhs.max {return false}
+    if lhs.advanced != rhs.advanced {return false}
+    if lhs.available != rhs.available {return false}
+    if lhs.value != rhs.value {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_SceneSignalsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".SceneSignalsRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.filePath) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.filePath.isEmpty {
+      try visitor.visitSingularStringField(value: self.filePath, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_SceneSignalsRequest, rhs: Vurio_Dedup_SceneSignalsRequest) -> Bool {
+    if lhs.filePath != rhs.filePath {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_SceneSignalsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".SceneSignalsResponse"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}signals\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.signals) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.signals.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.signals, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_SceneSignalsResponse, rhs: Vurio_Dedup_SceneSignalsResponse) -> Bool {
+    if lhs.signals != rhs.signals {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_ResolveDriversRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".ResolveDriversRequest"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}file_path\0\u{3}chain_json\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.filePath) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.chainJson) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.filePath.isEmpty {
+      try visitor.visitSingularStringField(value: self.filePath, fieldNumber: 1)
+    }
+    if !self.chainJson.isEmpty {
+      try visitor.visitSingularStringField(value: self.chainJson, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_ResolveDriversRequest, rhs: Vurio_Dedup_ResolveDriversRequest) -> Bool {
+    if lhs.filePath != rhs.filePath {return false}
+    if lhs.chainJson != rhs.chainJson {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Vurio_Dedup_ResolveDriversResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  static let protoMessageName: String = _protobuf_package + ".ResolveDriversResponse"
+  static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}ok\0\u{3}error_message\0\u{3}chain_json\0\u{1}resolved\0")
+
+  mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.ok) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.errorMessage) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.chainJson) }()
+      case 4: try { try decoder.decodeSingularInt32Field(value: &self.resolved) }()
+      default: break
+      }
+    }
+  }
+
+  func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.ok != false {
+      try visitor.visitSingularBoolField(value: self.ok, fieldNumber: 1)
+    }
+    if !self.errorMessage.isEmpty {
+      try visitor.visitSingularStringField(value: self.errorMessage, fieldNumber: 2)
+    }
+    if !self.chainJson.isEmpty {
+      try visitor.visitSingularStringField(value: self.chainJson, fieldNumber: 3)
+    }
+    if self.resolved != 0 {
+      try visitor.visitSingularInt32Field(value: self.resolved, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  static func ==(lhs: Vurio_Dedup_ResolveDriversResponse, rhs: Vurio_Dedup_ResolveDriversResponse) -> Bool {
+    if lhs.ok != rhs.ok {return false}
+    if lhs.errorMessage != rhs.errorMessage {return false}
+    if lhs.chainJson != rhs.chainJson {return false}
+    if lhs.resolved != rhs.resolved {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

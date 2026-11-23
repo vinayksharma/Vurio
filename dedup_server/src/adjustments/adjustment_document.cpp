@@ -1,4 +1,5 @@
 #include "adjustments/adjustment_document.hpp"
+#include "adjustments/drivers.hpp"
 #include <chrono>
 #include <cmath>
 #include <ctime>
@@ -513,6 +514,10 @@ namespace MediaDedup::Adjustments
     bool AdjustmentDocument::compile(const ToolRegistry &registry, RenderPlan &out, std::string &error,
                                      const std::set<std::string> &keep_lanes) const
     {
+        // LOOK-5: drivers never reach the plan, but a chain carrying a
+        // malformed one is refused like any other malformed node.
+        if (!Drivers::validate(chain, registry, error))
+            return false;
         RenderPlan plan;
         if (!compileChain(chain, registry, plan, error, true, keep_lanes))
             return false;

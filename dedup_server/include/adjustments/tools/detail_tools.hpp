@@ -12,9 +12,13 @@ namespace MediaDedup::Adjustments
 {
     // Seeded film grain: Gaussian noise n drawn by cv::RNG(seed) on a grid
     // of `size`-sized cells (so every working size sees the same pattern),
-    // upsampled bicubic. out = in + amount·0.2·n·(1 − 0.5·L), where n mixes
-    // the monochrome field with per-channel fields by `color`. Identity
-    // when amount is 0, whatever the seed.
+    // upsampled bicubic, plus a second octave at 0.4 × the size weighted
+    // 0.7 (the two normalised back to unit variance).
+    // out = in + amount·0.2·a·n·(1 − 0.5·L), where n mixes the monochrome
+    // field with per-channel fields by `color` and a = min(1, cell in
+    // pixels): grain finer than a pixel averages out in it. A 35 mm frame's
+    // grain is about 0.0005–0.001 of the short side. Identity when amount
+    // is 0, whatever the seed.
     class GrainTool final : public ParamTool
     {
     public:

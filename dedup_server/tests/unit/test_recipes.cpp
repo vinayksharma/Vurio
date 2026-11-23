@@ -11,7 +11,9 @@
 
 #include "adjustments/adjustment_document.hpp"
 #include "adjustments/adjustment_store.hpp"
+#include "adjustments/drivers.hpp"
 #include "adjustments/recipe_store.hpp"
+#include "adjustments/scene_signals.hpp"
 #include "adjustments/sidecar_store.hpp"
 #include "database/database_manager.hpp"
 #include "database/scanned_files_ops.hpp"
@@ -262,13 +264,109 @@ TEST_F(RecipeStoreTest, UpdateRenamesAndReplacesTheChainAndDeleteRemoves)
     EXPECT_EQ(store.list().size(), 1u);
 }
 
-TEST_F(RecipeStoreTest, StarterRecipesSeedAnEmptyTableOnce)
+TEST_F(RecipeStoreTest, ADrivenRecipeIsResolvedForThePhotoItIsAppliedTo)
+{
+    auto &store = RecipeStore::instance();
+    const std::string driven = R"([{"tool":"grain","params":{"version":1,"amount":0.2},
+        "drivers":{"amount":{"signal":"scene_brightness","points":[[0.2,0.5],[0.8,0.1]]}}}])";
+    auto saved = store.save("Adaptive grain", "", driven, "", false);
+    ASSERT_EQ(saved.outcome, RecipeStore::Outcome::Ok) << saved.error;
+    EXPECT_NE(saved.recipe->chain.find("\"drivers\""), std::string::npos) << "the recipe keeps its drivers";
+    // The same nodes following something else are another recipe.
+    const std::string plain = R"([{"tool":"grain","params":{"version":1,"amount":0.2}}])";
+    EXPECT_NE(RecipeStore::contentHash(json::parse(driven)), RecipeStore::contentHash(json::parse(plain)));
+    EXPECT_EQ(store.save("Bad driver", "", R"([{"tool":"grain","drivers":{"amount":{"signal":"mood","points":[[0,0]]}}}])", "", false).outcome,
+              RecipeStore::Outcome::Invalid);
+
+    // A dark scene by its exposure; the picture itself is unreadable here.
+    Adjustments::SignalService::instance().configure(
+        [](const std::string &, int, Adjustments::Size &) { return cv::Mat(); },
+        [](const std::string &) {
+            Adjustments::SceneSignals::Exposure e;
+            e.iso = 3200;
+            e.shutter_seconds = 1.0 / 30;
+            e.aperture = 1.8;
+            return e;
+        });
+    auto applied = store.apply(asset_, saved.recipe->id, RecipeStore::ApplyMode::Replace, 0);
+    Adjustments::SignalService::instance().reset();
+    ASSERT_EQ(applied.outcome, AdjustmentStore::Outcome::Ok) << applied.error;
+    json chain;
+    std::string error;
+    ASSERT_TRUE(RecipeStore::parseChain(AdjustmentStore::instance().documentJsonFor(asset_), chain, error)) << error;
+    ASSERT_EQ(chain.size(), 1u);
+    // EV 1.6 -> brightness 0.225 -> amount 0.5 - (0.025/0.6)·0.4
+    EXPECT_NEAR(chain[0]["params"]["amount"].get<double>(), 0.4833, 2e-3);
+    EXPECT_TRUE(chain[0].contains("drivers")) << "the photo's node still knows what it follows";
+}
+
+TEST_F(RecipeStoreTest, StarterRecipesAreOfferedToALibraryOnce)
 {
     auto &store = RecipeStore::instance();
     EXPECT_EQ(store.seedBuiltins(), 4);
     EXPECT_EQ(store.list().size(), 4u);
     EXPECT_EQ(store.list()[0].source, "builtin");
-    EXPECT_EQ(store.seedBuiltins(), 0) << "only an empty table is seeded";
+    EXPECT_EQ(store.seedBuiltins(), 0) << "nothing is offered twice";
+    bool film = false;
     for (const auto &row : store.list())
+    {
         EXPECT_TRUE(store.validate(row.chain).ok) << row.name;
+        if (row.name == "CineStill 800T")
+        {
+            film = true;
+            EXPECT_NE(row.chain.find("\"linear_add\""), std::string::npos) << "halation lanes";
+            EXPECT_NE(row.chain.find("\"drivers\""), std::string::npos) << "it follows the scene";
+        }
+    }
+    EXPECT_TRUE(film);
+    // A starter left as shipped follows the build; one the user edited does not.
+    std::string film_id, mono_id;
+    for (const auto &row : store.list())
+    {
+        if (row.name == "CineStill 800T") film_id = row.id;
+        if (row.name == "Mono, red filter") mono_id = row.id;
+    }
+    const std::string older = R"([{"tool":"grain","params":{"version":1,"amount":0.1}}])";
+    {
+        // As an older build shipped them: same rows, another chain.
+        for (const std::string &id : {film_id, mono_id})
+        {
+            auto row = RecipesOps::get(*db_, id);
+            ASSERT_TRUE(row.has_value());
+            row->chain = older;
+            row->content_hash = RecipeStore::contentHash(json::parse(older));
+            ASSERT_TRUE(RecipesOps::update(*db_, *row));
+        }
+        auto mine = RecipesOps::get(*db_, mono_id);
+        mine->updated_at = mine->created_at + 60; // the user changed this one
+        ASSERT_TRUE(RecipesOps::update(*db_, *mine));
+    }
+    EXPECT_EQ(store.seedBuiltins(), 0);
+    EXPECT_NE(store.get(film_id)->chain.find("\"linear_add\""), std::string::npos) << "refreshed in place";
+    EXPECT_EQ(store.get(film_id)->updated_at, store.get(film_id)->created_at);
+    EXPECT_EQ(json::parse(store.get(mono_id)->chain).size(), 1u);
+    EXPECT_EQ(json::parse(store.get(mono_id)->chain)[0]["tool"], "grain") << "the user's version is kept";
+    ASSERT_TRUE(store.update(mono_id, "", "", true, R"([{"tool":"monochrome","params":{"version":1,"preset":"red_filter"}}])").outcome == RecipeStore::Outcome::Ok);
+
+    // A starter the user deleted stays deleted.
+    for (const auto &row : store.list())
+        if (row.name == "Soft contrast")
+            EXPECT_TRUE(store.remove(row.id));
+    EXPECT_EQ(store.seedBuiltins(), 0);
+    EXPECT_EQ(store.list().size(), 3u);
+}
+
+TEST_F(RecipeStoreTest, ALibraryFromBeforeTheListGetsOnlyTheNewStarters)
+{
+    auto &store = RecipeStore::instance();
+    // An existing library: the user's own recipe, the old starters long gone.
+    ASSERT_EQ(store.save("Mine", "", R"([{"tool":"exposure","params":{"version":1,"ev":0.3}}])", "", false).outcome,
+              RecipeStore::Outcome::Ok);
+    EXPECT_EQ(store.seedBuiltins(), 1);
+    ASSERT_EQ(store.list().size(), 2u);
+    bool film = false;
+    for (const auto &row : store.list())
+        film = film || row.name == "CineStill 800T";
+    EXPECT_TRUE(film);
+    EXPECT_EQ(store.seedBuiltins(), 0);
 }

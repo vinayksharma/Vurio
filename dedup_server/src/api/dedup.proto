@@ -766,6 +766,44 @@ service RecipesService {
   rpc ApplyRecipe(ApplyRecipeRequest) returns (SetAdjustmentsResponse);
   rpc ExportRecipes(RecipeIdsRequest) returns (RecipesFile);
   rpc ImportRecipes(ImportRecipesRequest) returns (ImportRecipesResult);
+  // LOOK-4: the scene signals a driver may follow, with this photo's
+  // values (an empty file_path returns the catalogue alone).
+  rpc GetSceneSignals(SceneSignalsRequest) returns (SceneSignalsResponse);
+  // LOOK-5: the chain with every driven value written in for the photo.
+  // Nothing is committed.
+  rpc ResolveDrivers(ResolveDriversRequest) returns (ResolveDriversResponse);
+}
+
+message SceneSignal {
+  string id = 1;               // "scene_brightness"
+  string label = 2;            // "Scene brightness"
+  string low_label = 3;        // "Dark"
+  string high_label = 4;       // "Bright"
+  double min = 5;
+  double max = 6;
+  bool advanced = 7;           // a raw camera value (ISO, shutter, …)
+  bool available = 8;          // this photo has it
+  double value = 9;            // when available
+}
+
+message SceneSignalsRequest {
+  string file_path = 1;        // optional
+}
+
+message SceneSignalsResponse {
+  repeated SceneSignal signals = 1;
+}
+
+message ResolveDriversRequest {
+  string file_path = 1;
+  string chain_json = 2;
+}
+
+message ResolveDriversResponse {
+  bool ok = 1;
+  string error_message = 2;
+  string chain_json = 3;
+  int32 resolved = 4;          // how many values were written
 }
 
 message Recipe {

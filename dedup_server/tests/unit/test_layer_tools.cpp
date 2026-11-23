@@ -643,6 +643,24 @@ TEST(LayerToolTest, GrainIsSeededMidtoneWeightedAndIdentityAtZero)
     GrainTool::fields(200, 150, 4.0, 9, m1, c1);
     GrainTool::fields(400, 300, 8.0, 9, m2, c2);
     EXPECT_NEAR(m1.at<float>(75, 100), m2.at<float>(150, 200), 0.15) << "same pattern at twice the size";
+    cv::Scalar mean_f, dev_f;
+    cv::meanStdDev(m2, mean_f, dev_f);
+    EXPECT_NEAR(mean_f[0], 0.0, 0.05);
+    EXPECT_GT(dev_f[0], 0.5) << "two octaves, still about unit strength";
+    // Grain finer than a pixel is weaker, as it is when a full render is viewed small.
+    auto spread = [&](double short_side)
+    {
+        Frame f = solid(0.5f, 0.5f, 0.5f, 200, 150);
+        RenderContext c;
+        c.pixel_scale = short_side;
+        tool->apply(*tool->parse(json{{"amount", 1.0}, {"size", 0.001}}, error), f, c);
+        cv::Scalar m, d;
+        cv::meanStdDev(f.pixels, m, d);
+        return d[1];
+    };
+    EXPECT_NEAR(spread(250) / spread(1000), 0.25, 0.05) << "a quarter-pixel cell, a quarter of the grain";
+    EXPECT_NEAR(spread(4000) / spread(1000), 1.0, 0.35) << "at a pixel and above the strength holds";
+    EXPECT_NE(tool->parse(json{{"amount", 0.5}, {"size", 0.0005}}, error), nullptr) << "35 mm grain sizes are within the limits";
 }
 
 TEST(LayerToolTest, ClarityAndDehazeLeaveAFlatFrameAloneAndRaiseContrast)
@@ -730,6 +748,20 @@ TEST(LookToolTest, LumaKeyKeepsOneEndAndBlacksOutTheRest)
     EXPECT_FLOAT_EQ(run("luma_key", p, cv::Vec3f(0.9f, 0.9f, 0.9f))[1], 0.0f);
 
     const AdjustmentTool *tool = ToolRegistry::instance().find("luma_key");
+    // With a size limit a point of light is kept and a large bright area is
+    // let go: all of its inside, most of its edge.
+    {
+        Frame f = solid(0, 0, 0, 400, 400);
+        cv::circle(f.pixels, cv::Point(60, 60), 4, cv::Scalar(1, 1, 1), cv::FILLED);
+        cv::rectangle(f.pixels, cv::Rect(200, 0, 200, 400), cv::Scalar(1, 1, 1), cv::FILLED);
+        std::string error;
+        RenderContext ctx;
+        ctx.pixel_scale = 400;
+        tool->apply(*tool->parse({{"threshold", 0.9}, {"softness", 0.05}, {"size_limit", 0.05}}, error), f, ctx);
+        EXPECT_GT(f.pixels.at<cv::Vec3f>(60, 60)[1], 0.85f) << "the point of light";
+        EXPECT_LT(f.pixels.at<cv::Vec3f>(200, 330)[1], 0.01f) << "inside the area";
+        EXPECT_NEAR(f.pixels.at<cv::Vec3f>(200, 200)[1], 0.25f, 0.06f) << "its edge";
+    }
     EXPECT_FALSE(tool->isIdentity(*tool->defaultState())) << "the defaults already key";
     EXPECT_TRUE(tool->descriptor().active_at_defaults);
 }
@@ -802,7 +834,7 @@ TEST(LookToolTest, ColourGradeTintsEachRangeAndLeavesLumaAlone)
 
 TEST(LookToolTest, AHalationLaneRingsALightAtNightAndVanishesByDay)
 {
-    // The lane from the Tungsten 800 recipe on a white lamp: over black the
+    // The lane from the CineStill 800T recipe on a white lamp: over black the
     // rim turns red; over a bright sky the same lane barely shows.
     auto render = [](float sky)
     {
@@ -831,4 +863,41 @@ TEST(LookToolTest, AHalationLaneRingsALightAtNightAndVanishesByDay)
     EXPECT_NEAR(night.pixels.at<cv::Vec3f>(20, 20)[2], 0.02f, 5e-3) << "far from the lamp nothing changes";
     cv::Vec3f day_rim = day.pixels.at<cv::Vec3f>(200, 200 + 38);
     EXPECT_LT(day_rim[2] - 0.7f, (rim[2] - 0.02f) * 0.5f) << "the same light over a bright sky shows far less";
+}
+
+TEST(LookToolTest, HalationShowsOnlyOnTheDarkSideOfAnEdgeAndOnlyFromRedLight)
+{
+    // The lane as the CineStill 800T recipe builds it: the source is keyed
+    // by its red light, and the lane's mask lets the glow land on dark
+    // surroundings only.
+    json chain = json::array({{{"tool", "split"}, {"lanes", json::array({{
+        {"name", "Halation"},
+        {"mask", {{"components", json::array({{{"source", "luminance"}, {"params", {{"lo", 0.0}, {"hi", 0.35}, {"knee", 0.3}}}}})}}},
+        {"steps", json::array({
+            {{"tool", "luma_key"}, {"params", {{"key", "red"}, {"threshold", 0.95}, {"softness", 0.04}}}},
+            {{"tool", "blur"}, {"params", {{"radius", 0.02}}}},
+            {{"tool", "exposure"}, {"params", {{"ev", 1.0}}}},
+            {{"tool", "color_filter"}, {"params", {{"hue", 22}, {"saturation", 1.0}, {"density", 1.0}}}}})},
+        {"merge", {{"blend", "linear_add"}, {"strength", 0.8}}}}})}}});
+    RenderPlan plan;
+    std::string error;
+    ASSERT_TRUE(chainDoc(chain).compile(ToolRegistry::instance(), plan, error)) << error;
+    // Left half dark, right half a bright wall; a big white pillow across
+    // the middle, a white lamp and a blue LED on the dark side.
+    Frame f = solid(0.05f, 0.05f, 0.05f, 600, 400);
+    cv::rectangle(f.pixels, cv::Rect(300, 0, 300, 400), cv::Scalar(0.7, 0.7, 0.7), cv::FILLED);
+    cv::rectangle(f.pixels, cv::Rect(200, 150, 200, 100), cv::Scalar(1, 1, 1), cv::FILLED);
+    cv::circle(f.pixels, cv::Point(80, 60), 10, cv::Scalar(1, 1, 1), cv::FILLED);
+    cv::circle(f.pixels, cv::Point(80, 340), 10, cv::Scalar(1, 0.3, 0.1), cv::FILLED);
+    const cv::Mat before = f.pixels.clone();
+    plan.render(f);
+    auto moved = [&](int y, int x) { return cv::norm(f.pixels.at<cv::Vec3f>(y, x) - before.at<cv::Vec3f>(y, x)); };
+    EXPECT_LT(moved(200, 300), 1e-3) << "the inside of a large white area is not washed";
+    EXPECT_GT(moved(200, 194), 0.1) << "its edge glows onto the dark side";
+    EXPECT_LT(moved(200, 406), 0.02) << "and not onto the bright wall";
+    EXPECT_GT(moved(60, 94), 0.1) << "a lamp in the dark has its ring";
+    EXPECT_LT(moved(340, 94), 1e-3) << "a blue light has no red to give";
+    cv::Vec3f ring = f.pixels.at<cv::Vec3f>(60, 94);
+    EXPECT_GT(ring[2], 2.0f * ring[0] + 0.1f) << "the ring is red-orange";
+    EXPECT_NEAR(moved(60, 80), 0.0, 1e-3) << "the lamp's core stays white";
 }

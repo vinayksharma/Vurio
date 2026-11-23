@@ -96,7 +96,11 @@ namespace MediaDedup::Adjustments
         };
         ImportResult importJson(const std::string &text, ConflictPolicy policy);
 
-        // Starter recipes when the table is empty and config allows.
+        // Starter recipes, when config allows: each is offered to a library
+        // once (the names offered are kept under kBuiltinsSeededKey), so a
+        // new build's starters reach an existing library and a deleted one
+        // does not come back. Returns how many were added.
+        static constexpr const char *kBuiltinsSeededKey = "recipes.builtinsSeeded";
         int seedBuiltins();
 
         // Canonical hash of a chain (the recipe's identity for dedup).

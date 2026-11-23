@@ -8,7 +8,9 @@
 // recipe or photo.
 
 #include "core/grpc_server/grpc_service_common.hpp"
+#include "adjustments/drivers.hpp"
 #include "adjustments/recipe_store.hpp"
+#include "adjustments/scene_signals.hpp"
 
 namespace MediaDedup {
 namespace Core {
@@ -53,6 +55,45 @@ public:
         reply->set_ok(v.ok);
         reply->set_error_message(v.error);
         reply->set_node_count(v.node_count);
+        return grpc::Status::OK;
+    }
+
+    grpc::Status GetSceneSignals(grpc::ServerContext*, const vurio::dedup::SceneSignalsRequest* request,
+                                 vurio::dedup::SceneSignalsResponse* reply) override {
+        using MediaDedup::Adjustments::SceneSignals;
+        SceneSignals signals;
+        if (!request->file_path().empty())
+            signals = MediaDedup::Adjustments::SignalService::instance().forFile(request->file_path());
+        for (const auto& spec : SceneSignals::catalogue()) {
+            auto* s = reply->add_signals();
+            s->set_id(spec.id);
+            s->set_label(spec.label);
+            s->set_low_label(spec.low_label);
+            s->set_high_label(spec.high_label);
+            s->set_min(spec.min);
+            s->set_max(spec.max);
+            s->set_advanced(spec.advanced);
+            s->set_available(signals.has(spec.id));
+            s->set_value(signals.value(spec.id));
+        }
+        return grpc::Status::OK;
+    }
+
+    grpc::Status ResolveDrivers(grpc::ServerContext*, const vurio::dedup::ResolveDriversRequest* request,
+                                vurio::dedup::ResolveDriversResponse* reply) override {
+        using namespace MediaDedup::Adjustments;
+        nlohmann::json chain;
+        std::string error;
+        if (!RecipeStore::parseChain(request->chain_json(), chain, error) ||
+            !Drivers::validate(chain, ToolRegistry::instance(), error)) {
+            reply->set_ok(false);
+            reply->set_error_message(error);
+            return grpc::Status::OK;
+        }
+        int n = Drivers::resolve(chain, SignalService::instance().forFile(request->file_path()), ToolRegistry::instance());
+        reply->set_ok(true);
+        reply->set_chain_json(chain.dump());
+        reply->set_resolved(n);
         return grpc::Status::OK;
     }
 

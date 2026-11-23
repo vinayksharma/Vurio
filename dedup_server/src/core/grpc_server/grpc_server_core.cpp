@@ -1,5 +1,6 @@
 #include "core/media_ready_bus.hpp"
 #include "database/faces_ops.hpp"
+#include "adjustments/scene_signals.hpp"
 #include "adjustments/mask_service.hpp"
 #include "adjustments/export_models.hpp"
 #include "adjustments/export_renderer.hpp"
@@ -211,6 +212,23 @@ void GrpcServerCore::start(const std::string& instance_dir,
                 });
         }
 
+        // LOOK-4 (docs/todo_film_looks.md): scene signals — the same base
+        // decode, the camera's exposure from the library's EXIF columns.
+        MediaDedup::Adjustments::SignalService::instance().configure(
+            [](const std::string& file_path, int max_side, MediaDedup::Adjustments::Size& base_full) {
+                return MediaDedup::Adjustments::PreviewSessionManager::instance().loadBase(file_path, max_side, base_full);
+            },
+            [db_shared](const std::string& file_path) {
+                MediaDedup::Adjustments::SceneSignals::Exposure e;
+                if (!db_shared) return e;
+                auto row = MediaDedup::ScannedFilesOps::getByPath(*db_shared, file_path);
+                if (!row) return e;
+                if (row->exif_iso) e.iso = static_cast<double>(*row->exif_iso);
+                if (row->exif_exposure_time) e.shutter_seconds = static_cast<double>(*row->exif_exposure_time);
+                if (row->exif_f_number) e.aperture = static_cast<double>(*row->exif_f_number);
+                return e;
+            });
+
         // CHAIN-6 (docs §8): export. Native-resolution base through the
         // existing decode paths; an "export" event closes every attempt.
         {
@@ -328,6 +346,7 @@ void GrpcServerCore::stop() {
         MediaDedup::Adjustments::PreviewSessionManager::instance().reset();
         MediaDedup::Adjustments::MaskService::instance().reset(); // CHAIN-5: stop the detector worker
         MediaDedup::Adjustments::Exporter::instance().reset(); // CHAIN-6
+        MediaDedup::Adjustments::SignalService::instance().reset(); // LOOK-4: lets go of the database
         Poco::Logger::get("GrpcServerCore").information("gRPC Server stopped.");
     }
     if (!instance_dir_.empty()) {
