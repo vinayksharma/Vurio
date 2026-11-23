@@ -118,6 +118,7 @@ set(ADJUSTMENTS_SOURCES
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/perspective_tool.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/tone_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/detail_tools.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/tools/look_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/blend.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/masks.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/mask_detectors.cpp
@@ -866,6 +867,7 @@ target_sources(all_unit_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/perspective_tool.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/tone_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/tools/detail_tools.cpp
+    ${CMAKE_SOURCE_DIR}/src/adjustments/tools/look_tools.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/blend.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/masks.cpp
     ${CMAKE_SOURCE_DIR}/src/adjustments/mask_detectors.cpp

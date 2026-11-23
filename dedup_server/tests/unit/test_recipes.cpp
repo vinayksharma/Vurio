@@ -265,8 +265,8 @@ TEST_F(RecipeStoreTest, UpdateRenamesAndReplacesTheChainAndDeleteRemoves)
 TEST_F(RecipeStoreTest, StarterRecipesSeedAnEmptyTableOnce)
 {
     auto &store = RecipeStore::instance();
-    EXPECT_EQ(store.seedBuiltins(), 3);
-    EXPECT_EQ(store.list().size(), 3u);
+    EXPECT_EQ(store.seedBuiltins(), 4);
+    EXPECT_EQ(store.list().size(), 4u);
     EXPECT_EQ(store.list()[0].source, "builtin");
     EXPECT_EQ(store.seedBuiltins(), 0) << "only an empty table is seeded";
     for (const auto &row : store.list())

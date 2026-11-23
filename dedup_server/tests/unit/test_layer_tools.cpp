@@ -15,6 +15,7 @@
 #include "adjustments/tool_registry.hpp"
 #include "adjustments/tools/detail_tools.hpp"
 #include "adjustments/tools/layer_tools.hpp"
+#include "adjustments/tools/look_tools.hpp"
 #include "adjustments/tools/tone_tools.hpp"
 
 using namespace MediaDedup::Adjustments;
@@ -57,14 +58,16 @@ namespace
 
 // ------------------------------------------------------------- blend modes
 
-TEST(BlendModeTest, SixteenModesAreServedAndKnown)
+TEST(BlendModeTest, EighteenModesAreServedAndKnown)
 {
-    EXPECT_EQ(Blend::modes().size(), 16u);
+    EXPECT_EQ(Blend::modes().size(), 18u);
+    EXPECT_TRUE(Blend::isMode("add"));
+    EXPECT_TRUE(Blend::isMode("linear_add"));
     for (const char *m : {"normal", "multiply", "screen", "overlay", "soft_light", "hard_light", "darken", "lighten",
                           "difference", "exclusion", "color_burn", "color_dodge", "hue", "saturation", "color", "luminosity"})
         EXPECT_TRUE(Blend::isMode(m)) << m;
     EXPECT_FALSE(Blend::isMode("plus"));
-    EXPECT_EQ(RenderPlan::blendModes().size(), 16u);
+    EXPECT_EQ(RenderPlan::blendModes().size(), 18u);
 }
 
 TEST(BlendModeTest, SeparableFormulasOnProbeValues)
@@ -123,7 +126,7 @@ TEST(BlendModeTest, MatApplyMatchesPixelFormula)
 TEST(LayerToolTest, RegistryServesTheCatalogueWithCategories)
 {
     const auto &tools = ToolRegistry::instance().tools();
-    ASSERT_EQ(tools.size(), 20u);
+    ASSERT_EQ(tools.size(), 24u);
     EXPECT_EQ(tools[0]->id(), "rotate");
     EXPECT_EQ(tools[2]->id(), "perspective");
     EXPECT_EQ(tools[3]->id(), "exposure");
@@ -145,7 +148,7 @@ TEST(LayerToolTest, RegistryServesTheCatalogueWithCategories)
         ASSERT_NE(back, nullptr) << d.id << ": " << error;
         EXPECT_EQ(t->isIdentity(*back), !d.active_at_defaults) << d.id;
     }
-    EXPECT_EQ(layers, 13);
+    EXPECT_EQ(layers, 17);
     EXPECT_EQ(rasters, 4);
     // Monochrome is active at its defaults and identity only when switched off.
     const AdjustmentTool *mono = ToolRegistry::instance().find("monochrome");
@@ -695,4 +698,137 @@ TEST(LayerToolTest, ClarityAndDehazeLeaveAFlatFrameAloneAndRaiseContrast)
     // Flat frames are left alone by both.
     cv::Vec3f flat2 = run("dehaze", json{{"amount", 0.5}}, cv::Vec3f(0.5f, 0.5f, 0.5f), 120, 90);
     EXPECT_NEAR(flat2[1], 0.5f, 0.02);
+}
+
+// ------------------------------------------------------ LOOK-1/2 look tools
+
+TEST(LookToolTest, AddAndLinearAddBlends)
+{
+    const cv::Vec3f b(0.5f, 0.5f, 0.5f), t(0.25f, 0.25f, 0.25f);
+    EXPECT_FLOAT_EQ(Blend::blendPixel("add", b, t)[0], 0.75f);
+    EXPECT_FLOAT_EQ(Blend::blendPixel("add", cv::Vec3f(0.8f, 0.8f, 0.8f), b)[0], 1.0f) << "clamped";
+    // Linear light: 0.5 -> 0.2140, 0.25 -> 0.0508; the sum 0.2648 -> 0.5510.
+    EXPECT_NEAR(Blend::blendPixel("linear_add", b, t)[0], 0.5510f, 2e-3);
+    EXPECT_NEAR(Blend::blendPixel("linear_add", cv::Vec3f(0, 0, 0), t)[0], 0.25f, 1e-3) << "over black it is the light itself";
+    EXPECT_NEAR(Blend::toLinear(0.5f), 0.21404f, 1e-4);
+    EXPECT_NEAR(Blend::toGamma(Blend::toLinear(0.73f)), 0.73f, 1e-3);
+    EXPECT_FLOAT_EQ(Blend::toGamma(2.0f), 1.0f);
+}
+
+TEST(LookToolTest, LumaKeyKeepsOneEndAndBlacksOutTheRest)
+{
+    json p = {{"threshold", 0.6}, {"softness", 0.1}};
+    EXPECT_FLOAT_EQ(run("luma_key", p, cv::Vec3f(0.9f, 0.9f, 0.9f))[1], 0.9f);
+    EXPECT_FLOAT_EQ(run("luma_key", p, cv::Vec3f(0.3f, 0.3f, 0.3f))[1], 0.0f);
+    EXPECT_NEAR(run("luma_key", p, cv::Vec3f(0.6f, 0.6f, 0.6f))[1], 0.3f, 1e-5) << "half way through the knee";
+    // A saturated red light is bright by its brightest channel, not by luma.
+    EXPECT_FLOAT_EQ(run("luma_key", p, cv::Vec3f(0.0f, 0.0f, 1.0f))[2], 1.0f);
+    p["key"] = "luminance";
+    EXPECT_FLOAT_EQ(run("luma_key", p, cv::Vec3f(0.0f, 0.0f, 1.0f))[2], 0.0f);
+    p["keep"] = "shadows";
+    EXPECT_FLOAT_EQ(run("luma_key", p, cv::Vec3f(0.3f, 0.3f, 0.3f))[1], 0.3f);
+    EXPECT_FLOAT_EQ(run("luma_key", p, cv::Vec3f(0.9f, 0.9f, 0.9f))[1], 0.0f);
+
+    const AdjustmentTool *tool = ToolRegistry::instance().find("luma_key");
+    EXPECT_FALSE(tool->isIdentity(*tool->defaultState())) << "the defaults already key";
+    EXPECT_TRUE(tool->descriptor().active_at_defaults);
+}
+
+TEST(LookToolTest, BlurSpreadsLightAndKeepsItsSum)
+{
+    const AdjustmentTool *tool = ToolRegistry::instance().find("blur");
+    ASSERT_NE(tool, nullptr);
+    EXPECT_TRUE(tool->isIdentity(*tool->defaultState()));
+    std::string error;
+    auto dot = []
+    {
+        Frame f = solid(0, 0, 0, 200, 200);
+        cv::rectangle(f.pixels, cv::Rect(96, 96, 8, 8), cv::Scalar(1, 1, 1), cv::FILLED);
+        return f;
+    };
+    RenderContext ctx;
+    ctx.pixel_scale = 200;
+    Frame lin = dot(), gam = dot();
+    tool->apply(*tool->parse({{"radius", 0.03}}, error), lin, ctx);
+    tool->apply(*tool->parse({{"radius", 0.03}, {"linear", false}}, error), gam, ctx);
+    // Sigma 6 px: the centre drops, light reaches 12 px out, none 60 px out.
+    EXPECT_LT(centre(gam)[0], 0.5f);
+    EXPECT_GT(gam.pixels.at<cv::Vec3f>(100, 112)[0], 0.01f);
+    EXPECT_LT(gam.pixels.at<cv::Vec3f>(100, 160)[0], 1e-4f);
+    EXPECT_NEAR(cv::sum(gam.pixels)[0], 64.0, 0.7) << "a blur moves light, it does not make any";
+    // The same light spread in linear light reads brighter once encoded.
+    EXPECT_GT(lin.pixels.at<cv::Vec3f>(100, 112)[0], gam.pixels.at<cv::Vec3f>(100, 112)[0] + 0.05f);
+    Frame flat = solid(0.4f, 0.5f, 0.6f);
+    tool->apply(*tool->parse({{"radius", 0.05}}, error), flat, ctx);
+    EXPECT_NEAR(centre(flat)[1], 0.5f, 2e-3) << "a flat field is unchanged";
+}
+
+TEST(LookToolTest, ChannelMixerIsAMatrixInRgbTerms)
+{
+    const AdjustmentTool *tool = ToolRegistry::instance().find("channel_mixer");
+    ASSERT_NE(tool, nullptr);
+    EXPECT_TRUE(tool->isIdentity(*tool->defaultState()));
+    ASSERT_EQ(tool->descriptor().params.size(), 9u);
+    EXPECT_EQ(tool->descriptor().params[0].group, "Red out");
+    // in (r, g, b) = (0.2, 0.4, 0.8), frame order b, g, r
+    const cv::Vec3f in(0.8f, 0.4f, 0.2f);
+    cv::Vec3f out = run("channel_mixer", {{"red_r", 0.5}, {"red_g", 0.5}, {"blue_b", 0.0}, {"blue_r", 1.0}}, in);
+    EXPECT_NEAR(out[2], 0.3f, 1e-6) << "red = 0.5 r + 0.5 g";
+    EXPECT_NEAR(out[1], 0.4f, 1e-6) << "green untouched";
+    EXPECT_NEAR(out[0], 0.2f, 1e-6) << "blue = r";
+    EXPECT_FLOAT_EQ(run("channel_mixer", {{"red_g", -2.0}}, in)[2], 0.0f) << "clamped";
+}
+
+TEST(LookToolTest, ColourGradeTintsEachRangeAndLeavesLumaAlone)
+{
+    const AdjustmentTool *tool = ToolRegistry::instance().find("color_grade");
+    ASSERT_NE(tool, nullptr);
+    EXPECT_TRUE(tool->isIdentity(*tool->defaultState()));
+    auto luma = [](const cv::Vec3f &p) { return 0.0722f * p[0] + 0.7152f * p[1] + 0.2126f * p[2]; };
+    json teal_shadows = {{"shadows_hue", 180}, {"shadows_amount", 0.5}};
+    cv::Vec3f dark = run("color_grade", teal_shadows, cv::Vec3f(0.2f, 0.2f, 0.2f));
+    EXPECT_GT(dark[0], dark[2] + 0.1f) << "shadows lean blue-green";
+    EXPECT_NEAR(luma(dark), 0.2f, 1e-4) << "the tint carries no luma";
+    cv::Vec3f white = run("color_grade", teal_shadows, cv::Vec3f(1, 1, 1));
+    EXPECT_FLOAT_EQ(white[2], 1.0f) << "the shadow range does not reach white";
+    // hue 180 at amount 0.5, L = 0.2: w = 0.64, red moves by 0.64 x 0.25 x (0 - 0.7874)
+    EXPECT_NEAR(dark[2], 0.2f - 0.64f * 0.25f * 0.7874f, 1e-4);
+    // Balance toward the highlights shrinks the shadow range.
+    teal_shadows["balance"] = 1.0;
+    cv::Vec3f less = run("color_grade", teal_shadows, cv::Vec3f(0.2f, 0.2f, 0.2f));
+    EXPECT_GT(less[2], dark[2] + 0.02f);
+    EXPECT_NEAR(run("color_grade", {{"highlights_lum", 1.0}}, cv::Vec3f(0.5f, 0.5f, 0.5f))[1], 0.5f + 0.25f * 0.25f, 1e-5);
+}
+
+TEST(LookToolTest, AHalationLaneRingsALightAtNightAndVanishesByDay)
+{
+    // The lane from the Tungsten 800 recipe on a white lamp: over black the
+    // rim turns red; over a bright sky the same lane barely shows.
+    auto render = [](float sky)
+    {
+        json chain = json::array({{{"tool", "split"}, {"lanes", json::array({{
+            {"name", "Halation"},
+            {"mask", {{"components", json::array({{{"source", "full"}}})}}},
+            {"steps", json::array({
+                {{"tool", "luma_key"}, {"params", {{"threshold", 0.85}, {"softness", 0.1}}}},
+                {{"tool", "blur"}, {"params", {{"radius", 0.02}}}},
+                {{"tool", "exposure"}, {"params", {{"ev", 1.0}}}},
+                {{"tool", "color_filter"}, {"params", {{"hue", 12}, {"saturation", 0.9}, {"density", 1.0}}}}})},
+            {"merge", {{"blend", "linear_add"}, {"strength", 1.0}}}}})}}});
+        RenderPlan plan;
+        std::string error;
+        EXPECT_TRUE(chainDoc(chain).compile(ToolRegistry::instance(), plan, error)) << error;
+        Frame f = solid(sky, sky, sky, 400, 400);
+        cv::circle(f.pixels, cv::Point(200, 200), 30, cv::Scalar(1, 1, 1), cv::FILLED);
+        plan.render(f);
+        return f;
+    };
+    Frame night = render(0.02f), day = render(0.7f);
+    cv::Vec3f rim = night.pixels.at<cv::Vec3f>(200, 200 + 38); // 8 px outside the lamp
+    EXPECT_GT(rim[2], 0.3f) << "a visible ring";
+    EXPECT_GT(rim[2], 2.0f * rim[0]) << "and it is red";
+    EXPECT_NEAR(centre(night)[1], 1.0f, 1e-3) << "the lamp's core stays white";
+    EXPECT_NEAR(night.pixels.at<cv::Vec3f>(20, 20)[2], 0.02f, 5e-3) << "far from the lamp nothing changes";
+    cv::Vec3f day_rim = day.pixels.at<cv::Vec3f>(200, 200 + 38);
+    EXPECT_LT(day_rim[2] - 0.7f, (rim[2] - 0.02f) * 0.5f) << "the same light over a bright sky shows far less";
 }

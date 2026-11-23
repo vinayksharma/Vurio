@@ -9,7 +9,7 @@ namespace MediaDedup::Adjustments::Blend
         enum class Mode
         {
             Normal, Multiply, Screen, Overlay, SoftLight, HardLight, Darken, Lighten, Difference, Exclusion,
-            ColorBurn, ColorDodge, Hue, Saturation, Color, Luminosity, Unknown
+            ColorBurn, ColorDodge, Hue, Saturation, Color, Luminosity, Add, LinearAdd, Unknown
         };
 
         const std::vector<std::pair<std::string, Mode>> &table()
@@ -20,7 +20,7 @@ namespace MediaDedup::Adjustments::Blend
                 {"darken", Mode::Darken},         {"lighten", Mode::Lighten},     {"difference", Mode::Difference},
                 {"exclusion", Mode::Exclusion},   {"color_burn", Mode::ColorBurn}, {"color_dodge", Mode::ColorDodge},
                 {"hue", Mode::Hue},               {"saturation", Mode::Saturation}, {"color", Mode::Color},
-                {"luminosity", Mode::Luminosity}};
+                {"luminosity", Mode::Luminosity}, {"add", Mode::Add},             {"linear_add", Mode::LinearAdd}};
             return t;
         }
 
@@ -33,6 +33,47 @@ namespace MediaDedup::Adjustments::Blend
         }
 
         inline float clamp01(float v) { return v < 0.f ? 0.f : (v > 1.f ? 1.f : v); }
+
+        // sRGB transfer tables, read with linear interpolation.
+        constexpr int kLightSize = 4096;
+        struct LightTables
+        {
+            std::vector<float> decode, encode;
+            LightTables() : decode(kLightSize + 1), encode(kLightSize + 1)
+            {
+                for (int i = 0; i <= kLightSize; ++i)
+                {
+                    double x = static_cast<double>(i) / kLightSize;
+                    decode[static_cast<size_t>(i)] =
+                        static_cast<float>(x <= 0.04045 ? x / 12.92 : std::pow((x + 0.055) / 1.055, 2.4));
+                    encode[static_cast<size_t>(i)] =
+                        static_cast<float>(x <= 0.0031308 ? x * 12.92 : 1.055 * std::pow(x, 1.0 / 2.4) - 0.055);
+                }
+            }
+        };
+        const LightTables &light()
+        {
+            static const LightTables t;
+            return t;
+        }
+        inline float through(const std::vector<float> &table, float v)
+        {
+            float x = clamp01(v) * kLightSize;
+            int i = std::min(kLightSize - 1, static_cast<int>(x));
+            float f = x - static_cast<float>(i);
+            return table[static_cast<size_t>(i)] * (1.f - f) + table[static_cast<size_t>(i) + 1] * f;
+        }
+        void throughMat(const std::vector<float> &table, cv::Mat &m)
+        {
+            CV_Assert(m.depth() == CV_32F);
+            const int n = m.cols * m.channels();
+            for (int y = 0; y < m.rows; ++y)
+            {
+                float *row = m.ptr<float>(y);
+                for (int i = 0; i < n; ++i)
+                    row[i] = through(table, row[i]);
+            }
+        }
 
         inline float hardLight(float b, float t)
         {
@@ -69,6 +110,9 @@ namespace MediaDedup::Adjustments::Blend
                 if (b <= 0.f) return 0.f;
                 if (t >= 1.f) return 1.f;
                 return std::min(1.f, b / (1.f - t));
+            case Mode::Add: return b + t;
+            case Mode::LinearAdd:
+                return through(light().encode, through(light().decode, b) + through(light().decode, t));
             default: return t;
             }
         }
@@ -138,6 +182,11 @@ namespace MediaDedup::Adjustments::Blend
             return m != Mode::Hue && m != Mode::Saturation && m != Mode::Color && m != Mode::Luminosity;
         }
     }
+
+    float toLinear(float gamma) { return through(light().decode, gamma); }
+    float toGamma(float linear) { return through(light().encode, linear); }
+    void toLinear(cv::Mat &pixels) { throughMat(light().decode, pixels); }
+    void toGamma(cv::Mat &pixels) { throughMat(light().encode, pixels); }
 
     const std::vector<std::string> &modes()
     {

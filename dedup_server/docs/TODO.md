@@ -13,6 +13,11 @@ Completed tasks move to Done as one-liners; their spec documents are deleted
 
 ## Open
 
+- **LOOK-1..6 — film looks built from generic tools and driven by the scene
+  (800T as the reference): light tools, colour tools, the recipe, then
+  per-photo signals, parameter drivers and the link-by-example UI.**
+  *Designed 2026-11-23; LOOK-1..3 implemented 2026-11-23, LOOK-4..6 open.*
+  Spec: [todo_film_looks.md](todo_film_looks.md).
 - **PLACE-4 — setting facts: "waterfront", "beach", "lake", "mountain" as
   geo filters with at/near distance semantics, backed by GeoNames feature
   codes plus Natural Earth shoreline distance.**
