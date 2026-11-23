@@ -43,6 +43,11 @@ namespace MediaDedup::Adjustments
     // scaled by f = smoothstep(0, 0.25, s) so greys are untouched. In HSV:
     //   h' = h + f·Δh,  s' = s·(1 + f·Δs),
     //   v' = Δl ≥ 0 ? v + (1 − v)·f·Δl/2 : v·(1 + f·Δl/2).
+    // The three per-pixel moves f·Δh, f·Δs, f·Δl are not applied raw: each
+    // is a map, evened out against luma by an edge-distrusting guided
+    // filter (radius kMapRadius of the short side), so chroma noise and
+    // blended edge pixels do not show up as blotches and rims once a
+    // slider is pushed far.
     // Shown as "Color Mixer": three groups (Hue, Saturation, Luminance),
     // each with one slider per band. The id and param ids stay "hsl" /
     // "<band>_hue|_sat|_lum", so chains saved before the rename still load.
@@ -51,6 +56,10 @@ namespace MediaDedup::Adjustments
     public:
         static constexpr const char *kId = "hsl";
         static constexpr int kBands = 8;
+        // Radius, in short sides, over which a pixel's move is evened out
+        // with its neighbours' (edge-aware, against luma). Below about
+        // 0.015 a soft edge is wider than the box and keeps its rim.
+        static constexpr double kMapRadius = 0.02;
         static const char *const kBandIds[kBands];
         static const char *const kBandLabels[kBands];
         static const double kBandCentres[kBands];

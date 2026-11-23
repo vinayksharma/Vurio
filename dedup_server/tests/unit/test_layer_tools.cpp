@@ -477,6 +477,58 @@ TEST(LayerToolTest, CurvesAreMonotoneCubicsThroughTheirPointsPerChannel)
     EXPECT_EQ(back["rgb"], CurvePoints::identityJson());
 }
 
+// A pale, noisy blue sky above green trees with a soft edge between them,
+// and the sky's bands pulled fully dark: the sky must not turn blotchy and
+// the blended edge pixels must not be left behind as a light rim.
+TEST(LayerToolTest, HslFarLuminanceMoveLeavesNoRimAndNoBlotches)
+{
+    const int w = 240, h = 200;
+    Frame f;
+    f.pixels = cv::Mat(h, w, CV_32FC3);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x)
+            f.pixels.at<cv::Vec3f>(y, x) = y < h / 2 ? cv::Vec3f(0.66f, 0.63f, 0.56f) : cv::Vec3f(0.15f, 0.40f, 0.30f);
+    cv::GaussianBlur(f.pixels, f.pixels, cv::Size(0, 0), 2.0);
+    cv::Mat noise(h, w, CV_32FC3);
+    cv::RNG rng(7);
+    rng.fill(noise, cv::RNG::NORMAL, 0.0, 0.015);
+    f.pixels += noise;
+    cv::min(f.pixels, 1.0f, f.pixels);
+    cv::max(f.pixels, 0.0f, f.pixels);
+
+    auto luma = [](const cv::Mat &bgr) {
+        cv::Mat l;
+        cv::transform(bgr, l, cv::Matx13f(0.0722f, 0.7152f, 0.2126f));
+        return l;
+    };
+    const cv::Rect sky(20, 20, w - 40, 50), trees(20, h - 70, w - 40, 50), edge(20, h / 2 - 15, w - 40, 30);
+    cv::Scalar mean, before_dev, after_dev;
+    cv::meanStdDev(luma(f.pixels)(sky), mean, before_dev);
+
+    const AdjustmentTool *tool = ToolRegistry::instance().find("hsl");
+    ASSERT_NE(tool, nullptr);
+    std::string error;
+    auto state = tool->parse(json{{"aqua_lum", -1.0}, {"blue_lum", -1.0}}, error);
+    ASSERT_NE(state, nullptr) << error;
+    RenderContext ctx;
+    ctx.pixel_scale = f.pixelScale();
+    tool->apply(*state, f, ctx);
+
+    cv::Mat out = luma(f.pixels);
+    cv::Scalar sky_mean, trees_mean;
+    cv::meanStdDev(out(sky), sky_mean, after_dev);
+    trees_mean = cv::mean(out(trees));
+    EXPECT_LT(sky_mean[0], mean[0] - 0.1); // the sky did darken
+    EXPECT_LT(after_dev[0], before_dev[0] * 1.2) << "the sky turned blotchy";
+    // Row means across the edge stay between the two sides.
+    cv::Mat rows;
+    cv::reduce(out(edge), rows, 1, cv::REDUCE_AVG);
+    double lo, hi;
+    cv::minMaxLoc(rows, &lo, &hi);
+    EXPECT_LT(hi, std::max(sky_mean[0], trees_mean[0]) + 0.02) << "a light rim along the edge";
+    EXPECT_GT(lo, std::min(sky_mean[0], trees_mean[0]) - 0.02) << "a dark rim along the edge";
+}
+
 TEST(LayerToolTest, HslTouchesOnlyTheTargetedBandAndLeavesGreysAlone)
 {
     const AdjustmentTool *tool = ToolRegistry::instance().find("hsl");

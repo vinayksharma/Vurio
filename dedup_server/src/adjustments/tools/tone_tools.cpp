@@ -25,6 +25,45 @@ namespace MediaDedup::Adjustments
             return lut[static_cast<size_t>(i)] * (1 - t) + lut[static_cast<size_t>(i) + 1] * t;
         }
 
+        // Even out per-pixel maps against the single-channel guide `I`: a
+        // guided filter (a local linear fit map ≈ a·I + b over a box of
+        // radius `r`) whose fit trusts a pixel less the closer it sits to
+        // an edge of the guide. Edge pixels are blends of the two sides —
+        // their map value belongs to neither — so the fit is made from the
+        // settled pixels on either side and carried across the edge by
+        // the guide itself.
+        void smoothMaps(const cv::Mat &I, std::initializer_list<cv::Mat *> maps, int r)
+        {
+            constexpr float kEps = 1e-3f;
+            auto box = [](const cv::Mat &m, int radius) {
+                cv::Mat o;
+                cv::boxFilter(m, o, CV_32F, cv::Size(2 * radius + 1, 2 * radius + 1), cv::Point(-1, -1), true,
+                              cv::BORDER_REFLECT);
+                return o;
+            };
+            const int rs = std::max(1, r / 2);
+            cv::Mat m1 = box(I, rs);
+            cv::Mat local_var = box(I.mul(I), rs) - m1.mul(m1);
+            cv::max(local_var, 0.0f, local_var);
+            cv::Mat w = kEps / (local_var + kEps);
+            w = w.mul(w);
+            w += 1e-4f;
+            cv::Mat sum_w = box(w, r);
+            auto wbox = [&](const cv::Mat &m) { return cv::Mat(box(w.mul(m), r) / sum_w); };
+            cv::Mat mean_I = wbox(I);
+            cv::Mat var_I = wbox(I.mul(I)) - mean_I.mul(mean_I);
+            for (cv::Mat *p : maps)
+            {
+                if (p->empty())
+                    continue;
+                cv::Mat mean_p = wbox(*p);
+                cv::Mat cov = wbox(I.mul(*p)) - mean_I.mul(mean_p);
+                cv::Mat a = cov / (var_I + kEps);
+                cv::Mat b = mean_p - a.mul(mean_I);
+                *p = box(a, r).mul(I) + box(b, r);
+            }
+        }
+
         inline double smoothstep(double e0, double e1, double x)
         {
             double t = std::min(1.0, std::max(0.0, (x - e0) / (e1 - e0)));
@@ -153,6 +192,7 @@ namespace MediaDedup::Adjustments
         descriptor_.summary = "8 colours";
         descriptor_.pick_hint = "Press on a colour in the picture and drag up or down";
         descriptor_.pick_drag = true;
+        descriptor_.resolution_dependent = true;
         // One group per property, a slider per colour band — the mixer
         // layout: "what do I want to do to the blues" reads down a column
         // of colours. Each track shows what its slider does to that band.
@@ -251,7 +291,7 @@ namespace MediaDedup::Adjustments
         out[0] = 1; // h == 360 after fmod cannot happen, but keep the sum at 1
     }
 
-    void HslTool::apply(const ToolState &state, Frame &io, const RenderContext &) const
+    void HslTool::apply(const ToolState &state, Frame &io, const RenderContext &ctx) const
     {
         if (io.empty())
             return;
@@ -282,23 +322,73 @@ namespace MediaDedup::Adjustments
             ds[static_cast<size_t>(i)] = static_cast<float>(b);
             dl[static_cast<size_t>(i)] = static_cast<float>(c);
         }
+        bool any_h = false, any_s = false, any_l = false;
+        for (int b = 0; b < kBands; ++b)
+        {
+            any_h = any_h || hue[b] != 0;
+            any_s = any_s || sat[b] != 0;
+            any_l = any_l || lum[b] != 0;
+        }
+        if (!any_h && !any_s && !any_l)
+            return;
         cv::Mat hsv;
         cv::cvtColor(io.pixels, hsv, cv::COLOR_BGR2HSV); // float: H in [0,360), S and V in [0,1]
+        // How far each pixel moves, as three maps. A pixel's own hue is the
+        // noisiest thing about it (chroma is subsampled and block-coded, and
+        // an edge pixel is a blend whose hue belongs to neither side), so
+        // moving each pixel by its own hue prints that noise into the
+        // picture and leaves a rim along coloured edges. The maps are
+        // therefore smoothed against the picture's luma before use: even
+        // inside a region, stepping where the picture has an edge.
+        cv::Mat mh, ms, ml;
+        if (any_h)
+            mh = cv::Mat::zeros(hsv.size(), CV_32F);
+        if (any_s)
+            ms = cv::Mat::zeros(hsv.size(), CV_32F);
+        if (any_l)
+            ml = cv::Mat::zeros(hsv.size(), CV_32F);
+        for (int y = 0; y < hsv.rows; ++y)
+        {
+            const cv::Vec3f *row = hsv.ptr<cv::Vec3f>(y);
+            float *rh = any_h ? mh.ptr<float>(y) : nullptr;
+            float *rs = any_s ? ms.ptr<float>(y) : nullptr;
+            float *rl = any_l ? ml.ptr<float>(y) : nullptr;
+            for (int x = 0; x < hsv.cols; ++x)
+            {
+                float f = static_cast<float>(smoothstep(0.0, 0.25, row[x][1]));
+                if (f <= 0)
+                    continue;
+                int i = static_cast<int>(row[x][0] * 10.0f);
+                i = std::min(kSteps - 1, std::max(0, i));
+                if (rh)
+                    rh[x] = f * dh[static_cast<size_t>(i)];
+                if (rs)
+                    rs[x] = f * ds[static_cast<size_t>(i)];
+                if (rl)
+                    rl[x] = f * dl[static_cast<size_t>(i)];
+            }
+        }
+        {
+            cv::Mat guide;
+            cv::transform(io.pixels, guide, cv::Matx13f(0.0722f, 0.7152f, 0.2126f));
+            const int r = std::max(2, static_cast<int>(std::lround(kMapRadius * ctx.pixel_scale)));
+            smoothMaps(guide, {&mh, &ms, &ml}, r);
+        }
         for (int y = 0; y < hsv.rows; ++y)
         {
             cv::Vec3f *row = hsv.ptr<cv::Vec3f>(y);
+            const float *rh = any_h ? mh.ptr<float>(y) : nullptr;
+            const float *rs = any_s ? ms.ptr<float>(y) : nullptr;
+            const float *rl = any_l ? ml.ptr<float>(y) : nullptr;
             for (int x = 0; x < hsv.cols; ++x)
             {
                 float h = row[x][0], sv = row[x][1], v = row[x][2];
-                float f = static_cast<float>(smoothstep(0.0, 0.25, sv));
-                if (f <= 0)
-                    continue;
-                int i = static_cast<int>(h * 10.0f);
-                i = std::min(kSteps - 1, std::max(0, i));
-                float nh = h + f * dh[static_cast<size_t>(i)];
+                // A grey has no hue to turn and no colour to scale; its
+                // luminance follows the map like any other pixel's.
+                float nh = h + (rh ? rh[x] : 0.0f);
                 nh = std::fmod(std::fmod(nh, 360.0f) + 360.0f, 360.0f);
-                float ns = std::min(1.0f, std::max(0.0f, sv * (1 + f * ds[static_cast<size_t>(i)])));
-                float l = f * dl[static_cast<size_t>(i)] * 0.5f;
+                float ns = std::min(1.0f, std::max(0.0f, sv * (1 + (rs ? rs[x] : 0.0f))));
+                float l = std::min(1.0f, std::max(-1.0f, rl ? rl[x] : 0.0f)) * 0.5f;
                 float nv = l >= 0 ? v + (1 - v) * l : v * (1 + l);
                 row[x] = cv::Vec3f(nh, ns, std::min(1.0f, std::max(0.0f, nv)));
             }
