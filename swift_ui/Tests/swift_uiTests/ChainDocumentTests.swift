@@ -462,3 +462,47 @@ private let groupedChain = """
     #expect(right.points.first!.x - left.points.first!.x == 300, "full width at the top")
     #expect(abs((right.points.last!.x - left.points.last!.x) - 200) < 1e-9, "two thirds of it at the bottom")
 }
+
+// HIST-1: the viewer's histogram.
+
+@Test func theHistogramCountsChannelsAndClipping() {
+    // Four pixels: black, white, pure red, mid grey.
+    let px: [UInt8] = [0, 0, 0, 255,  255, 255, 255, 255,  255, 0, 0, 255,  128, 128, 128, 255]
+    let data = px.withUnsafeBufferPointer { HistogramData.count(rgbx: $0, pixels: 4) }
+    #expect(data.total == 4)
+    #expect(data.count(.red, 255) == 2 && data.count(.red, 0) == 1 && data.count(.red, 128) == 1)
+    #expect(data.count(.green, 0) == 2 && data.count(.blue, 255) == 1)
+    // Luminosity: black, white, red at 0.2126 × 255 = 54, grey.
+    #expect(data.count(.luma, 0) == 1 && data.count(.luma, 255) == 1 && data.count(.luma, 54) == 1 && data.count(.luma, 128) == 1)
+    #expect(data.bins.allSatisfy { $0.reduce(0, +) == 4 })
+    // Any channel at a limit counts the pixel: black and red are at 0, white and red at 255.
+    #expect(data.shadowPixels == 2 && data.highlightPixels == 2)
+    #expect(data.clippedLow == [.red, .green, .blue] && data.clippedHigh == [.red, .green, .blue])
+    // The end bins never set the graph's scale.
+    #expect(data.peak([.red]) == 1 && data.peak([]) == 0)
+    #expect(HistogramData.indicatorColour([]) == nil && HistogramData.indicatorColour([.red]) != nil)
+
+    // A few stray pixels at the limit are not a warning.
+    var quiet = [UInt8](repeating: 100, count: 10_000 * 4)
+    quiet[0] = 255
+    let calm = quiet.withUnsafeBufferPointer { HistogramData.count(rgbx: $0, pixels: 10_000) }
+    #expect(calm.highlightPixels == 1 && calm.clippedHigh.isEmpty && calm.clippedLow.isEmpty)
+}
+
+@Test func theHistogramReadsAnImageAndPaintsWhatClips() throws {
+    // 2 × 1: a white pixel and a mid-grey one.
+    let space = CGColorSpace(name: CGColorSpace.sRGB)!
+    let ctx = CGContext(data: nil, width: 2, height: 1, bitsPerComponent: 8, bytesPerRow: 8, space: space,
+                        bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+    let p = ctx.data!.assumingMemoryBound(to: UInt8.self)
+    for (i, v) in [255, 255, 255, 255, 128, 128, 128, 255].enumerated() { p[i] = UInt8(v) }
+    let image = ctx.makeImage()!
+    let plain = try #require(HistogramData.analyse(image, shadows: false, highlights: false))
+    #expect(plain.overlay == nil && plain.data.total == 2 && plain.data.highlightPixels == 1 && plain.data.shadowPixels == 0)
+    let painted = try #require(HistogramData.analyse(image, shadows: true, highlights: true))
+    let overlay = try #require(painted.overlay)
+    #expect(overlay.width == 2 && overlay.height == 1)
+    let bytes = try #require(overlay.dataProvider?.data as Data?)
+    #expect(bytes[3] > 0 && bytes[0] > bytes[2], "the white pixel is painted red")
+    #expect(bytes[7] == 0, "the grey one is left clear")
+}

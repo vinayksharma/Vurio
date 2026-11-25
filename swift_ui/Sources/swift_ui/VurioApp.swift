@@ -327,6 +327,12 @@ struct ContentView: View {
     // keyboard and programmatic switches count too): any of them takes the
     // VU/BINNED tab out of its embedded viewer, exactly like X or Esc.
     @State private var viewerDismissals = 0
+    // HIST-1: while a photo is open the navigation pane slides out and the
+    // viewer's histogram panel stands where it was; closing the photo puts
+    // the pane back as it had been.
+    @ObservedObject private var chrome = ViewerChrome.shared
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var visibilityBeforeViewer: NavigationSplitViewVisibility?
 
     enum SidebarItem: Hashable {
         case vu
@@ -338,7 +344,7 @@ struct ContentView: View {
     var body: some View {
         let isCompact = sidebarWidth < 140
         
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             List(selection: $selection) {
                 sidebarRow(.vu, icon: "square.grid.2x2", title: "VU", isCompact: isCompact)
                 sidebarRow(.binned, icon: "photo.on.rectangle.angled", title: "BINNED", isCompact: isCompact)
@@ -374,9 +380,11 @@ struct ContentView: View {
                     Color.clear
                         .onChange(of: geometry.size.width) { _, newWidth in
                             sidebarWidth = newWidth
+                            if !chrome.viewerActive, newWidth >= 80 { chrome.navigationWidth = newWidth }
                         }
                         .onAppear {
                             sidebarWidth = geometry.size.width
+                            if geometry.size.width >= 80 { chrome.navigationWidth = geometry.size.width }
                         }
                 }
             )
@@ -417,6 +425,17 @@ struct ContentView: View {
                 }
             }
         .frame(minWidth: 1027, minHeight: 800)
+        .onChange(of: chrome.viewerActive) { _, open in
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                if open {
+                    if visibilityBeforeViewer == nil { visibilityBeforeViewer = columnVisibility }
+                    columnVisibility = .detailOnly
+                } else if let before = visibilityBeforeViewer {
+                    columnVisibility = before
+                    visibilityBeforeViewer = nil
+                }
+            }
+        }
         // The status bar's hover callout, hoisted above both columns so it
         // can spill past the navigation pane.
         .overlay {

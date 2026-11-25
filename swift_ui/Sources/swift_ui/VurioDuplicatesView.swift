@@ -106,6 +106,11 @@ struct VurioDuplicatesView: View {
             closeViewer(inAllMode: true)
             closeViewer(inAllMode: false)
         }
+        // HIST-1: a photo open in the tab on show hands the navigation
+        // pane's place to the viewer's own left panel (ContentView).
+        .onChange(of: isFrontmost && activeViewerOpen, initial: true) { _, open in
+            ViewerChrome.shared.viewerActive = open
+        }
     }
 
     private var activeViewerOpen: Bool {

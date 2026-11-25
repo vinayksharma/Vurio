@@ -19,6 +19,8 @@ struct Theme {
     static let accent = Color(hex: "#2850A7")
     static let success = Color(hex: "#388E3C")
     static let warning = Color(hex: "#B04A15")
+    /// The fold / unfold chevrons of the viewer's side panels.
+    static let panelToggle = Color(hex: "#E0A030")
     static let error = Color(hex: "#D32F2F")
 
     // Amber of a film-camera quartz date-back; used by DateStampLabel.
@@ -195,5 +197,32 @@ extension ButtonStyle where Self == VurioIconButtonStyle {
     }
     static func vurioIcon(tint: Color, size: CGFloat, bordered: Bool) -> VurioIconButtonStyle {
         VurioIconButtonStyle(tint: tint, size: size, bordered: bordered)
+    }
+}
+
+/// The fold / unfold button of the viewer's side panels: the one control
+/// drawn in its own colour at rest (the icon style shows a tint only on
+/// hover), so it reads as "moves the panel" and not as an action on the
+/// photo.
+struct PanelFoldButton: View {
+    /// "chevron.left" or "chevron.right": the way the panel will move.
+    let symbol: String
+    let help: String
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(Theme.panelToggle.opacity(hovered ? 1 : 0.85))
+                .frame(width: 22, height: 22)
+                .background(RoundedRectangle(cornerRadius: 5).fill(Theme.panelToggle.opacity(hovered ? 0.28 : 0.14)))
+                .overlay(RoundedRectangle(cornerRadius: 5).stroke(Theme.panelToggle.opacity(0.45), lineWidth: 1))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+        .help(help)
     }
 }

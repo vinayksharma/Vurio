@@ -55,11 +55,18 @@ struct AdjustmentsPanel: View {
 
     private var rail: some View {
         VStack(spacing: 6) {
-            Button(action: { model.isCollapsed = false }) {
-                Image(systemName: "chevron.left")
+            PanelFoldButton(symbol: "chevron.left", help: "Show adjustments (⌘⌥A)") { model.isCollapsed = false }
+            // The whole chain on or off, as in the header: the before and
+            // after of the edit without unfolding the panel.
+            Button(action: { model.toggleChainEnabled() }) {
+                Image(systemName: model.chainIsMuted ? "eye.slash" : "eye")
             }
-            .buttonStyle(.vurioIcon)
-            .help("Show adjustments (⌘⌥A)")
+            .buttonStyle(.vurioIcon(tint: model.chainIsMuted ? Theme.warning : Theme.textPrimary))
+            .disabled(!hasImage || model.document.nodes.isEmpty)
+            .help(model.chainIsMuted ? "Unmute the whole chain" : "Mute the whole chain (show the original)")
+            if !model.document.nodes.isEmpty {
+                Rectangle().fill(Theme.border).frame(width: 16, height: 1)
+            }
             ForEach(model.document.nodes) { node in
                 railIcon(model.descriptor(for: node.tool)?.icon ?? "questionmark",
                          help: model.descriptor(for: node.tool)?.label ?? node.tool,
@@ -138,6 +145,10 @@ struct AdjustmentsPanel: View {
 
     private var header: some View {
         HStack(spacing: 6) {
+            // Fold and unfold are the one control drawn in the panel
+            // colour (Theme.panelToggle), on both viewer panels, and sit
+            // on the edge the panel folds away from.
+            PanelFoldButton(symbol: "chevron.right", help: "Hide adjustments (⌘⌥A)") { model.isCollapsed = true }
             Image(systemName: "slider.horizontal.3")
                 .foregroundColor(Theme.textPrimary)
             Text("Chain")
@@ -173,11 +184,6 @@ struct AdjustmentsPanel: View {
                 .disabled(!hasImage || (model.historySteps.isEmpty && model.snapshots.isEmpty))
                 .help("History and snapshots")
                 .popover(isPresented: $historyShown, arrowEdge: .bottom) { historyList }
-            Button(action: { model.isCollapsed = true }) {
-                Image(systemName: "chevron.right")
-            }
-            .buttonStyle(.vurioIcon)
-            .help("Hide adjustments (⌘⌥A)")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)

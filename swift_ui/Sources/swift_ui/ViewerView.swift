@@ -25,6 +25,28 @@ struct ViewerView: View {
     /// live preview and the commits. An un-edited file shows the base
     /// bitmap; an edited one shows the server's rendered frame (docs §5.4).
     @StateObject private var adjustments = AdjustmentsViewModel()
+    /// HIST-1: the histogram of the picture on show, for the left panel.
+    @StateObject private var histogram = HistogramModel()
+    @ObservedObject private var chrome = ViewerChrome.shared
+
+    /// What the histogram counts: the picture as displayed, chain applied.
+    private var histogramSource: NSImage? {
+        guard isActive, !isPlaceholderImage else { return nil }
+        if adjustments.usesServerFrame, let frame = adjustments.preview.frame { return frame.image }
+        return currentImage
+    }
+
+    /// The clipped pixels, painted over the picture and moving with it.
+    @ViewBuilder
+    private func clipOverlay(width: CGFloat, height: CGFloat) -> some View {
+        if let overlay = histogram.clipOverlay {
+            Image(decorative: overlay, scale: 1)
+                .resizable()
+                .interpolation(.none)
+                .frame(width: width, height: height)
+                .allowsHitTesting(false)
+        }
+    }
 
     @State private var scale: CGFloat = 1.0
     @State private var gestureScaleBase: CGFloat = 1.0
@@ -99,6 +121,8 @@ struct ViewerView: View {
 
     var body: some View {
         HStack(spacing: 0) {
+            // HIST-1: in the navigation pane's place while a photo is open.
+            HistogramPanel(model: histogram, width: chrome.panelWidth)
             VStack(spacing: 0) {
                 // The path bar (and its close button) stays up even when the strip
                 // is empty so the viewer can always be dismissed.
@@ -119,6 +143,9 @@ struct ViewerView: View {
         }
         .background(Theme.background)
         .background(keyboardShortcuts)
+        .onChange(of: histogramSource.map(ObjectIdentifier.init), initial: true) { _, _ in
+            histogram.setSource(histogramSource)
+        }
         // CHAIN-6 (docs §9.2): Export… (⇧⌘E) writes a new file from the chain.
         .sheet(isPresented: $adjustments.isExportPresented) { ExportSheet(model: adjustments) }
         .task(id: request?.id) {
@@ -389,6 +416,10 @@ struct ViewerView: View {
                     .frame(width: area.width, height: area.height)
                     .scaleEffect(editing ? 1 : scale)
                     .offset(editing ? .zero : panOffset)
+                clipOverlay(width: layout.frameSize.width, height: layout.frameSize.height)
+                    .frame(width: area.width, height: area.height)
+                    .scaleEffect(editing ? 1 : scale)
+                    .offset(editing ? .zero : panOffset)
 
                 if editing, let cropTool = adjustments.crop {
                     CropOverlay(layout: layout, rect: cropTool.rect,
@@ -442,6 +473,13 @@ struct ViewerView: View {
                     .frame(width: area.width, height: area.height)
                     .scaleEffect(scale)
                     .offset(panOffset)
+                if image.size.width > 0, image.size.height > 0 {
+                    let fit = min(area.width / image.size.width, area.height / image.size.height)
+                    clipOverlay(width: image.size.width * fit, height: image.size.height * fit)
+                        .frame(width: area.width, height: area.height)
+                        .scaleEffect(scale)
+                        .offset(panOffset)
+                }
             }
 
             if adjustments.isRulerMode, !isPlaceholderImage {
