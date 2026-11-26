@@ -482,6 +482,7 @@ final class AdjustmentsViewModel: ObservableObject {
         }
         rebuildTools()
         driverBaseline = editedDocument()
+        unsavedAddID = nil
         if let sel = selectedNodeID, document.locate(sel) == nil, document.group(sel) == nil { selectedNodeID = nil }
         if let solo = soloLaneID, document.lane(solo) == nil { soloLaneID = nil }
         if let ov = overlayLaneID, document.lane(ov) == nil { overlayLaneID = nil }
@@ -664,9 +665,15 @@ final class AdjustmentsViewModel: ObservableObject {
     ///
     /// Clicking through the catalogue is also how the tools are explored:
     /// when the tool added by the previous click is still exactly as it was
-    /// added, the new one takes its place instead of piling up behind it.
+    /// added, the new one takes its place instead of piling up behind it,
+    /// and a click on a tool that is already there untouched only selects
+    /// it. A second node of the same tool is made with Duplicate (⌘D).
     @discardableResult
     func addTool(_ toolID: String) -> ChainNode? {
+        if let existing = untouchedInstance(of: toolID) {
+            selectedNodeID = existing.id
+            return existing
+        }
         let added = replaceUntouchedAdd(with: toolID) ?? appendTool(toolID)
         // Read back after the rebuild, so the comparison on the next click
         // sees the params as the tool's own UI encodes them.
@@ -676,6 +683,71 @@ final class AdjustmentsViewModel: ObservableObject {
 
     /// The node the last catalogue click added, as it was added.
     private var untouchedAdd: ChainNode?
+    /// That node while it has not been saved: a tool that does nothing at
+    /// its defaults joins the saved chain only once something about it is
+    /// changed (`committable`). Leaving the photo before then leaves no
+    /// trace of it.
+    private var unsavedAddID: String?
+
+    /// A node of `toolID`, where a click would add one, that is still as a
+    /// click makes it: the one the last click added, or any other with
+    /// every setting at its default.
+    private func untouchedInstance(of toolID: String) -> ChainNode? {
+        guard let descriptor = descriptor(for: toolID) else { return nil }
+        let current = currentDocument()
+        if let previous = untouchedAdd, previous.tool == toolID, current.node(previous.id) == previous { return previous }
+        guard toolID != ChainNode.splitTool else { return nil }
+        let siblings: [ChainNode]
+        if let laneID = targetLaneID {
+            siblings = current.lane(laneID)?.lane.steps ?? []
+        } else {
+            siblings = current.nodes
+        }
+        var fresh = freshNode(descriptor)
+        return siblings.first { node in
+            guard node.tool == toolID else { return false }
+            fresh.id = node.id
+            // Being a step of a recipe is not a setting.
+            var plain = node
+            plain.setGroup(nil)
+            return plain == fresh
+        }
+    }
+
+    /// An add is saved at once when the tool changes the picture as it
+    /// stands (Monochrome, Luma Key, a Split); otherwise it waits for its
+    /// first change.
+    private func finishAdd(_ node: ChainNode, label: String) {
+        if tools[node.id]?.isIdentity == true {
+            unsavedAddID = node.id
+            document = currentDocument()
+            document.normalizeGroups()
+            requestPreview()
+        } else {
+            chainChanged(label: label)
+        }
+    }
+
+    /// The chain as it is saved: without the node a click added that has
+    /// not been touched since.
+    private func committable(_ doc: ChainDocument) -> ChainDocument {
+        guard let id = unsavedAddID else { return doc }
+        guard let node = doc.node(id), let added = untouchedAdd, added.id == id else {
+            unsavedAddID = nil
+            return doc
+        }
+        var plain = node, reference = added
+        plain.setGroup(nil)
+        reference.setGroup(nil)
+        guard plain == reference else {
+            // Adjusted: it is part of the chain from here on.
+            unsavedAddID = nil
+            return doc
+        }
+        var saved = doc
+        saved.removeAny(id: id)
+        return saved
+    }
 
     /// Swap the previous click's node for `toolID` in place, when it has not
     /// been adjusted since. Nil when there is nothing to replace (the caller
@@ -710,7 +782,16 @@ final class AdjustmentsViewModel: ObservableObject {
         rebuildTools()
         selectedNodeID = node.id
         let old = self.descriptor(for: previous.tool)?.label ?? previous.tool
-        chainChanged(label: "Replace \(old) with \(descriptor.label)")
+        // The tool it replaces was never saved: this is a plain add.
+        let label = unsavedAddID == previous.id ? "Add \(descriptor.label)" : "Replace \(old) with \(descriptor.label)"
+        if unsavedAddID == previous.id, tools[node.id]?.isIdentity == true {
+            unsavedAddID = node.id
+            document = currentDocument()
+            requestPreview()
+        } else {
+            unsavedAddID = nil
+            chainChanged(label: label)
+        }
         return node
     }
 
@@ -752,7 +833,7 @@ final class AdjustmentsViewModel: ObservableObject {
         document.regroupTrunkNode(node.id)
         rebuildTools()
         selectedNodeID = node.id
-        chainChanged(label: "Add \(descriptor.label)")
+        finishAdd(node, label: "Add \(descriptor.label)")
         return node
     }
 
@@ -764,7 +845,7 @@ final class AdjustmentsViewModel: ObservableObject {
         document.insert(node, inLane: laneID, at: index)
         rebuildTools()
         selectedNodeID = node.id
-        chainChanged(label: "Add \(descriptor.label)")
+        finishAdd(node, label: "Add \(descriptor.label)")
         return node
     }
 
@@ -1349,9 +1430,16 @@ final class AdjustmentsViewModel: ObservableObject {
         guard let node = document.node(id) else { return }
         if editingCropID == id { exitCropEditing() }
         document = currentDocument()
+        // Never saved (added by a click and not touched): nothing to undo.
+        let neverSaved = unsavedAddID == id && committable(document).node(id) == nil
         document.removeAny(id: id)
         rebuildTools()
         if selectedNodeID == id { selectedNodeID = nil }
+        if neverSaved {
+            unsavedAddID = nil
+            requestPreview()
+            return
+        }
         chainChanged(label: "Remove \(descriptor(for: node.tool)?.label ?? node.tool)")
     }
 
@@ -1832,16 +1920,39 @@ final class AdjustmentsViewModel: ObservableObject {
         }
     }
 
-    private func applyRecipeNow(_ recipeID: String, mode: String, index: Int) async {
+    /// The recipe the last click added, as it arrived: clicking the same
+    /// recipe again only selects it, and clicking another swaps it, the
+    /// way the catalogue's tools behave.
+    private var untouchedRecipe: (recipeID: String, groupID: String, nodes: [ChainNode])?
+
+    private func applyRecipeNow(_ recipeID: String, mode requestedMode: String, index requestedIndex: Int) async {
         await flushPendingCommit()
         guard let path = filePath else { return }
         if isCropEditing { exitCropEditing() }
+        var mode = requestedMode, index = requestedIndex
+        if mode == "append", let last = untouchedRecipe, let group = document.group(last.groupID),
+           Array(currentDocument().nodes[group.range]) == last.nodes {
+            if last.recipeID == recipeID {
+                selectedNodeID = group.id
+                return
+            }
+            // Another recipe takes the untouched one's place.
+            mode = "insert"
+            index = group.range.lowerBound
+            removeNode(group.id)
+            await flushPendingCommit()
+            guard filePath == path else { return }
+        }
+        untouchedRecipe = nil
         let known = Set(document.groups.map(\.id))
         guard let response = await RecipesModel.shared.apply(recipeID, to: path, mode: mode, index: index) else { return }
         guard filePath == path else { return }
         await reloadDocument()
         // The recipe arrives as one row: select it.
-        if let added = document.groups.first(where: { !known.contains($0.id) }) { selectedNodeID = added.id }
+        if let added = document.groups.first(where: { !known.contains($0.id) }) {
+            selectedNodeID = added.id
+            untouchedRecipe = (recipeID, added.id, Array(currentDocument().nodes[added.range]))
+        }
         NotificationCenter.default.post(name: .adjustmentsChanged, object: nil, userInfo: [
             "filePath": path,
             "renderRevision": Int(response.renderRevision),
@@ -2104,7 +2215,7 @@ final class AdjustmentsViewModel: ObservableObject {
     func commitNow() async {
         guard let path = filePath, let client = VurioGrpcClient.shared.adjustments, isAvailable else { return }
         document = currentDocument()
-        let json = document.serialize()
+        let json = committable(document).serialize()
         let label = pendingLabel
         isCommitting = true
         defer { isCommitting = false }
