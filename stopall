@@ -1,0 +1,9 @@
+#!/bin/bash
+
+# stopall - stop EVERY VURIO server and UI on this machine (all worktrees).
+#
+# The original dedup_server/scripts/stopall became ./killall (6383ed46), which
+# also sweeps stray log tails, orphaned media subprocesses and stale instance
+# directories. This is the same script under its old name.
+
+exec "$(cd "$(dirname "$0")" && pwd)/killall" "$@"
